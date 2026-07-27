@@ -1,0 +1,247 @@
+// Karvaan POS Core Edition - Enterprise Database Schema
+// Optimized for NestJS + Prisma ORM + SQLite (production-ready, multi-year reliable)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // SQLite: zero-setup, single file, ideal for local restaurant PC deployment
+  // To migrate to PostgreSQL, change provider to "postgresql" and set DATABASE_URL
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id          String   @id @default(uuid())
+  name        String
+  pin         String   @unique
+  role        String   @default("CASHIER") // ADMIN, MANAGER, CASHIER, WAITER, KITCHEN, DELIVERY
+  phone       String?
+  isActive    Boolean  @default(true)
+  permissions String?  // JSON: {"canVoid":true,"canDiscount":true}
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ordersCreated  Order[]         @relation("WaiterOrders")
+  billsSettled   Bill[]          @relation("CashierBills")
+  deliveryOrders DeliveryOrder[] @relation("RiderOrders")
+}
+
+model Table {
+  id             String   @id @default(uuid())
+  tableNumber    String   @unique
+  capacity       Int      @default(4)
+  status         String   @default("AVAILABLE") // AVAILABLE, OCCUPIED, RESERVED, BILLED
+  currentOrderId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  orders Order[]
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  sortOrder Int       @default(0)
+  products  Product[]
+}
+
+model Product {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  price           Float
+  gstRate         Float    @default(5.0)
+  categoryId      String
+  isAvailable     Boolean  @default(true)
+  prepTimeMinutes Int      @default(12)
+  imageUrl        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category   Category    @relation(fields: [categoryId], references: [id])
+  orderItems OrderItem[]
+}
+
+model Customer {
+  id            String   @id @default(uuid())
+  name          String
+  mobile        String   @unique
+  email         String?
+  address       String?
+  totalSpend    Float    @default(0.0)
+  loyaltyPoints Int      @default(0)
+  creditBalance Float    @default(0.0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders         Order[]
+  ledgerEntries  LedgerEntry[]
+}
+
+model Order {
+  id          String   @id @default(uuid())
+  orderNumber String   @unique
+  orderType   String   @default("DINE_IN") // DINE_IN, PARCEL, DELIVERY
+  tableId     String?
+  waiterId    String?
+  customerId  String?
+  status      String   @default("RECEIVED") // RECEIVED, COOKING, READY, SERVED, CANCELLED
+  totalAmount Float    @default(0.0)
+  discount    Float    @default(0.0)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  table    Table?      @relation(fields: [tableId], references: [id])
+  waiter   User?       @relation("WaiterOrders", fields: [waiterId], references: [id])
+  customer Customer?   @relation(fields: [customerId], references: [id])
+  items    OrderItem[]
+  bill     Bill?
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int      @default(1)
+  price     Float
+  notes     String?
+  addons    String?  // JSON: [{name, price}]
+  status    String   @default("NEW") // NEW, SENT, COOKING, READY, SERVED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model Bill {
+  id            String   @id @default(uuid())
+  billNumber    String   @unique
+  orderId       String   @unique
+  orderType     String   @default("DINE_IN")
+  subtotal      Float
+  cgst          Float    @default(0.0)
+  sgst          Float    @default(0.0)
+  discount      Float    @default(0.0)
+  deliveryFee   Float    @default(0.0)
+  grandTotal    Float
+  paymentMethod String   @default("CASH") // CASH, CARD, UPI, CREDIT, SPLIT
+  cashierId     String?
+  customerName  String?
+  customerPhone String?
+  waiterName    String?
+  settledAt     DateTime @default(now())
+
+  order   Order @relation(fields: [orderId], references: [id])
+  cashier User? @relation("CashierBills", fields: [cashierId], references: [id])
+}
+
+model DeliveryOrder {
+  id              String    @id @default(uuid())
+  orderNumber     String    @unique
+  customerName    String
+  customerPhone   String?
+  deliveryAddress String?
+  deliveryLat     Float?
+  deliveryLng     Float?
+  riderId         String?
+  riderName       String?
+  status          String    @default("RECEIVED") // RECEIVED, PREPARING, READY, OUT_FOR_DELIVERY, DELIVERED, CANCELLED
+  paymentMethod   String    @default("CASH") // CASH, UPI, CARD
+  paymentStatus   String    @default("PENDING") // PENDING, COLLECTED
+  grandTotal      Float     @default(0.0)
+  deliveryFee     Float     @default(0.0)
+  collectedAmount Float?
+  items           String    // JSON string of order items
+  notes           String?
+  dispatchedAt    DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  rider User? @relation("RiderOrders", fields: [riderId], references: [id])
+}
+
+model ParkedOrder {
+  id        String   @id @default(uuid())
+  orderId   String   @unique // Client-side order ID from frontend
+  data      String   // Full JSON snapshot of cart state
+  heldAt    DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InventoryItem {
+  id           String     @id @default(uuid())
+  name         String     @unique
+  category     String     // e.g. "Vegetables", "Dairy", "Meat", "Dry Pantry"
+  currentStock Float      @default(0.0)
+  unit         String     @default("kg")
+  minThreshold Float      @default(5.0)
+  costPrice    Float      @default(0.0)
+  updatedAt    DateTime   @updatedAt
+
+  logs StockLog[]
+}
+
+model StockLog {
+  id             String        @id @default(uuid())
+  itemId         String
+  type           String        // "IN", "OUT", "ADJUSTMENT", "WASTE"
+  quantityChange Float
+  reason         String?       // "SALE", "DAMAGE", "EXPIRY", "RETURN", "PURCHASE"
+  orderId        String?
+  notes          String?
+  createdAt      DateTime      @default(now())
+
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+model WasteLog {
+  id         String   @id @default(uuid())
+  itemName   String
+  quantity   Float
+  unit       String   @default("pcs")
+  reason     String   // "RETURN", "SPOILAGE", "EXPIRY", "DAMAGE"
+  orderId    String?
+  billNumber String?
+  loggedBy   String?
+  createdAt  DateTime @default(now())
+}
+
+model LedgerEntry {
+  id           String   @id @default(uuid())
+  customerId   String
+  customerName String
+  amount       Float
+  type         String   @default("CREDIT") // CREDIT, PAYMENT
+  billNumber   String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
+}
+
+model ReturnRecord {
+  id           String   @id @default(uuid())
+  billNumber   String
+  orderType    String
+  reason       String
+  action       String   // "RESTOCK", "WASTE"
+  refundDest   String   // "CASH", "UPI", "LEDGER"
+  totalRefund  Float
+  items        String   // JSON string of returned items
+  authorizedBy String?
+  createdAt    DateTime @default(now())
+}
+
+model BackupLog {
+  id        String   @id @default(uuid())
+  filename  String
+  sizeBytes Int?
+  status    String   @default("SUCCESS") // SUCCESS, FAILED
+  error     String?
+  createdAt DateTime @default(now())
+}
