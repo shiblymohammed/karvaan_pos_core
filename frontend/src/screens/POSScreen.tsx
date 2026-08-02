@@ -23,6 +23,7 @@ import { useInventoryStore } from '../store/useInventoryStore';
 import { ReturnOrderModal, ReturnOrderData } from '../components/ReturnOrderModal';
 import { ManagerAuthModal } from '../components/ManagerAuthModal';
 import { emitSettleBill } from '../services/socket';
+import { getServerUrl } from '../services/serverConfig';
 
 export const POSScreen: React.FC = () => {
   const { 
@@ -35,7 +36,7 @@ export const POSScreen: React.FC = () => {
   } = useCartStore();
   const kdsTickets = useKdsStore(state => state.tickets);
   
-  const { setTableStatus } = useTableStore();
+  const { tables, floors, setTableStatus } = useTableStore();
   const { getActiveWaiters } = useStaffStore();
   const { checkIs86d, depleteForOrder } = useInventoryStore();
   const { notes: predefinedNotes, discounts: predefinedDiscounts } = useSettingsStore();
@@ -57,6 +58,7 @@ export const POSScreen: React.FC = () => {
   const [activeFolioTab, setActiveFolioTab] = useState<'CURRENT' | 'PARKED'>('CURRENT');
   const [returnModalData, setReturnModalData] = useState<ReturnOrderData | null>(null);
   const [managerAuthAction, setManagerAuthAction] = useState<{ isOpen: boolean; title: string; desc: string; onConfirm: (authBy: string) => void } | null>(null);
+  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   
   // Settlement state
   const [settleState, setSettleState] = useState<{ isOpen: boolean; method: PaymentMethod }>({
@@ -85,10 +87,29 @@ export const POSScreen: React.FC = () => {
     const addonTotal = item.addons?.reduce((a, addon) => a + addon.price, 0) || 0;
     return sum + (item.price + addonTotal) * item.quantity;
   }, 0);
-  const totalGst = (subtotal - discount) * 0.05;
+
+  // Floor Surcharge Calculation
+  let floorSurcharge = 0;
+  let floorSurchargeLabel = '';
+  if (selectedTableId) {
+    const table = tables.find(t => t.id === selectedTableId);
+    if (table) {
+      const floor = floors.find(f => f.id === table.floorId);
+      if (floor && floor.surchargeValue > 0) {
+        floorSurchargeLabel = `${floor.name} (${floor.zone})`;
+        if (floor.surchargeType === 'PERCENTAGE') {
+          floorSurcharge = (subtotal * floor.surchargeValue) / 100;
+        } else {
+          floorSurcharge = floor.surchargeValue;
+        }
+      }
+    }
+  }
+
+  const totalGst = (subtotal - discount + floorSurcharge) * 0.05;
   const cgst = totalGst / 2;
   const sgst = totalGst / 2;
-  const grandTotal = Math.max(0, subtotal - discount + cgst + sgst);
+  const grandTotal = Math.max(0, subtotal - discount + floorSurcharge + cgst + sgst);
 
   // Helper to dynamically check kitchen status — supports DINE_IN, PARCEL, DELIVERY
   const getKitchenStatusBadge = (tableName: string | null, orderType?: string) => {
@@ -184,7 +205,7 @@ export const POSScreen: React.FC = () => {
 
     if (!isOffline) {
       try {
-        await fetch('http://localhost:3001/billing/order', {
+        await fetch(`${getServerUrl()}/billing/order`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -482,6 +503,13 @@ export const POSScreen: React.FC = () => {
                     </span>
                   )}
                 </div>
+                {/* Product Image */}
+                {product.imageUrl && (
+                  <div className="mb-2">
+                    <img src={product.imageUrl} alt={product.name}
+                      className="w-12 h-12 rounded-xl object-cover border border-pos-border/50 shadow-sm group-hover:scale-105 transition-transform" />
+                  </div>
+                )}
                 <h3 className="font-black text-pos-text line-clamp-2 leading-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors text-[15px]">
                   {product.name}
                 </h3>
@@ -559,10 +587,26 @@ export const POSScreen: React.FC = () => {
             )}
           </div>
         )}
+        {/* 📱 MOBILE FLOATING CART BUTTON (Hidden on Desktop) */}
+        <button 
+          onClick={() => setIsMobileCartOpen(true)}
+          className="lg:hidden fixed bottom-4 left-4 right-4 bg-pos-accent text-white py-3.5 rounded-2xl font-black text-sm shadow-glow-accent flex items-center justify-between px-5 active:scale-95 transition-transform z-30"
+        >
+          <div className="flex items-center gap-2">
+            <Utensils className="h-5 w-5" />
+            <span>View Order Folio</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="bg-white/20 px-2 py-0.5 rounded-md text-xs">{items.length} items</span>
+            <span>₹{grandTotal.toFixed(0)}</span>
+          </div>
+        </button>
       </div>
 
       {/* RIGHT AREA: Billing Cart & Checkout */}
-      <div className="col-span-12 lg:col-span-4 bg-pos-sidebar rounded-2xl border border-pos-border shadow-glass flex flex-col justify-between overflow-hidden transition-colors duration-250">
+      {/* On Mobile: Hidden by default, becomes a fixed full-screen overlay when isMobileCartOpen is true */}
+      {/* On Desktop: Always visible as a 4-col grid item */}
+      <div className={`${isMobileCartOpen ? 'fixed inset-0 z-50 bg-pos-sidebar m-0 rounded-none' : 'hidden lg:flex col-span-12 lg:col-span-4 bg-pos-sidebar rounded-2xl shadow-glass'} border border-pos-border flex-col justify-between overflow-hidden transition-colors duration-250`}>
 
         {/* Folio Tabs Header */}
         <div className="flex border-b border-pos-border bg-pos-card z-10">
@@ -586,6 +630,16 @@ export const POSScreen: React.FC = () => {
           >
             <Clock className="h-4 w-4" /> Parked ({heldOrders.length})
           </button>
+          
+          {/* Mobile Close Cart Button */}
+          {isMobileCartOpen && (
+            <button 
+              onClick={() => setIsMobileCartOpen(false)}
+              className="lg:hidden px-4 bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-colors flex items-center justify-center border-b-2 border-rose-500"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
         </div>
 
         {activeFolioTab === 'CURRENT' ? (
@@ -842,6 +896,13 @@ export const POSScreen: React.FC = () => {
                   <span>Subtotal</span>
                   <span className="font-black">₹{subtotal.toFixed(2)}</span>
                 </div>
+                
+                {floorSurcharge > 0 && (
+                  <div className="flex justify-between items-center text-pos-text-muted mt-1.5">
+                    <span className="text-amber-500 font-bold">Surcharge: {floorSurchargeLabel}</span>
+                    <span className="font-bold text-amber-500">+₹{floorSurcharge.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-xs font-bold text-pos-text-muted">
                   <span>Taxes (5%)</span>
                   <span>₹{(cgst + sgst).toFixed(2)}</span>

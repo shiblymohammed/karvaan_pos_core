@@ -10,6 +10,7 @@ export interface Product {
   isAvailable: boolean;
   description?: string;
   imageEmoji?: string; // Quick emoji icon for visual menu
+  imageUrl?: string;   // Base64 data URL for product photo
   gstRate?: number;    // GST percentage e.g. 5.0
 }
 

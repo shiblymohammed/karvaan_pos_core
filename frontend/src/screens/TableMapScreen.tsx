@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { useCartStore } from '../store/cartStore';
 import { Users, Clock, ArrowRightLeft, Sparkles, Check, AlertCircle, Utensils, DollarSign, PieChart, Settings, User } from 'lucide-react';
 
-import { useTableStore, DiningTable } from '../store/useTableStore';
+import { useTableStore, DiningTable, Floor } from '../store/useTableStore';
 
 export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNavigateToPOS }) => {
-  const { tables, setTableStatus, transferTable } = useTableStore();
+  const { tables, floors, setTableStatus, transferTable } = useTableStore();
   const [selectedTable, setSelectedTable] = useState<DiningTable | null>(null);
   const [transferTarget, setTransferTarget] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [floorFilter, setFloorFilter] = useState<string>('ALL');
   const { setTable: setPosTable, heldOrders } = useCartStore();
 
   const handleSelectForBilling = (table: DiningTable) => {
@@ -52,7 +53,13 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
   const occupiedCount = tables.filter((t) => t.status === 'OCCUPIED' || t.status === 'BILLED').length;
   const occupancyRate = Math.round((occupiedCount / tables.length) * 100);
 
-  const filteredTables = statusFilter === 'ALL' ? tables : tables.filter((t) => t.status === statusFilter);
+  const filteredTables = tables.filter(t => {
+    if (floorFilter !== 'ALL' && t.floorId !== floorFilter) return false;
+    if (statusFilter !== 'ALL' && t.status !== statusFilter) return false;
+    return true;
+  });
+
+  const sortedFloors = [...floors].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
     <div className="p-6 h-[calc(100vh-64px)] overflow-y-auto bg-pos-bg space-y-6 text-pos-text transition-colors duration-300">

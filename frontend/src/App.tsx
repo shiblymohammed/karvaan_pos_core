@@ -17,6 +17,8 @@ import {
   Wifi, WifiOff, ShieldCheck, Sun, Moon, Clock, Sparkles, Settings, Lock, Bike
 } from 'lucide-react';
 import { initSocketListeners } from './services/socket';
+import { SetupScreen } from './screens/SetupScreen';
+import { isServerConfigured } from './services/serverConfig';
 
 export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY';
 
@@ -26,6 +28,7 @@ export const App: React.FC = () => {
   const { theme, toggleTheme } = useThemeStore();
   const { currentUser, isLocked, lockTerminal, logout } = useAuthStore();
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [showSetup, setShowSetup] = useState(!isServerConfigured());
 
   // Enforce DOM class on mount and theme change to guarantee 100% reliable theme toggling
   useEffect(() => {
@@ -54,6 +57,10 @@ export const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  if (showSetup) {
+    return <SetupScreen onComplete={() => setShowSetup(false)} />;
+  }
+
   if (!currentUser) {
     return <FullLoginScreen />;
   }
@@ -73,27 +80,27 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-pos-bg text-pos-text flex flex-col font-sans selection:bg-pos-accent selection:text-white transition-colors duration-250">
       {/* Top Navigation Bar */}
-      <header className="h-16 bg-pos-sidebar border-b border-pos-border px-4 flex items-center justify-between shadow-glass z-20 transition-colors duration-250">
+      <header className="bg-pos-sidebar border-b border-pos-border px-3 py-2 md:px-4 md:h-16 flex flex-wrap md:flex-nowrap items-center justify-between gap-y-2 gap-x-2 shadow-glass z-20 transition-colors duration-250">
         {/* Brand Title */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 order-1 shrink-0">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pos-accent to-teal-600 flex items-center justify-center font-black text-white text-lg shadow-glow-accent shrink-0">
             K
           </div>
-          <div>
+          <div className="hidden sm:block">
             <h1 className="font-extrabold text-base tracking-tight text-pos-text flex items-center gap-2">
               <span>Karvaan POS Core</span>
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
                 v1.0 Pro
               </span>
             </h1>
-            <p className="text-[11px] text-pos-text-muted hidden sm:block font-medium">
+            <p className="text-[11px] text-pos-text-muted hidden md:block font-medium">
               3-in-1 Platform • Fast Checkout • Offline-First
             </p>
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="flex items-center gap-1 bg-pos-card p-1 rounded-xl border border-pos-border shadow-sm">
+        <nav className="flex items-center gap-1 bg-pos-card p-1 rounded-xl border border-pos-border shadow-sm order-3 md:order-2 w-full md:w-auto overflow-x-auto no-scrollbar flex-nowrap">
           {currentUser.role === 'DELIVERY' ? (
             <span className="text-xs font-black px-3 py-1.5 bg-purple-500/20 text-purple-400 rounded-lg border border-purple-500/30 flex items-center gap-1.5 shadow-sm">
               <Bike className="h-4 w-4 text-purple-400" /> Delivery Rider Portal
@@ -230,7 +237,7 @@ export const App: React.FC = () => {
         </nav>
 
         {/* Right Action Bar: Clock, Theme Switcher & Status Pill */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 md:gap-2.5 order-2 md:order-3 shrink-0">
           {/* Live Clock */}
           <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-pos-card rounded-xl border border-pos-border text-xs font-mono font-bold text-pos-text shadow-sm" title="Live Terminal Time">
             <Clock className="h-3.5 w-3.5 text-pos-accent animate-pulse" />

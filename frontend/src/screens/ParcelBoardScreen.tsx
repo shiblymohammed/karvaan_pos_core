@@ -126,7 +126,7 @@ export const ParcelBoardScreen: React.FC = () => {
             <p className="text-sm">New parcel orders will appear here</p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-6 h-full">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
             {/* Received Column */}
             <div>
               <div className="flex items-center gap-2 mb-4">

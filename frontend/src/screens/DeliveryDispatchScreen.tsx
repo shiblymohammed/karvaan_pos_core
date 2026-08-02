@@ -368,9 +368,9 @@ export const DeliveryDispatchScreen: React.FC = () => {
       </div>
 
       {/* Two-panel layout */}
-      <div className="flex-1 overflow-hidden flex gap-0">
+      <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-0">
         {/* LEFT: Orders */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-5 space-y-4">
           {deliveryOrders.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-pos-text-muted">
               <Bike className="h-16 w-16 opacity-20" />
@@ -401,7 +401,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
         </div>
 
         {/* RIGHT: Rider Roster (Click card for Shift-End Settlement Summary) or My Shift Panel */}
-        <div className="w-72 bg-pos-sidebar border-l border-pos-border flex flex-col overflow-hidden">
+        <div className="w-full lg:w-72 bg-pos-sidebar border-b lg:border-b-0 lg:border-l border-pos-border flex flex-col shrink-0 order-first lg:order-last">
           {currentUser?.role === 'DELIVERY' ? (
             <div className="flex flex-col h-full p-4 space-y-4">
               <div className="border-b border-pos-border pb-3">

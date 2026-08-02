@@ -7,13 +7,23 @@ export const FullLoginScreen: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
+  const [debugInfo, setDebugInfo] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    const success = fullLogin(username, password);
-    if (!success) {
+    try {
+      const uTrimmed = username.trim();
+      const pTrimmed = password.trim();
+      const debug = `u="${uTrimmed}" p="${pTrimmed}" fn=${typeof fullLogin}`;
+      const success = fullLogin(uTrimmed, pTrimmed);
+      if (!success) {
+        setDebugInfo(`${debug} result=${success}`);
+        setError(true);
+        setTimeout(() => setError(false), 5000);
+      }
+    } catch (err: any) {
+      setDebugInfo(`ERROR: ${err?.message || String(err)}`);
       setError(true);
-      setTimeout(() => setError(false), 2000);
     }
   };
 
@@ -51,9 +61,12 @@ export const FullLoginScreen: React.FC = () => {
           </div>
 
           {error && (
-            <p className="text-rose-500 text-sm font-bold text-center mt-2 animate-pulse">
-              Invalid credentials. Please try again.
-            </p>
+            <div className="text-rose-500 text-sm font-bold text-center mt-2">
+              <p className="animate-pulse">Invalid credentials. Please try again.</p>
+              {debugInfo && (
+                <p className="text-[10px] text-pos-text-muted mt-1 font-mono break-all">{debugInfo}</p>
+              )}
+            </div>
           )}
 
           <button 

@@ -1,9 +1,34 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useMenuStore, Product, Category } from '../../store/useMenuStore';
 import {
   Plus, Edit3, Trash2, X, Check, PowerOff, ChevronUp, ChevronDown,
-  Search, LayoutGrid, UtensilsCrossed, Tag, Save, AlertCircle
+  Search, LayoutGrid, UtensilsCrossed, Tag, Save, AlertCircle, ImagePlus, Trash
 } from 'lucide-react';
+
+// ─── Image Compress Helper ──────────────────────────────────────────────────────
+function compressImage(file: File, maxSize = 200, quality = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if (w > h) { if (w > maxSize) { h = Math.round(h * maxSize / w); w = maxSize; } }
+        else { if (h > maxSize) { w = Math.round(w * maxSize / h); h = maxSize; } }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // ─── Emoji colour token → Tailwind colours ────────────────────────────────────
 const COLOR_MAP: Record<string, { bg: string; text: string; border: string; pill: string }> = {
@@ -35,9 +60,26 @@ interface ProductFormProps {
 const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, onSave, onClose, title }) => {
   const [form, setForm] = useState<Partial<Product>>({
     name: '', price: 0, category: categories.find(c => c.name !== 'All')?.name || '',
-    prepTime: 5, gstRate: 5, imageEmoji: '🍽️', description: '', ...initial
+    prepTime: 5, gstRate: 5, imageEmoji: '🍽️', description: '', imageUrl: '', ...initial
   });
   const nonAll = categories.filter(c => c.name !== 'All').sort((a, b) => a.sortOrder - b.sortOrder);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const dataUrl = await compressImage(file);
+      setForm({ ...form, imageUrl: dataUrl });
+    } catch (err) {
+      console.error('Image compression failed', err);
+    }
+    setUploading(false);
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,6 +119,38 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, onSave, 
               <input type="text" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
                 className={inputCls} placeholder="e.g. Garlic Bread" />
             </div>
+          </div>
+
+          {/* Image Upload Zone */}
+          <div>
+            <label className={labelCls}>Product Photo (optional)</label>
+            <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImageUpload} className="hidden" />
+            {form.imageUrl ? (
+              <div className="flex items-center gap-3">
+                <img src={form.imageUrl} alt="Preview" className="w-16 h-16 rounded-xl object-cover border-2 border-pos-border shadow-sm" />
+                <div className="flex flex-col gap-1">
+                  <button type="button" onClick={() => fileInputRef.current?.click()}
+                    className="text-xs font-bold text-pos-accent hover:underline cursor-pointer">Change Image</button>
+                  <button type="button" onClick={() => setForm({ ...form, imageUrl: '' })}
+                    className="text-xs font-bold text-rose-500 hover:underline cursor-pointer flex items-center gap-1">
+                    <Trash className="h-3 w-3" /> Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => fileInputRef.current?.click()}
+                className="w-full py-4 border-2 border-dashed border-pos-border rounded-xl flex flex-col items-center gap-1 hover:border-pos-accent hover:bg-pos-card transition-colors cursor-pointer group">
+                {uploading ? (
+                  <span className="text-xs font-bold text-pos-text-muted animate-pulse">Compressing...</span>
+                ) : (
+                  <>
+                    <ImagePlus className="h-6 w-6 text-pos-text-muted group-hover:text-pos-accent transition-colors" />
+                    <span className="text-xs font-bold text-pos-text-muted group-hover:text-pos-accent">Click to upload photo</span>
+                    <span className="text-[10px] text-pos-text-muted">JPG, PNG — auto-resized to 200×200</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
 
           <div>
@@ -370,7 +444,11 @@ export const AdminMenuManager: React.FC = () => {
                       <tr key={prod.id} className="border-b border-pos-border/50 hover:bg-pos-card-hover transition-colors group">
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
-                            <span className="text-xl">{prod.imageEmoji || '🍽️'}</span>
+                            {prod.imageUrl ? (
+                              <img src={prod.imageUrl} alt={prod.name} className="w-9 h-9 rounded-lg object-cover border border-pos-border shadow-sm" />
+                            ) : (
+                              <span className="text-xl">{prod.imageEmoji || '🍽️'}</span>
+                            )}
                             <div>
                               <p className={`font-black text-sm text-pos-text ${!prod.isAvailable ? 'line-through opacity-50' : ''}`}>
                                 {prod.name}

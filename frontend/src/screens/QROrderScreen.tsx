@@ -132,6 +132,10 @@ export const QROrderScreen: React.FC = () => {
                 key={item.id}
                 className="bg-pos-card p-4 rounded-2xl border border-pos-border flex justify-between items-center gap-3 shadow-2xs hover:border-pos-accent/50 transition-colors"
               >
+                {item.imageUrl && (
+                  <img src={item.imageUrl} alt={item.name}
+                    className="w-14 h-14 rounded-xl object-cover border border-pos-border/50 shadow-sm shrink-0" />
+                )}
                 <div className="flex-1 min-w-0">
                   <h4 className="font-extrabold text-sm text-pos-text truncate">{item.name}</h4>
                   <p className="text-xs text-pos-text-muted mt-0.5 line-clamp-2 font-medium">{item.category}</p>

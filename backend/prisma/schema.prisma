@@ -15,6 +15,8 @@ datasource db {
 model User {
   id          String   @id @default(uuid())
   name        String
+  username    String?  @unique
+  password    String?
   pin         String   @unique
   role        String   @default("CASHIER") // ADMIN, MANAGER, CASHIER, WAITER, KITCHEN, DELIVERY
   phone       String?
@@ -75,6 +77,8 @@ model Customer {
   creditBalance Float    @default(0.0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  syncedAt      DateTime?
+
 
   orders         Order[]
   ledgerEntries  LedgerEntry[]
@@ -93,6 +97,8 @@ model Order {
   notes       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  syncedAt    DateTime?
+
 
   table    Table?      @relation(fields: [tableId], references: [id])
   waiter   User?       @relation("WaiterOrders", fields: [waiterId], references: [id])
@@ -134,6 +140,7 @@ model Bill {
   customerPhone String?
   waiterName    String?
   settledAt     DateTime @default(now())
+  syncedAt      DateTime?
 
   order   Order @relation(fields: [orderId], references: [id])
   cashier User? @relation("CashierBills", fields: [cashierId], references: [id])
@@ -161,6 +168,7 @@ model DeliveryOrder {
   deliveredAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  syncedAt        DateTime?
 
   rider User? @relation("RiderOrders", fields: [riderId], references: [id])
 }
@@ -195,6 +203,7 @@ model StockLog {
   orderId        String?
   notes          String?
   createdAt      DateTime      @default(now())
+  syncedAt       DateTime?
 
   item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 }

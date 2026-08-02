@@ -1,9 +1,11 @@
 import { io } from 'socket.io-client';
+import { getServerUrl } from './serverConfig';
+import { enqueueAction, getPendingActions, clearAction } from './offlineQueue';
+
 
 // ─── Backend WebSocket Connection ─────────────────────────────────────────────
-// The NestJS backend is the SOURCE OF TRUTH for all operational and historical data.
-// This socket keeps all connected POS/KDS/Delivery terminals perfectly in sync.
-export const socket = io('http://localhost:3001', {
+// URL is resolved at runtime: env var → localStorage Setup Screen → localhost:3001
+export const socket = io(getServerUrl(), {
   transports: ['websocket', 'polling'],
   reconnectionAttempts: Infinity, // Reconnect indefinitely for long-running restaurant shifts
   reconnectionDelay: 2000,
@@ -31,42 +33,32 @@ export function emitSettleBill(billData: {
   customerPhone?: string;
   items?: any[];
 }) {
-  socket.emit('settle_bill', billData);
-  console.log(`💾 [POS] Bill ${billData.billNumber} emitted to backend for persistence.`);
+  if (socket.connected) {
+    socket.emit('settle_bill', billData);
+    console.log(`💾 [POS] Bill ${billData.billNumber} emitted to backend for persistence.`);
+  } else {
+    enqueueAction('settle_bill', billData);
+    console.log(`📡 [POS] Offline! Bill ${billData.billNumber} queued in IndexedDB.`);
+  }
 }
 
-socket.on('connect', () => {
+
+socket.on('connect', async () => {
   console.log('📡 [POS] Connected to Backend WebSocket:', socket.id);
-  import('../store/useDeliveryStore').then(({ useDeliveryStore }) => {
-    const orders = useDeliveryStore.getState().orders;
-    if (orders && orders.length > 0) {
-      console.log('📤 [POS] Pushing local delivery orders to server on connect:', orders.length);
-      socket.emit('sync_delivery_orders', orders);
+  
+  // 1. Flush offline queue first
+  const pendingActions = await getPendingActions();
+  if (pendingActions.length > 0) {
+    console.log(`🚀 [POS] Flushing ${pendingActions.length} pending actions from offline queue...`);
+    for (const action of pendingActions) {
+      socket.emit(action.type, action.payload);
+      if (action.id) await clearAction(action.id);
     }
-  });
-  import('../store/cartStore').then(({ useCartStore }) => {
-    const heldOrders = useCartStore.getState().heldOrders;
-    if (heldOrders && heldOrders.length > 0) {
-      console.log('📤 [POS] Pushing local parked orders to server on connect:', heldOrders.length);
-      socket.emit('sync_parked_orders', heldOrders);
-    }
-  });
-  import('../store/useStaffStore').then(({ useStaffStore }) => {
-    const staff = useStaffStore.getState().staff;
-    if (staff && staff.length > 0) {
-      console.log('📤 [POS] Pushing local staff roster to server on connect:', staff.length);
-      socket.emit('sync_staff', staff);
-    }
-  });
-  import('../store/useInventoryStore').then(({ useInventoryStore }) => {
-    const { ingredients, recipes, wasteLogs } = useInventoryStore.getState();
-    if (ingredients && ingredients.length > 0) {
-      console.log('📤 [POS] Pushing local inventory & recipes to server on connect');
-      socket.emit('sync_inventory', ingredients);
-      socket.emit('sync_recipes', recipes);
-      socket.emit('sync_waste', wasteLogs);
-    }
-  });
+  }
+
+  // 2. We no longer blindly push local state on connect because the server is the source of truth.
+  // The server will send `sync_master_state` shortly after connection to hydrate this client.
+  // Any offline actions were already flushed via the offline queue above.
 });
 
 socket.on('disconnect', () => {

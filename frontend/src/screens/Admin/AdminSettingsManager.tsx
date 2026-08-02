@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Settings2, Plus, Trash2, Tag, Percent, MessageSquare, PackagePlus } from 'lucide-react';
+import { Settings2, Plus, Trash2, Tag, Percent, MessageSquare, PackagePlus, Wifi, Server, ExternalLink } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAddonStore } from '../../store/useAddonStore';
+import { getServerUrl, setServerUrl, probeServer } from '../../services/serverConfig';
 
 export const AdminSettingsManager: React.FC = () => {
   const { notes, discounts, addNote, deleteNote, addDiscount, deleteDiscount } = useSettingsStore();
@@ -10,6 +11,24 @@ export const AdminSettingsManager: React.FC = () => {
   const [newNote, setNewNote] = useState({ label: '', icon: '' });
   const [newDiscount, setNewDiscount] = useState({ label: '', amount: '', type: 'PERCENTAGE' as 'PERCENTAGE' | 'FLAT' });
   const [newAddon, setNewAddon] = useState({ name: '', price: '' });
+
+  // Network Setup State
+  const [networkUrl, setNetworkUrl] = useState(getServerUrl());
+  const [networkStatus, setNetworkStatus] = useState<'idle' | 'probing' | 'ok' | 'fail'>('idle');
+  const [networkLatency, setNetworkLatency] = useState(0);
+
+  const handleNetworkTest = async () => {
+    setNetworkStatus('probing');
+    const result = await probeServer(networkUrl);
+    setNetworkLatency(result.latencyMs);
+    setNetworkStatus(result.ok ? 'ok' : 'fail');
+  };
+
+  const handleNetworkSave = () => {
+    setServerUrl(networkUrl);
+    setNetworkStatus('idle');
+    alert('Server URL saved. Reload the page to reconnect the WebSocket.');
+  };
 
   const handleAddNote = () => {
     if (!newNote.label) return;
@@ -181,6 +200,50 @@ export const AdminSettingsManager: React.FC = () => {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Network Setup Section ─────────────────────────────── */}
+      <div className="bg-pos-card rounded-2xl border border-pos-border p-5">
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center">
+            <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div>
+            <h3 className="text-base font-black text-pos-text">Network Setup</h3>
+            <p className="text-xs font-bold text-pos-text-muted">Configure which backend server this device connects to (for LAN multi-terminal setup)</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Server className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-pos-text-muted" />
+              <input type="url" value={networkUrl} onChange={e => { setNetworkUrl(e.target.value); setNetworkStatus('idle'); }}
+                placeholder="http://192.168.1.100:3001"
+                className="w-full pl-9 pr-3 py-2.5 bg-pos-input border border-pos-border rounded-xl text-pos-text text-sm font-bold focus:outline-none focus:border-pos-accent shadow-inner" />
+            </div>
+            <button onClick={handleNetworkTest}
+              className="px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-black rounded-xl text-sm cursor-pointer transition-colors">
+              Test
+            </button>
+            <button onClick={handleNetworkSave} disabled={networkStatus !== 'ok' && !networkUrl.includes('localhost')}
+              className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-xl text-sm cursor-pointer transition-colors disabled:opacity-40">
+              Save
+            </button>
+          </div>
+
+          {networkStatus === 'ok' && (
+            <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">✓ Connected ({networkLatency}ms) — Click Save to apply</p>
+          )}
+          {networkStatus === 'fail' && (
+            <p className="text-xs font-bold text-rose-500">✗ Cannot reach server — check IP and ensure backend is running</p>
+          )}
+
+          <div className="flex items-center gap-2 mt-1">
+            <ExternalLink className="h-3.5 w-3.5 text-pos-text-muted" />
+            <span className="text-xs font-bold text-pos-text-muted">Current: <span className="text-pos-text">{getServerUrl()}</span></span>
           </div>
         </div>
       </div>

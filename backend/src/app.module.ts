@@ -6,6 +6,8 @@ import { BillingService } from './billing/billing.service';
 import { BillingController } from './billing/billing.controller';
 import { BackupModule } from './backup/backup.module';
 import { HistoryModule } from './history/history.module';
+import { SyncModule } from './sync/sync.module';
+
 
 @Module({
   imports: [
@@ -13,7 +15,9 @@ import { HistoryModule } from './history/history.module';
     ScheduleModule.forRoot(),
     BackupModule,
     HistoryModule,
+    SyncModule,
   ],
+
   controllers: [BillingController],
   providers: [PrismaService, KdsGateway, BillingService],
 })
