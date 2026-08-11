@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { socket } from '../services/socket';
+import { socket, emitAction } from '../services/socket';
 
 export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'BILLED';
 
@@ -84,7 +84,7 @@ export const useTableStore = create<TableState>()(
       }),
     }));
     // Broadcast to all other devices
-    socket.emit('table_status_change', { tableId: id, status, subtotal: currentBill });
+    emitAction('table_status_change', { tableId: id, status, subtotal: currentBill });
   },
 
   transferTable: (fromId, toNumber) => {
@@ -113,8 +113,8 @@ export const useTableStore = create<TableState>()(
     const state = get();
     const fromT = state.tables.find(t => t.id === fromId);
     const toT = state.tables.find(t => t.number === toNumber);
-    if (fromT) socket.emit('table_status_change', { tableId: fromT.id, status: 'AVAILABLE', subtotal: undefined });
-    if (toT) socket.emit('table_status_change', { tableId: toT.id, status: toT.status, subtotal: toT.currentBill });
+    if (fromT) emitAction('table_status_change', { tableId: fromT.id, status: 'AVAILABLE', subtotal: undefined });
+    if (toT) emitAction('table_status_change', { tableId: toT.id, status: toT.status, subtotal: toT.currentBill });
   },
 
   updateTableBill: (id, amount) => {
@@ -124,7 +124,7 @@ export const useTableStore = create<TableState>()(
       ),
     }));
     const t = get().tables.find(tbl => tbl.id === id);
-    if (t) socket.emit('table_status_change', { tableId: id, status: t.status, subtotal: amount });
+    if (t) emitAction('table_status_change', { tableId: id, status: t.status, subtotal: amount });
   },
 
   // ─── Table CRUD ─────────────────────────────────────────────────────────────
@@ -228,3 +228,4 @@ export const useTableStore = create<TableState>()(
 }),
   { name: 'pos-table-storage' }
 ));
+

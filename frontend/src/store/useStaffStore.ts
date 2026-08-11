@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { socket } from '../services/socket';
+import { socket, emitAction } from '../services/socket';
 
 export interface StaffPermissions {
   canVoid: boolean;
@@ -43,21 +43,21 @@ export const useStaffStore = create<StaffState>()(
         set((state) => ({
           staff: [...state.staff, { ...newStaff, id: `staff-${Date.now()}` }]
         }));
-        socket.emit('sync_staff', get().staff);
+        emitAction('sync_staff', get().staff);
       },
 
       updateStaff: (id, updates) => {
         set((state) => ({
           staff: state.staff.map(s => s.id === id ? { ...s, ...updates } : s)
         }));
-        socket.emit('sync_staff', get().staff);
+        emitAction('sync_staff', get().staff);
       },
 
       deleteStaff: (id) => {
         set((state) => ({
           staff: state.staff.filter(s => s.id !== id)
         }));
-        socket.emit('sync_staff', get().staff);
+        emitAction('sync_staff', get().staff);
       },
 
       getActiveWaiters: () => get().staff.filter(s => s.role === 'WAITER' && s.isActive),
@@ -67,3 +67,4 @@ export const useStaffStore = create<StaffState>()(
     { name: 'pos-staff-storage' }
   )
 );
+

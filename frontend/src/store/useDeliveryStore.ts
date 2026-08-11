@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { socket } from '../services/socket';
+import { socket, emitAction } from '../services/socket';
 
 export type OrderType = 'DINE_IN' | 'PARCEL' | 'DELIVERY';
 export type DeliveryStatus = 'RECEIVED' | 'PREPARING' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
@@ -100,7 +100,7 @@ export const useDeliveryStore = create<DeliveryState>()(
           updatedAt: new Date().toISOString(),
         };
         set((state) => ({ orders: [newOrder, ...state.orders] }));
-        socket.emit('sync_delivery_orders', get().orders);
+        emitAction('sync_delivery_orders', get().orders);
         return newOrder;
       },
 
@@ -110,7 +110,7 @@ export const useDeliveryStore = create<DeliveryState>()(
             o.id === id ? { ...o, status, updatedAt: new Date().toISOString() } : o
           ),
         }));
-        socket.emit('sync_delivery_orders', get().orders);
+        emitAction('sync_delivery_orders', get().orders);
       },
 
       collectPayment: (id, method, amount) => {
@@ -121,7 +121,7 @@ export const useDeliveryStore = create<DeliveryState>()(
               : o
           ),
         }));
-        socket.emit('sync_delivery_orders', get().orders);
+        emitAction('sync_delivery_orders', get().orders);
 
         const order = get().orders.find((o) => o.id === id);
         if (order) {
@@ -149,7 +149,7 @@ export const useDeliveryStore = create<DeliveryState>()(
             };
             const nextHeld = [completedParked, ...currentHeld.filter(o => o.id !== `park-del-${order.id}`)];
             useCartStore.setState({ heldOrders: nextHeld });
-            socket.emit('sync_parked_orders', nextHeld);
+            emitAction('sync_parked_orders', nextHeld);
           });
         }
       },
@@ -170,7 +170,7 @@ export const useDeliveryStore = create<DeliveryState>()(
               : b
           ),
         }));
-        socket.emit('sync_delivery_orders', get().orders);
+        emitAction('sync_delivery_orders', get().orders);
       },
 
       removeOrder: (id) => {
@@ -186,9 +186,10 @@ export const useDeliveryStore = create<DeliveryState>()(
           }));
         }
         set((state) => ({ orders: state.orders.filter((o) => o.id !== id) }));
-        socket.emit('sync_delivery_orders', get().orders);
+        emitAction('sync_delivery_orders', get().orders);
       },
     }),
     { name: 'pos-delivery-storage' }
   )
 );
+

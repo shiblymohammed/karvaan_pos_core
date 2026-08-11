@@ -15,7 +15,19 @@
  */
 
 const STORAGE_KEY = 'karvaan_server_url';
+const OP_MODE_KEY = 'karvaan_op_mode';
 const DEFAULT_URL = 'http://localhost:3001';
+
+export type OperatingMode = 'NODE_SERVER' | 'ANDROID_MASTER' | 'WAITER_CLIENT';
+
+export function getOperatingMode(): OperatingMode {
+  const mode = localStorage.getItem(OP_MODE_KEY) as OperatingMode;
+  return mode || 'NODE_SERVER';
+}
+
+export function setOperatingMode(mode: OperatingMode): void {
+  localStorage.setItem(OP_MODE_KEY, mode);
+}
 
 export function getServerUrl(): string {
   // 1. Env variable (set at build time for VPS / production)
@@ -41,6 +53,9 @@ export function clearServerUrl(): void {
 }
 
 export function isServerConfigured(): boolean {
+  const mode = getOperatingMode();
+  if (mode === 'ANDROID_MASTER') return true;
+
   // Configured if either env var is set OR user has saved a URL via Setup Screen
   const envUrl = import.meta.env.VITE_BACKEND_URL as string | undefined;
   if (envUrl && envUrl.trim()) return true;
@@ -48,19 +63,20 @@ export function isServerConfigured(): boolean {
   return !!(stored && stored.trim());
 }
 
-/**
- * Probe the server URL to check if the backend is reachable.
- * Returns true if /health endpoint responds within 3 seconds.
- */
 export async function probeServer(url: string): Promise<{ ok: boolean; latencyMs: number }> {
   const start = Date.now();
   try {
-    const cleanUrl = url.trim().replace(/\/$/, '');
+    let cleanUrl = url.trim().replace(/\/$/, '');
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = `http://${cleanUrl}`;
+    }
     const res = await fetch(`${cleanUrl}/health`, {
       signal: AbortSignal.timeout(3000),
     });
     return { ok: res.ok, latencyMs: Date.now() - start };
-  } catch {
+  } catch (e) {
+    console.error('Probe failed:', e);
     return { ok: false, latencyMs: Date.now() - start };
   }
 }
+

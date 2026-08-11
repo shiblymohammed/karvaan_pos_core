@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Menu as MenuIcon, Users, Settings, LogOut, Keyboard, BookOpen, Package, CloudOff, LayoutGrid } from 'lucide-react';
 import { getQueueCount, getPendingActions, clearAction } from '../services/offlineQueue';
-import { socket } from '../services/socket';
+import { socket, emitAction } from '../services/socket';
 
 
 import { AdminDashboard } from './Admin/AdminDashboard';
@@ -36,7 +36,7 @@ export const AdminPortalScreen: React.FC = () => {
       return;
     }
     for (const action of pending) {
-      socket.emit(action.type, action.payload);
+      emitAction(action.type, action.payload);
       if (action.id) await clearAction(action.id);
     }
     alert(`Successfully synced ${pending.length} actions.`);

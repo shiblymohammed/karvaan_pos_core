@@ -17,8 +17,11 @@ import {
   Wifi, WifiOff, ShieldCheck, Sun, Moon, Clock, Sparkles, Settings, Lock, Bike
 } from 'lucide-react';
 import { initSocketListeners } from './services/socket';
+import { socket } from './services/socket';
+import { isServerConfigured, getOperatingMode } from './services/serverConfig';
+import { startAndroidMasterServer, stopAndroidMasterServer } from './services/localServer';
+import { startMasterSyncPolling, stopMasterSyncPolling } from './services/socket';
 import { SetupScreen } from './screens/SetupScreen';
-import { isServerConfigured } from './services/serverConfig';
 
 export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY';
 
@@ -56,6 +59,21 @@ export const App: React.FC = () => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!showSetup) {
+      const mode = getOperatingMode();
+      if (mode === 'ANDROID_MASTER') {
+        startAndroidMasterServer();
+      } else if (mode === 'WAITER_CLIENT') {
+        startMasterSyncPolling();
+      }
+    }
+    return () => {
+      stopAndroidMasterServer();
+      stopMasterSyncPolling();
+    };
+  }, [showSetup]);
 
   if (showSetup) {
     return <SetupScreen onComplete={() => setShowSetup(false)} />;

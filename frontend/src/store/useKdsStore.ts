@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { socket } from '../services/socket';
+import { socket, emitAction } from '../services/socket';
 
 export interface KdsTicket {
   id: string;
@@ -67,7 +67,7 @@ export const useKdsStore = create<KdsState>()(
       ],
     }));
     // Broadcast to all other devices
-    socket.emit('fire_order', { ...ticket, status: 'COOKING', elapsedMinutes: 0 });
+    emitAction('fire_order', { ...ticket, status: 'COOKING', elapsedMinutes: 0 });
   },
 
   updateTicketStatus: (id, status) => {
@@ -75,7 +75,7 @@ export const useKdsStore = create<KdsState>()(
       tickets: state.tickets.map((t) => (t.id === id ? { ...t, status } : t)),
     }));
     // Broadcast to all other devices
-    socket.emit('update_kds_status', { orderId: id, status });
+    emitAction('update_kds_status', { orderId: id, status });
   },
 
   updateElapsedTimes: () => {
@@ -102,6 +102,7 @@ export const useKdsStore = create<KdsState>()(
       }),
     }));
     // Broadcast to all other devices
-    socket.emit('clear_table_tickets', { tableName });
+    emitAction('clear_table_tickets', { tableName });
   },
 }), { name: 'pos-kds-storage' }));
+

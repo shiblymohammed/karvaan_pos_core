@@ -3,7 +3,8 @@ import {
   Wifi, WifiOff, Check, X, Loader2, Smartphone,
   AlertCircle, Server, QrCode, Copy, RefreshCw, ArrowRight
 } from 'lucide-react';
-import { getServerUrl, setServerUrl, probeServer } from '../services/serverConfig';
+import { getServerUrl, setServerUrl, probeServer, getOperatingMode, setOperatingMode, OperatingMode } from '../services/serverConfig';
+import { getMasterServerUrl } from '../services/localServer';
 import QRCode from 'qrcode';
 
 type ProbeStatus = 'idle' | 'probing' | 'ok' | 'fail';
@@ -11,6 +12,21 @@ type ProbeStatus = 'idle' | 'probing' | 'ok' | 'fail';
 interface SetupScreenProps {
   onComplete: () => void;
 }
+
+const IPDisplay = () => {
+  const [ip, setIp] = useState('Starting server...');
+  useEffect(() => {
+    const int = setInterval(() => {
+      const url = getMasterServerUrl();
+      if (url) {
+        setIp(url);
+        clearInterval(int);
+      }
+    }, 1000);
+    return () => clearInterval(int);
+  }, []);
+  return <>{ip}</>;
+};
 
 // ─── QR Code Canvas ───────────────────────────────────────────────────────────
 const QRCanvas: React.FC<{ value: string }> = ({ value }) => {
@@ -39,12 +55,23 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
   const [showQR, setShowQR] = useState(false);
   const [networkIPs, setNetworkIPs] = useState<string[]>([]);
 
+  const [opMode, setOpMode] = useState<OperatingMode>(getOperatingMode());
+  const [masterIp, setMasterIp] = useState<string>('');
+
   // Try to auto-detect local IPs from backend on load
   useEffect(() => {
     fetch(`${getServerUrl()}/health`)
       .then(r => r.json())
       .then(d => { if (d.localIPs) setNetworkIPs(d.localIPs); })
       .catch(() => {});
+      
+    // If in capacitor, try to get IP
+    if ((window as any).Capacitor) {
+      import('@capacitor/network').then(({ Network }) => {
+        // network plugin doesn't give local IP easily in all versions, 
+        // but we'll mock it or use an alternative if available
+      }).catch(() => {});
+    }
   }, []);
 
   const handleProbe = async () => {
@@ -62,12 +89,19 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
   };
 
   const handleSave = () => {
-    setServerUrl(url);
+    setOperatingMode(opMode);
+    if (opMode !== 'ANDROID_MASTER') {
+      let finalUrl = url.trim().replace(/\/$/, '');
+      if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+        finalUrl = `http://${finalUrl}`;
+      }
+      setServerUrl(finalUrl);
+    }
     window.location.reload();
   };
 
   const handleSkip = () => {
-    // Use localhost (single PC mode)
+    setOperatingMode('NODE_SERVER');
     onComplete();
   };
 
@@ -95,12 +129,49 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
           </div>
           <h1 className="text-3xl font-black text-pos-text">Network Setup</h1>
           <p className="text-pos-text-muted font-bold mt-2">
-            Configure which backend server this device connects to.
-            <br />
-            <span className="text-emerald-600 dark:text-emerald-400">Skip this step if running everything on one PC.</span>
+            Configure how this device connects to the POS network.
           </p>
         </div>
 
+        {/* Mode Selection */}
+        <div className="bg-pos-card p-6 rounded-3xl border border-pos-border shadow-sm mb-6">
+          <label className="block text-sm font-black text-pos-text uppercase tracking-wider mb-3">
+            Operating Mode
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <button
+              onClick={() => setOpMode('NODE_SERVER')}
+              className={`p-4 rounded-2xl border text-left transition-all ${
+                opMode === 'NODE_SERVER' || opMode === 'WAITER_CLIENT'
+                  ? 'border-emerald-500 bg-emerald-50/10 shadow-glow-accent'
+                  : 'border-pos-border bg-pos-bg hover:border-pos-accent/50'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Server className={`h-5 w-5 ${opMode === 'NODE_SERVER' ? 'text-emerald-500' : 'text-pos-text-muted'}`} />
+                <span className="font-bold text-pos-text">Standard (Node Server)</span>
+              </div>
+              <p className="text-xs text-pos-text-muted font-semibold">Connect to a Windows PC or Waiter Client</p>
+            </button>
+            
+            <button
+              onClick={() => setOpMode('ANDROID_MASTER')}
+              className={`p-4 rounded-2xl border text-left transition-all ${
+                opMode === 'ANDROID_MASTER'
+                  ? 'border-blue-500 bg-blue-50/10 shadow-[0_0_15px_rgba(59,130,246,0.15)]'
+                  : 'border-pos-border bg-pos-bg hover:border-blue-500/50'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Smartphone className={`h-5 w-5 ${opMode === 'ANDROID_MASTER' ? 'text-blue-500' : 'text-pos-text-muted'}`} />
+                <span className="font-bold text-pos-text">Android Master</span>
+              </div>
+              <p className="text-xs text-pos-text-muted font-semibold">This tablet hosts the local network</p>
+            </button>
+          </div>
+        </div>
+
+        {opMode !== 'ANDROID_MASTER' ? (
         <div className="bg-pos-card rounded-2xl border border-pos-border shadow-lg p-6 space-y-6">
 
           {/* Server URL Input */}
@@ -244,6 +315,36 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
             </button>
           </div>
         </div>
+        ) : (
+          <div className="bg-pos-card p-6 rounded-3xl border border-pos-border shadow-sm">
+            <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
+              <div className="h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                <Smartphone className="h-8 w-8" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-pos-text">Android Master Mode</h3>
+                <p className="text-sm font-semibold text-pos-text-muted mt-2 max-w-md mx-auto">
+                  This tablet is acting as the server.
+                  <br/><br/>
+                  <span className="text-amber-500 font-bold">Important: The app must stay open and the screen must stay on for waiters to send orders.</span>
+                </p>
+                <div className="mt-6 p-4 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl border border-emerald-200 dark:border-emerald-800">
+                   <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 mb-1 uppercase tracking-wider">Waiter Phone Connection URL</p>
+                   <p className="text-2xl font-black text-emerald-800 dark:text-emerald-300">
+                      {/* We could poll getMasterServerUrl() here, but for now we'll just display a dynamic prompt since the user already knows how to find it or we can just fetch it in useEffect */}
+                      <IPDisplay />
+                   </p>
+                </div>
+              </div>
+              <button
+                onClick={handleSave}
+                className="w-full mt-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-glow-accent cursor-pointer"
+              >
+                Restart / Refresh Server <ArrowRight className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Footer note */}
         <p className="text-center text-xs font-bold text-pos-text-muted mt-4">

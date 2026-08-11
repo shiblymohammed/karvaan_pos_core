@@ -4,7 +4,7 @@ import { useStaffStore } from '../store/useStaffStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useKdsStore } from '../store/useKdsStore';
 import { useLedgerStore } from '../store/useLedgerStore';
-import { socket } from '../services/socket';
+import { socket, emitAction } from '../services/socket';
 import { 
   Bike, MapPin, Phone, User, CheckCircle2, X, Search, 
   Package, Navigation, ChevronRight, AlertCircle, Banknote, QrCode, CreditCard, Wallet, Clock, DollarSign, Check, RotateCcw
@@ -354,7 +354,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
 
         {/* Search + filter + sync */}
         <div className="flex items-center gap-2 ml-auto">
-          <button onClick={() => { socket.emit('sync_delivery_orders', orders); alert('📡 Broadcasted delivery orders to all connected POS screens!'); }} className="px-3 py-1.5 text-xs font-black rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-sm flex items-center gap-1 cursor-pointer transition-colors" title="Push this terminal's orders to all other browsers">
+          <button onClick={() => { emitAction('sync_delivery_orders', orders); alert('📡 Broadcasted delivery orders to all connected POS screens!'); }} className="px-3 py-1.5 text-xs font-black rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-sm flex items-center gap-1 cursor-pointer transition-colors" title="Push this terminal's orders to all other browsers">
             🔄 Sync Screens
           </button>
           <button onClick={() => setFilterStatus(f => f === 'ACTIVE' ? 'ALL' : 'ACTIVE')} className={`px-3 py-1.5 text-xs font-black rounded-xl border cursor-pointer transition-colors ${filterStatus === 'ALL' ? 'bg-pos-accent text-white border-pos-accent' : 'bg-pos-card text-pos-text-muted border-pos-border'}`}>
@@ -649,4 +649,5 @@ export const DeliveryDispatchScreen: React.FC = () => {
     </div>
   );
 };
+
 

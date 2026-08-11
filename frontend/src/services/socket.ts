@@ -33,15 +33,13 @@ export function emitSettleBill(billData: {
   customerPhone?: string;
   items?: any[];
 }) {
-  if (socket.connected) {
-    socket.emit('settle_bill', billData);
-    console.log(`💾 [POS] Bill ${billData.billNumber} emitted to backend for persistence.`);
-  } else {
-    enqueueAction('settle_bill', billData);
-    console.log(`📡 [POS] Offline! Bill ${billData.billNumber} queued in IndexedDB.`);
-  }
+  emitAction('settle_bill', billData);
+  console.log(`💾 [POS] Bill ${billData.billNumber} emitted for persistence via emitAction.`);
 }
 
+
+import { getOperatingMode } from './serverConfig';
+import { apiClient } from './apiClient';
 
 socket.on('connect', async () => {
   console.log('📡 [POS] Connected to Backend WebSocket:', socket.id);
@@ -51,15 +49,64 @@ socket.on('connect', async () => {
   if (pendingActions.length > 0) {
     console.log(`🚀 [POS] Flushing ${pendingActions.length} pending actions from offline queue...`);
     for (const action of pendingActions) {
-      socket.emit(action.type, action.payload);
+      emitAction(action.type, action.payload);
       if (action.id) await clearAction(action.id);
     }
   }
-
-  // 2. We no longer blindly push local state on connect because the server is the source of truth.
-  // The server will send `sync_master_state` shortly after connection to hydrate this client.
-  // Any offline actions were already flushed via the offline queue above.
 });
+
+/**
+ * Universal emitter for actions.
+ * If NODE_SERVER: Uses WebSocket.
+ * If WAITER_CLIENT: Uses HTTP POST to the Android Master's local server.
+ * If ANDROID_MASTER: Directly executes locally (handled internally by apiClient).
+ */
+export function emitAction(type: string, payload: any) {
+  const mode = getOperatingMode();
+  
+  if (mode === 'NODE_SERVER') {
+    if (socket.connected) {
+      socket.emit(type, payload);
+    } else {
+      enqueueAction(type, payload);
+    }
+  } else {
+    // WAITER_CLIENT or ANDROID_MASTER
+    apiClient.post('/api/action', { type, payload })
+      .catch(err => {
+        console.warn(`[Client] Failed to send action ${type} to master:`, err);
+        enqueueAction(type, payload);
+      });
+  }
+}
+
+// ─── Master Sync Polling (For Waiter Client Mode) ───────────────────────────
+let syncInterval: any = null;
+
+export function startMasterSyncPolling() {
+  if (getOperatingMode() !== 'WAITER_CLIENT') return;
+  if (syncInterval) return;
+
+  console.log('🔄 [Waiter Client] Starting short-polling to Android Master...');
+  syncInterval = setInterval(async () => {
+    try {
+      const state = await apiClient.get('/api/sync');
+      if (state && state.success) {
+        // We will dispatch a local socket event to reuse the existing socket.on listeners
+        (socket as any)._callbacks['$sync_master_state']?.forEach((cb: any) => cb(state.data));
+      }
+    } catch (err) {
+      // Silently fail, tablet might be asleep
+    }
+  }, 3000);
+}
+
+export function stopMasterSyncPolling() {
+  if (syncInterval) {
+    clearInterval(syncInterval);
+    syncInterval = null;
+  }
+}
 
 socket.on('disconnect', () => {
   console.log('🔌 [POS] Disconnected from Backend WebSocket');

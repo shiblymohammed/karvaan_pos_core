@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useTableStore } from './useTableStore';
 import { useKdsStore } from './useKdsStore';
-import { socket } from '../services/socket';
+import { socket, emitAction } from '../services/socket';
 
 export interface CartItem {
   productId: string;
@@ -209,7 +209,7 @@ export const useCartStore = create<CartState>()(
     });
 
     // Broadcast parked orders to all other devices
-    socket.emit('sync_parked_orders', nextHeldOrders);
+    emitAction('sync_parked_orders', nextHeldOrders);
   },
 
   sendKot: () => {
@@ -269,7 +269,7 @@ export const useCartStore = create<CartState>()(
     });
 
     // Broadcast that this order is no longer parked
-    socket.emit('sync_parked_orders', nextHeldOrders);
+    emitAction('sync_parked_orders', nextHeldOrders);
   },
 
   clearCart: () => {
@@ -293,3 +293,4 @@ if (typeof window !== 'undefined') {
   window.addEventListener('offline', () => useCartStore.setState({ isOffline: true }));
   window.addEventListener('online', () => useCartStore.setState({ isOffline: false }));
 }
+

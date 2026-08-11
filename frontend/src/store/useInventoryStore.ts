@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { socket } from '../services/socket';
+import { socket, emitAction } from '../services/socket';
 
 export interface Ingredient {
   id: string;
@@ -196,7 +196,7 @@ export const useInventoryStore = create<InventoryState>()(
           updatedAt: new Date().toISOString(),
         };
         set((state) => ({ ingredients: [newIng, ...state.ingredients] }));
-        socket.emit('sync_inventory', get().ingredients);
+        emitAction('sync_inventory', get().ingredients);
       },
 
       updateIngredient: (id, updates) => {
@@ -205,7 +205,7 @@ export const useInventoryStore = create<InventoryState>()(
             i.id === id ? { ...i, ...updates, updatedAt: new Date().toISOString() } : i
           ),
         }));
-        socket.emit('sync_inventory', get().ingredients);
+        emitAction('sync_inventory', get().ingredients);
       },
 
       deleteIngredient: (id) => {
@@ -216,8 +216,8 @@ export const useInventoryStore = create<InventoryState>()(
             ingredients: r.ingredients.filter((item) => item.ingredientId !== id),
           })),
         }));
-        socket.emit('sync_inventory', get().ingredients);
-        socket.emit('sync_recipes', get().recipes);
+        emitAction('sync_inventory', get().ingredients);
+        emitAction('sync_recipes', get().recipes);
       },
 
       addStockPO: (id, addedPurchaseUnits, purchaseCostPerPurchaseUnit, vendorName) => {
@@ -238,7 +238,7 @@ export const useInventoryStore = create<InventoryState>()(
             };
           }),
         }));
-        socket.emit('sync_inventory', get().ingredients);
+        emitAction('sync_inventory', get().ingredients);
       },
 
       saveRecipe: (recipe) => {
@@ -253,14 +253,14 @@ export const useInventoryStore = create<InventoryState>()(
           }
           return { recipes: [recipe, ...state.recipes] };
         });
-        socket.emit('sync_recipes', get().recipes);
+        emitAction('sync_recipes', get().recipes);
       },
 
       deleteRecipe: (menuItemName) => {
         set((state) => ({
           recipes: state.recipes.filter((r) => r.menuItemName.toLowerCase() !== menuItemName.toLowerCase()),
         }));
-        socket.emit('sync_recipes', get().recipes);
+        emitAction('sync_recipes', get().recipes);
       },
 
       logWaste: (log) => {
@@ -284,8 +284,8 @@ export const useInventoryStore = create<InventoryState>()(
           ),
           wasteLogs: [newLog, ...state.wasteLogs],
         }));
-        socket.emit('sync_inventory', get().ingredients);
-        socket.emit('sync_waste', get().wasteLogs);
+        emitAction('sync_inventory', get().ingredients);
+        emitAction('sync_waste', get().wasteLogs);
       },
 
       depleteForOrder: (items, orderType) => {
@@ -330,7 +330,7 @@ export const useInventoryStore = create<InventoryState>()(
         });
 
         set({ ingredients: updatedIngredients });
-        socket.emit('sync_inventory', updatedIngredients);
+        emitAction('sync_inventory', updatedIngredients);
       },
 
       restockForOrder: (items, orderType, action = 'RESTOCK', reason = 'CUSTOMER_RETURN', loggedBy = 'Cashier Staff') => {
@@ -397,7 +397,7 @@ export const useInventoryStore = create<InventoryState>()(
 
         if (action === 'RESTOCK') {
           set({ ingredients: updatedIngredients });
-          socket.emit('sync_inventory', updatedIngredients);
+          emitAction('sync_inventory', updatedIngredients);
         }
       },
 
@@ -441,3 +441,4 @@ export const useInventoryStore = create<InventoryState>()(
     { name: 'pos-inventory-storage' }
   )
 );
+
