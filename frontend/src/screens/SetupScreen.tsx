@@ -201,7 +201,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
 
             {/* Status */}
             {status === 'ok' && (
-              <div className="flex items-center gap-2 mt-2 text-emerald-600 dark:text-emerald-400">
+              <div className="flex items-center gap-2 mt-2 text-emerald-600">
                 <Check className="h-4 w-4" />
                 <span className="text-sm font-bold">Connected! Latency: {latency}ms</span>
               </div>
@@ -264,12 +264,12 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
                 </div>
 
                 {/* How to use on phone */}
-                <div className="mt-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
                   <div className="flex items-start gap-2">
                     <Smartphone className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                     <div>
-                      <p className="text-xs font-black text-amber-700 dark:text-amber-400 mb-1">How to configure a tablet or phone:</p>
-                      <ol className="text-xs font-bold text-amber-700 dark:text-amber-400 space-y-0.5 list-decimal list-inside">
+                      <p className="text-xs font-black text-amber-700 mb-1">How to configure a tablet or phone:</p>
+                      <ol className="text-xs font-bold text-amber-700 space-y-0.5 list-decimal list-inside">
                         <li>Open the POS app on the tablet</li>
                         <li>It will show this Setup Screen automatically</li>
                         <li>Scan the QR code or enter the URL manually</li>
@@ -283,16 +283,16 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
           </div>
 
           {/* What this device will be used as */}
-          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-start gap-3">
-              <Server className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+              <Server className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
               <div>
-                <p className="text-sm font-black text-blue-700 dark:text-blue-300 mb-1">
+                <p className="text-sm font-black text-blue-700 mb-1">
                   {url === 'http://localhost:3001' || url.includes('localhost')
                     ? '🖥️ Single PC Mode — Backend runs on this machine'
                     : '📡 Multi-Terminal Mode — Connecting to remote server'}
                 </p>
-                <p className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                <p className="text-xs font-bold text-blue-600">
                   {url === 'http://localhost:3001' || url.includes('localhost')
                     ? 'All data stays on this PC. Best for single billing counter setup.'
                     : 'This device will sync orders and KDS in real-time with the cashier PC.'}
@@ -328,9 +328,9 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
                   <br/><br/>
                   <span className="text-amber-500 font-bold">Important: The app must stay open and the screen must stay on for waiters to send orders.</span>
                 </p>
-                <div className="mt-6 p-4 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl border border-emerald-200 dark:border-emerald-800">
-                   <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 mb-1 uppercase tracking-wider">Waiter Phone Connection URL</p>
-                   <p className="text-2xl font-black text-emerald-800 dark:text-emerald-300">
+                <div className="mt-6 p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
+                   <p className="text-xs font-bold text-emerald-700 mb-1 uppercase tracking-wider">Waiter Phone Connection URL</p>
+                   <p className="text-2xl font-black text-emerald-800">
                       {/* We could poll getMasterServerUrl() here, but for now we'll just display a dynamic prompt since the user already knows how to find it or we can just fetch it in useEffect */}
                       <IPDisplay />
                    </p>

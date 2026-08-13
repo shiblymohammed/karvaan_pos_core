@@ -63,7 +63,7 @@ export const KDSScreen: React.FC = () => {
     if (orderType === 'DELIVERY') return 'bg-purple-600 text-white';
     if (mins >= 15) return 'bg-rose-600 text-white';
     if (mins >= 10) return 'bg-amber-500 text-slate-900';
-    return 'bg-slate-800 dark:bg-slate-700 text-white';
+    return 'bg-slate-800 text-white';
   };
 
   const getSlaBadgeStyle = (mins: number, status: string) => {
@@ -94,14 +94,14 @@ export const KDSScreen: React.FC = () => {
       {/* KDS Header Bar */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-pos-sidebar p-5 rounded-2xl border border-pos-border shadow-glass transition-colors duration-300">
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-teal-100 dark:bg-teal-950/80 text-teal-800 dark:text-teal-300 rounded-xl border border-teal-300 dark:border-teal-500/40">
+          <div className="p-3 bg-teal-100 text-teal-800 rounded-xl border border-teal-300">
             <Flame className="h-6 w-6 text-pos-accent animate-bounce" />
           </div>
           <div>
             <h2 className="text-xl font-extrabold text-pos-text flex items-center gap-2">
               <span>Kitchen Display System (KDS)</span>
               <span
-                className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40`}
+                className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300`}
               >
                 ● Live Local Cache
               </span>
@@ -141,7 +141,7 @@ export const KDSScreen: React.FC = () => {
             }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold border transition-all shadow-2xs active:scale-95 cursor-pointer ${
               audioEnabled
-                ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40'
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                 : 'bg-pos-card text-pos-text-muted border-pos-border'
             }`}
             title="Toggle Web Audio Bell Chime for kitchen staff"
@@ -229,8 +229,8 @@ export const KDSScreen: React.FC = () => {
                         <div className="flex-1">
                           <span className="font-black text-pos-text text-base leading-snug block">{item.name}</span>
                           {item.notes && (
-                            <div className="text-sm font-black uppercase tracking-wide text-amber-950 dark:text-amber-100 bg-amber-200 dark:bg-amber-950/80 border-2 border-amber-400 dark:border-amber-500/60 px-3 py-1.5 rounded-xl mt-2 flex items-center gap-2 shadow-sm">
-                              <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-400 shrink-0 animate-pulse" />
+                            <div className="text-sm font-black uppercase tracking-wide text-amber-950 bg-amber-200 border-2 border-amber-400 px-3 py-1.5 rounded-xl mt-2 flex items-center gap-2 shadow-sm">
+                              <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 animate-pulse" />
                               <span>⚠️ {item.notes}</span>
                             </div>
                           )}

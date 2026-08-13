@@ -1,31 +1,44 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
-  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        'pos-bg': 'var(--pos-bg)',
-        'pos-sidebar': 'var(--pos-sidebar)',
-        'pos-card': 'var(--pos-card)',
-        'pos-card-hover': 'var(--pos-card-hover)',
-        'pos-text': 'var(--pos-text)',
-        'pos-text-muted': 'var(--pos-text-muted)',
-        'pos-border': 'var(--pos-border)',
-        'pos-input': 'var(--pos-input)',
-        'pos-accent': '#10b981', // Vibrant Turquoise / Emerald Green accent
-        'pos-accent-hover': '#059669', // Deep Teal / Emerald hover
-        'pos-success': '#10b981',
-        'pos-warning': '#f97316',
-        'pos-danger': '#ef4444',
+        'kv-primary': 'var(--kv-primary)',
+        'kv-creme': 'var(--kv-bg-creme)',
+        'kv-surface': 'var(--kv-surface)',
+        'kv-dark': 'var(--kv-text-dark)',
+        'kv-muted': 'var(--kv-text-muted)',
+        'kv-border': 'var(--kv-border)',
+        'pos-bg': '#d6d6f8',
+        'pos-card': '#ffffff',
+        'pos-text': '#0f172a',
+        'pos-text-muted': '#64748b',
+        'pos-border': '#cbd5e1',
+        'pos-accent': '#8cc63f',
+        'pos-card-hover': '#f8fafc',
+        'pos-blue': '#87cdf1',
+        'pos-red': '#d37a75',
       },
       fontFamily: {
         sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
       },
-      boxShadow: {
-        'glass': '0 8px 32px 0 var(--pos-shadow)',
-        'glow-accent': '0 4px 14px 0 rgba(16, 185, 129, 0.25)', // Clean elevation shadow in both light & dark
+      keyframes: {
+        shake: {
+          '0%, 100%': { transform: 'translateX(0) scale(0.96)' },
+          '25%': { transform: 'translateX(-4px) scale(0.96)' },
+          '50%': { transform: 'translateX(4px) scale(0.96)' },
+          '75%': { transform: 'translateX(-4px) scale(0.96)' },
+        },
+        marquee: {
+          '0%': { transform: 'translateX(0%)' },
+          '100%': { transform: 'translateX(-100%)' },
+        }
       },
+      animation: {
+        shake: 'shake 0.2s cubic-bezier(.36,.07,.19,.97) both',
+        marquee: 'marquee 25s linear infinite',
+      }
     },
   },
   plugins: [],

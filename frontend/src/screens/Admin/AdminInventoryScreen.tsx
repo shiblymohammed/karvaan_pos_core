@@ -62,7 +62,7 @@ export const AdminInventoryScreen: React.FC = () => {
 
   // Computed Stats
   const lowStockCount = getLowStockIngredients().length;
-  const totalInventoryValue = ingredients.reduce((sum, i) => sum + (i.currentStock * i.costPerUnit), 0);
+  const totalInventoryValue = ingredients.reduce((sum, i) => sum + (i.currentStock * (i.costPerUnit || 0)), 0);
   const totalWasteLoss = wasteLogs.reduce((sum, w) => sum + w.costLoss, 0);
 
   // Filtered Ingredients
@@ -324,7 +324,7 @@ export const AdminInventoryScreen: React.FC = () => {
                       </div>
                       <div className="flex justify-between items-center mt-1 text-[10px] text-pos-text-muted font-bold">
                         <span>Reorder Level: {ing.reorderLevel} {ing.unit}</span>
-                        <span>₹{ing.costPerUnit.toFixed(2)} / {ing.unit}</span>
+                        <span>₹{(ing.costPerUnit || 0).toFixed(2)} / {ing.unit}</span>
                       </div>
                     </div>
                   </div>

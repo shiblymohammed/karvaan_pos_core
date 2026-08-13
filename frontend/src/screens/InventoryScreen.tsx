@@ -103,7 +103,7 @@ export const InventoryScreen: React.FC = () => {
           {lowStockItems.length > 0 && (
             <button
               onClick={handleQuickRestockAll}
-              className="flex items-center gap-2 px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 rounded-xl font-bold transition-all text-xs shadow-2xs active:scale-95"
+              className="flex items-center gap-2 px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 border border-rose-500/30 rounded-xl font-bold transition-all text-xs shadow-2xs active:scale-95"
               title="Quickly restock all low stock ingredients"
             >
               <RefreshCcw className="h-4 w-4" />
@@ -126,14 +126,14 @@ export const InventoryScreen: React.FC = () => {
 
       {/* Low Stock Alert Banner */}
       {lowStockItems.length > 0 ? (
-        <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-500/50 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+        <div className="bg-rose-50 border border-rose-300 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-rose-500/20 rounded-xl text-rose-600 dark:text-rose-400 shrink-0">
+            <div className="p-2.5 bg-rose-500/20 rounded-xl text-rose-600 shrink-0">
               <AlertTriangle className="h-6 w-6 animate-pulse" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-rose-800 dark:text-rose-300">Low Stock Threshold Warning!</h3>
-              <p className="text-xs text-rose-700 dark:text-rose-200 mt-0.5 font-medium">
+              <h3 className="font-extrabold text-sm text-rose-800">Low Stock Threshold Warning!</h3>
+              <p className="text-xs text-rose-700 mt-0.5 font-medium">
                 {lowStockItems.map((i) => i.name).join(', ')} dropped below minimum safety stock levels.
               </p>
             </div>
@@ -143,14 +143,14 @@ export const InventoryScreen: React.FC = () => {
           </span>
         </div>
       ) : (
-        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-500/50 p-4 rounded-2xl flex items-center justify-between gap-4 shadow-sm">
+        <div className="bg-emerald-50 border border-emerald-300 p-4 rounded-2xl flex items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400">
+            <div className="p-2.5 bg-emerald-500/20 rounded-xl text-emerald-600">
               <CheckCircle className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-emerald-800 dark:text-emerald-300">All Ingredients Optimal</h3>
-              <p className="text-xs text-emerald-700 dark:text-emerald-200 mt-0.5 font-medium">
+              <h3 className="font-extrabold text-sm text-emerald-800">All Ingredients Optimal</h3>
+              <p className="text-xs text-emerald-700 mt-0.5 font-medium">
                 Every recipe item is stocked safely above minimum threshold requirements.
               </p>
             </div>
@@ -189,7 +189,7 @@ export const InventoryScreen: React.FC = () => {
                       <td className="p-4 font-extrabold text-pos-text">{item.name}</td>
                       <td className="p-4 text-pos-text-muted text-xs font-semibold">{item.category}</td>
                       <td className="p-4 font-black text-base">
-                        <span className={isLow ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-emerald-600 dark:text-emerald-400'}>
+                        <span className={isLow ? 'text-rose-600 font-black' : 'text-emerald-600'}>
                           {item.currentStock} {item.unit}
                         </span>
                       </td>
@@ -200,8 +200,8 @@ export const InventoryScreen: React.FC = () => {
                         <span
                           className={`text-[11px] font-extrabold px-2.5 py-1 rounded-md border shadow-2xs ${
                             isLow
-                              ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-500/40'
-                              : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40'
+                              ? 'bg-rose-100 text-rose-800 border-rose-300'
+                              : 'bg-emerald-100 text-emerald-800 border-emerald-300'
                           }`}
                         >
                           {isLow ? '⚠️ Low Stock' : '✅ Optimal'}
@@ -243,8 +243,8 @@ export const InventoryScreen: React.FC = () => {
                   <span
                     className={`text-[11px] font-black px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0 ${
                       log.type === 'IN'
-                        ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40'
-                        : 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-rose-100 text-rose-800 border border-rose-300'
                     }`}
                   >
                     {log.type === 'IN' ? <ArrowDownLeft className="h-3 w-3" /> : <ArrowUpRight className="h-3 w-3" />}

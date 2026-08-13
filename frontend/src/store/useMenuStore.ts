@@ -12,6 +12,7 @@ export interface Product {
   imageEmoji?: string; // Quick emoji icon for visual menu
   imageUrl?: string;   // Base64 data URL for product photo
   gstRate?: number;    // GST percentage e.g. 5.0
+  isTopSelling?: boolean; // Flag for top selling items
 }
 
 export interface Category {
@@ -19,7 +20,8 @@ export interface Category {
   name: string;
   sortOrder: number;
   emoji?: string;      // e.g. "☕", "🍕", "🍔"
-  color?: string;      // Accent color token e.g. "emerald", "amber"
+  color?: string;      // Optional category color
+  imageUrl?: string;   // Base64 data URL for category photo
 }
 
 interface MenuState {
@@ -40,28 +42,28 @@ interface MenuState {
 }
 
 const INITIAL_CATEGORIES: Category[] = [
-  { id: 'cat-all', name: 'All', sortOrder: 0, emoji: '🍽️', color: 'slate' },
-  { id: 'cat-1', name: 'Hot Beverages', sortOrder: 1, emoji: '☕', color: 'amber' },
-  { id: 'cat-2', name: 'Cold Coffee & Shakes', sortOrder: 2, emoji: '🧋', color: 'cyan' },
-  { id: 'cat-3', name: 'Artisan Burgers & Wraps', sortOrder: 3, emoji: '🍔', color: 'orange' },
-  { id: 'cat-4', name: 'Wood-Fired Pizzas', sortOrder: 4, emoji: '🍕', color: 'red' },
-  { id: 'cat-5', name: 'Main Course & Biryani', sortOrder: 5, emoji: '🍛', color: 'yellow' },
-  { id: 'cat-6', name: 'Desserts & Bakery', sortOrder: 6, emoji: '🍰', color: 'pink' },
+  { id: 'cat-all', name: 'All', sortOrder: 0, emoji: '🍽️' },
+  { id: 'cat-1', name: 'Hot Beverages', sortOrder: 1, emoji: '☕' },
+  { id: 'cat-2', name: 'Cold Coffee & Shakes', sortOrder: 2, emoji: '🧋' },
+  { id: 'cat-3', name: 'Artisan Burgers & Wraps', sortOrder: 3, emoji: '🍔' },
+  { id: 'cat-4', name: 'Wood-Fired Pizzas', sortOrder: 4, emoji: '🍕' },
+  { id: 'cat-5', name: 'Main Course & Biryani', sortOrder: 5, emoji: '🍛' },
+  { id: 'cat-6', name: 'Desserts & Bakery', sortOrder: 6, emoji: '🍰' },
 ];
 
 const INITIAL_PRODUCTS: Product[] = [
-  { id: '1', name: 'Caramel Macchiato', price: 180, category: 'Hot Beverages', prepTime: 5, isAvailable: true, gstRate: 5, imageEmoji: '☕' },
-  { id: '2', name: 'Masala Chai Pot', price: 120, category: 'Hot Beverages', prepTime: 6, isAvailable: true, gstRate: 5, imageEmoji: '🍵' },
-  { id: '3', name: 'Hazelnut Cold Coffee', price: 220, category: 'Cold Coffee & Shakes', prepTime: 7, isAvailable: true, gstRate: 5, imageEmoji: '🧋' },
-  { id: '4', name: 'Belgian Chocolate Shake', price: 250, category: 'Cold Coffee & Shakes', prepTime: 8, isAvailable: true, gstRate: 5, imageEmoji: '🥤' },
-  { id: '5', name: 'Smoked Chicken Burger', price: 290, category: 'Artisan Burgers & Wraps', prepTime: 12, isAvailable: true, gstRate: 5, imageEmoji: '🍔' },
-  { id: '6', name: 'Paneer Tikka Wrap', price: 240, category: 'Artisan Burgers & Wraps', prepTime: 10, isAvailable: true, gstRate: 5, imageEmoji: '🌯' },
-  { id: '7', name: 'Margherita Pepperoni Pizza', price: 480, category: 'Wood-Fired Pizzas', prepTime: 15, isAvailable: true, gstRate: 5, imageEmoji: '🍕' },
-  { id: '8', name: 'Four Cheese Truffle Pizza', price: 520, category: 'Wood-Fired Pizzas', prepTime: 16, isAvailable: true, gstRate: 5, imageEmoji: '🍕' },
-  { id: '9', name: 'Hyderabadi Chicken Biryani', price: 380, category: 'Main Course & Biryani', prepTime: 14, isAvailable: true, gstRate: 5, imageEmoji: '🍛' },
-  { id: '10', name: 'Dal Makhani with Garlic Naan', price: 320, category: 'Main Course & Biryani', prepTime: 12, isAvailable: true, gstRate: 5, imageEmoji: '🫕' },
-  { id: '11', name: 'New York Cheesecake', price: 260, category: 'Desserts & Bakery', prepTime: 3, isAvailable: true, gstRate: 5, imageEmoji: '🍰' },
-  { id: '12', name: 'Warm Chocolate Lava Cake', price: 210, category: 'Desserts & Bakery', prepTime: 6, isAvailable: true, gstRate: 5, imageEmoji: '🍫' },
+  { id: '1', name: 'Caramel Macchiato', price: 180, category: 'Hot Beverages', prepTime: 5, isAvailable: true, gstRate: 5, isTopSelling: true, imageEmoji: '☕', imageUrl: 'https://images.unsplash.com/photo-1485808191679-5f86510681a2?q=80&w=300&auto=format&fit=crop' },
+  { id: '2', name: 'Masala Chai Pot', price: 120, category: 'Hot Beverages', prepTime: 6, isAvailable: true, gstRate: 5, isTopSelling: true, imageEmoji: '🍵', imageUrl: 'https://images.unsplash.com/photo-1576092762791-dd9e2220afa1?q=80&w=300&auto=format&fit=crop' },
+  { id: '3', name: 'Hazelnut Cold Coffee', price: 220, category: 'Cold Coffee & Shakes', prepTime: 7, isAvailable: true, gstRate: 5, imageEmoji: '🧋', imageUrl: 'https://images.unsplash.com/photo-1461023058943-0708e5bd25ce?q=80&w=300&auto=format&fit=crop' },
+  { id: '4', name: 'Belgian Chocolate Shake', price: 250, category: 'Cold Coffee & Shakes', prepTime: 8, isAvailable: true, gstRate: 5, imageEmoji: '🥤', imageUrl: 'https://images.unsplash.com/photo-1572490122747-3968b75bb8ef?q=80&w=300&auto=format&fit=crop' },
+  { id: '5', name: 'Smoked Chicken Burger', price: 290, category: 'Artisan Burgers & Wraps', prepTime: 12, isAvailable: true, gstRate: 5, isTopSelling: true, imageEmoji: '🍔', imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=300&auto=format&fit=crop' },
+  { id: '6', name: 'Paneer Tikka Wrap', price: 240, category: 'Artisan Burgers & Wraps', prepTime: 10, isAvailable: true, gstRate: 5, imageEmoji: '🌯', imageUrl: 'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?q=80&w=300&auto=format&fit=crop' },
+  { id: '7', name: 'Margherita Pepperoni Pizza', price: 480, category: 'Wood-Fired Pizzas', prepTime: 15, isAvailable: true, gstRate: 5, isTopSelling: true, imageEmoji: '🍕', imageUrl: 'https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?q=80&w=300&auto=format&fit=crop' },
+  { id: '8', name: 'Truffle Mushroom Pizza', price: 520, category: 'Wood-Fired Pizzas', prepTime: 15, isAvailable: false, gstRate: 5, imageEmoji: '🍄', imageUrl: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=300&auto=format&fit=crop' },
+  { id: '9', name: 'Awadhi Mutton Biryani', price: 450, category: 'Main Course & Biryani', prepTime: 20, isAvailable: true, gstRate: 5, isTopSelling: true, imageEmoji: '🥘', imageUrl: 'https://images.unsplash.com/photo-1631515243349-e0cb75fb8d3a?q=80&w=300&auto=format&fit=crop' },
+  { id: '10', name: 'Butter Chicken Masala', price: 380, category: 'Main Course & Biryani', prepTime: 18, isAvailable: true, gstRate: 5, imageEmoji: '🍛', imageUrl: 'https://images.unsplash.com/photo-1603894584373-5ac82b6ae3a3?q=80&w=300&auto=format&fit=crop' },
+  { id: '11', name: 'New York Cheesecake', price: 280, category: 'Desserts & Bakery', prepTime: 5, isAvailable: true, gstRate: 5, isTopSelling: true, imageEmoji: '🍰', imageUrl: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?q=80&w=300&auto=format&fit=crop' },
+  { id: '12', name: 'Dark Chocolate Brownie', price: 190, category: 'Desserts & Bakery', prepTime: 5, isAvailable: true, gstRate: 5, imageEmoji: '🍫', imageUrl: 'https://images.unsplash.com/photo-1606890737304-57a1ca8a5b62?q=80&w=300&auto=format&fit=crop' },
 ];
 
 export const useMenuStore = create<MenuState>()(

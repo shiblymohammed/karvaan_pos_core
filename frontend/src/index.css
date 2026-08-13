@@ -3,116 +3,58 @@
 @tailwind utilities;
 
 @layer base {
-  :root, html, body, .light {
-    --pos-bg: #f8fafc;
-    --pos-sidebar: #ffffff;
-    --pos-card: #ffffff;
-    --pos-card-hover: #f1f5f9;
-    --pos-text: #0f172a;
-    --pos-text-muted: #475569;
-    --pos-border: #e2e8f0;
-    --pos-input: #f8fafc;
-    --pos-shadow: rgba(15, 23, 42, 0.08);
+  :root, html, body {
+    --kv-primary: #8cc63f;
+    --kv-primary-hover: #7ab036;
+    --kv-bg-creme: #fdfbf7;
+    --kv-surface: #ffffff;
+    --kv-text-dark: #1a2b3c;
+    --kv-text-muted: #64748b;
+    --kv-border: #e2e8f0;
   }
 
-  :root.dark, html.dark, body.dark, .dark {
-    --pos-bg: #090d16 !important;
-    --pos-sidebar: #0f172a !important;
-    --pos-card: #1e293b !important;
-    --pos-card-hover: #334155 !important;
-    --pos-text: #f8fafc !important;
-    --pos-text-muted: #94a3b8 !important;
-    --pos-border: #334155 !important;
-    --pos-input: #0f172a !important;
-    --pos-shadow: rgba(0, 0, 0, 0.5) !important;
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0;
   }
 
   body {
-    background-color: var(--pos-bg) !important;
-    color: var(--pos-text) !important;
+    /* Dark background to prevent white gaps on overscroll for dark screens (Login/Lock) */
+    /* The main POS screen will cover this with its own bg-kv-creme */
+    background-color: #0f172a !important; 
+    color: var(--kv-text-dark) !important;
     font-family: 'Outfit', 'Inter', system-ui, sans-serif;
     transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
   }
 }
 
-/* Custom smooth scrollbar for POS touchscreens */
+/* Hide scrollbars globally for a cleaner POS touchscreen experience */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none;
+}
+* {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
 
-::-webkit-scrollbar-track {
-  background: var(--pos-card);
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(16, 185, 129, 0.4);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(16, 185, 129, 0.8);
-}
-
-/* Glassmorphism utility */
-.glass-panel {
-  background: var(--pos-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--pos-border);
-}
-
-/* 100% Bulletproof Dual-Mode Overrides for Backgrounds, Cards, Sidebars, and Borders */
 @layer utilities {
-  /* LIGHT MODE EXPLICIT FORCED OVERRIDES */
-  .light .bg-pos-bg, html.light .bg-pos-bg, body.light .bg-pos-bg, html:not(.dark) .bg-pos-bg, body:not(.dark) .bg-pos-bg {
-    background-color: #f8fafc !important;
+  .bg-carbon-lines {
+    background-color: #0d212b !important;
+    background-image: url("https://www.transparenttextures.com/patterns/carbon-fibre.png") !important;
   }
-  .light .bg-pos-sidebar, html.light .bg-pos-sidebar, body.light .bg-pos-sidebar, html:not(.dark) .bg-pos-sidebar, body:not(.dark) .bg-pos-sidebar {
-    background-color: #ffffff !important;
-  }
-  .light .bg-pos-card, html.light .bg-pos-card, body.light .bg-pos-card, html:not(.dark) .bg-pos-card, body:not(.dark) .bg-pos-card {
-    background-color: #ffffff !important;
-  }
-  .light .bg-pos-card-hover:hover, html.light .bg-pos-card-hover:hover, body.light .bg-pos-card-hover:hover, html:not(.dark) .bg-pos-card-hover:hover, body:not(.dark) .bg-pos-card-hover:hover {
-    background-color: #f1f5f9 !important;
-  }
-  .light .bg-pos-input, html.light .bg-pos-input, body.light .bg-pos-input, html:not(.dark) .bg-pos-input, body:not(.dark) .bg-pos-input {
-    background-color: #ffffff !important;
-  }
-  .light .border-pos-border, html.light .border-pos-border, body.light .border-pos-border, html:not(.dark) .border-pos-border, body:not(.dark) .border-pos-border {
-    border-color: #e2e8f0 !important;
-  }
-  .light .text-pos-text, html.light .text-pos-text, body.light .text-pos-text, html:not(.dark) .text-pos-text, body:not(.dark) .text-pos-text {
-    color: #0f172a !important;
-  }
-  .light .text-pos-text-muted, html.light .text-pos-text-muted, body.light .text-pos-text-muted, html:not(.dark) .text-pos-text-muted, body:not(.dark) .text-pos-text-muted {
-    color: #475569 !important;
-  }
+}
 
-  /* DARK MODE EXPLICIT FORCED OVERRIDES */
-  .dark .bg-pos-bg, html.dark .bg-pos-bg, body.dark .bg-pos-bg {
-    background-color: #090d16 !important;
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
   }
-  .dark .bg-pos-sidebar, html.dark .bg-pos-sidebar, body.dark .bg-pos-sidebar {
-    background-color: #0f172a !important;
-  }
-  .dark .bg-pos-card, html.dark .bg-pos-card, body.dark .bg-pos-card {
-    background-color: #1e293b !important;
-  }
-  .dark .bg-pos-card-hover:hover, html.dark .bg-pos-card-hover:hover, body.dark .bg-pos-card-hover:hover {
-    background-color: #334155 !important;
-  }
-  .dark .bg-pos-input, html.dark .bg-pos-input, body.dark .bg-pos-input {
-    background-color: #0f172a !important;
-  }
-  .dark .border-pos-border, html.dark .border-pos-border, body.dark .border-pos-border {
-    border-color: #334155 !important;
-  }
-  .dark .text-pos-text, html.dark .text-pos-text, body.dark .text-pos-text {
-    color: #f8fafc !important;
-  }
-  .dark .text-pos-text-muted, html.dark .text-pos-text-muted, body.dark .text-pos-text-muted {
-    color: #94a3b8 !important;
-  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); }
+  20%, 40%, 60%, 80% { transform: translateX(8px); }
 }

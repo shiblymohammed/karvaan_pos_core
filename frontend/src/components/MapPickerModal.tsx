@@ -213,8 +213,8 @@ export const MapPickerModal: React.FC<Props> = ({ initialAddress, onConfirm, onC
         </div>
 
         {/* Instruction banner */}
-        <div className="px-4 py-2 bg-purple-50 dark:bg-purple-950/30 border-b border-purple-100 dark:border-purple-900">
-          <p className="text-[11px] font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
+        <div className="px-4 py-2 bg-purple-50 border-b border-purple-100">
+          <p className="text-[11px] font-bold text-purple-600 flex items-center gap-1.5">
             <span className="w-4 h-4 bg-purple-600 text-white text-[9px] font-black rounded-full flex items-center justify-center shrink-0">!</span>
             Click anywhere on the map to drop a delivery pin. Address auto-fills from the pin location.
           </p>

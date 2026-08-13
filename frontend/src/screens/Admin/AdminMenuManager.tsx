@@ -32,16 +32,16 @@ function compressImage(file: File, maxSize = 200, quality = 0.7): Promise<string
 
 // ─── Emoji colour token → Tailwind colours ────────────────────────────────────
 const COLOR_MAP: Record<string, { bg: string; text: string; border: string; pill: string }> = {
-  slate:   { bg: 'bg-slate-100 dark:bg-slate-900/40',  text: 'text-slate-700 dark:text-slate-300',  border: 'border-slate-300 dark:border-slate-700',  pill: 'bg-slate-500' },
-  amber:   { bg: 'bg-amber-100 dark:bg-amber-900/40',  text: 'text-amber-700 dark:text-amber-300',  border: 'border-amber-300 dark:border-amber-700',  pill: 'bg-amber-500' },
-  cyan:    { bg: 'bg-cyan-100 dark:bg-cyan-900/40',    text: 'text-cyan-700 dark:text-cyan-300',    border: 'border-cyan-300 dark:border-cyan-700',    pill: 'bg-cyan-500' },
-  orange:  { bg: 'bg-orange-100 dark:bg-orange-900/40',text: 'text-orange-700 dark:text-orange-300',border: 'border-orange-300 dark:border-orange-700',pill: 'bg-orange-500' },
-  red:     { bg: 'bg-red-100 dark:bg-red-900/40',      text: 'text-red-700 dark:text-red-300',      border: 'border-red-300 dark:border-red-700',      pill: 'bg-red-500' },
-  yellow:  { bg: 'bg-yellow-100 dark:bg-yellow-900/40',text: 'text-yellow-700 dark:text-yellow-300',border: 'border-yellow-300 dark:border-yellow-700',pill: 'bg-yellow-500' },
-  pink:    { bg: 'bg-pink-100 dark:bg-pink-900/40',    text: 'text-pink-700 dark:text-pink-300',    border: 'border-pink-300 dark:border-pink-700',    pill: 'bg-pink-500' },
-  emerald: { bg: 'bg-emerald-100 dark:bg-emerald-900/40',text:'text-emerald-700 dark:text-emerald-300',border:'border-emerald-300 dark:border-emerald-700',pill:'bg-emerald-500'},
-  purple:  { bg: 'bg-purple-100 dark:bg-purple-900/40',text: 'text-purple-700 dark:text-purple-300',border: 'border-purple-300 dark:border-purple-700',pill: 'bg-purple-500' },
-  blue:    { bg: 'bg-blue-100 dark:bg-blue-900/40',    text: 'text-blue-700 dark:text-blue-300',    border: 'border-blue-300 dark:border-blue-700',    pill: 'bg-blue-500' },
+  slate:   { bg: 'bg-slate-100',  text: 'text-slate-700',  border: 'border-slate-300',  pill: 'bg-slate-500' },
+  amber:   { bg: 'bg-amber-100',  text: 'text-amber-700',  border: 'border-amber-300',  pill: 'bg-amber-500' },
+  cyan:    { bg: 'bg-cyan-100',    text: 'text-cyan-700',    border: 'border-cyan-300',    pill: 'bg-cyan-500' },
+  orange:  { bg: 'bg-orange-100',text: 'text-orange-700',border: 'border-orange-300',pill: 'bg-orange-500' },
+  red:     { bg: 'bg-red-100',      text: 'text-red-700',      border: 'border-red-300',      pill: 'bg-red-500' },
+  yellow:  { bg: 'bg-yellow-100',text: 'text-yellow-700',border: 'border-yellow-300',pill: 'bg-yellow-500' },
+  pink:    { bg: 'bg-pink-100',    text: 'text-pink-700',    border: 'border-pink-300',    pill: 'bg-pink-500' },
+  emerald: { bg: 'bg-emerald-100',text:'text-emerald-700',border:'border-emerald-300',pill:'bg-emerald-500'},
+  purple:  { bg: 'bg-purple-100',text: 'text-purple-700',border: 'border-purple-300',pill: 'bg-purple-500' },
+  blue:    { bg: 'bg-blue-100',    text: 'text-blue-700',    border: 'border-blue-300',    pill: 'bg-blue-500' },
 };
 const COLOR_OPTIONS = Object.keys(COLOR_MAP);
 const EMOJI_PRESETS = ['🍽️','☕','🧋','🍔','🍕','🍛','🍰','🥤','🍹','🥗','🍜','🍣','🍦','🥐','🥪','🫕','🌯','🍫','🍵','🍺','🥂','🧇','🥞','🍩'];
@@ -214,20 +214,34 @@ interface CategoryFormProps {
   title: string;
 }
 const CategoryForm: React.FC<CategoryFormProps> = ({ initial, onSave, onClose, title }) => {
-  const [form, setForm] = useState({ name: '', emoji: '🍽️', color: 'amber', ...initial });
+  const [form, setForm] = useState<Partial<Category>>({ name: '', emoji: '🍽️', imageUrl: '', ...initial });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const dataUrl = await compressImage(file);
+      setForm({ ...form, imageUrl: dataUrl });
+    } catch (err) {
+      console.error('Image compression failed', err);
+    }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
-    onSave({ name: form.name.trim(), emoji: form.emoji, color: form.color });
+    if (!form.name || !form.name.trim()) return;
+    onSave({ name: form.name.trim(), emoji: form.emoji, imageUrl: form.imageUrl });
   };
-
-  const preview = COLOR_MAP[form.color] || COLOR_MAP['amber'];
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-pos-sidebar w-full max-w-md rounded-2xl border border-pos-border shadow-2xl">
-        <div className="flex justify-between items-center px-6 py-4 border-b border-pos-border">
+      <div className="bg-pos-sidebar w-full max-w-md rounded-2xl border border-pos-border shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-pos-border sticky top-0 bg-pos-sidebar z-10">
           <h3 className="text-xl font-black text-pos-text flex items-center gap-2">
             <Tag className="h-5 w-5 text-purple-500" /> {title}
           </h3>
@@ -238,9 +252,13 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ initial, onSave, onClose, t
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Live Preview */}
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${preview.bg} ${preview.border}`}>
-            <span className="text-2xl">{form.emoji}</span>
-            <span className={`font-black text-sm ${preview.text}`}>{form.name || 'Category Preview'}</span>
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-pos-border bg-pos-card">
+            {form.imageUrl ? (
+              <img src={form.imageUrl} alt="Preview" className="w-10 h-10 rounded-lg object-cover" />
+            ) : (
+              <span className="text-2xl">{form.emoji}</span>
+            )}
+            <span className="font-black text-sm text-pos-text">{form.name || 'Category Preview'}</span>
           </div>
 
           <div className="flex gap-3">
@@ -258,19 +276,36 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ initial, onSave, onClose, t
             </div>
           </div>
 
+          {/* Image Upload Zone */}
           <div>
-            <label className={labelCls}>Accent Colour</label>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {COLOR_OPTIONS.map(color => {
-                const c = COLOR_MAP[color];
-                return (
-                  <button key={color} type="button" onClick={() => setForm({ ...form, color })}
-                    className={`w-8 h-8 rounded-full ${c.pill} transition-transform ${form.color === color ? 'ring-2 ring-offset-2 ring-pos-accent scale-110' : 'opacity-70 hover:opacity-100'} cursor-pointer`}
-                    title={color}
-                  />
-                );
-              })}
-            </div>
+            <label className={labelCls}>Category Photo (optional)</label>
+            <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImageUpload} className="hidden" />
+            {form.imageUrl ? (
+              <div className="flex items-center gap-3">
+                <img src={form.imageUrl} alt="Preview" className="w-16 h-16 rounded-xl object-cover border-2 border-pos-border shadow-sm" />
+                <div className="flex flex-col gap-1">
+                  <button type="button" onClick={() => fileInputRef.current?.click()}
+                    className="text-xs font-bold text-pos-accent hover:underline cursor-pointer">Change Image</button>
+                  <button type="button" onClick={() => setForm({ ...form, imageUrl: '' })}
+                    className="text-xs font-bold text-rose-500 hover:underline cursor-pointer flex items-center gap-1">
+                    <Trash className="h-3 w-3" /> Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => fileInputRef.current?.click()}
+                className="w-full py-4 border-2 border-dashed border-pos-border rounded-xl flex flex-col items-center gap-1 hover:border-pos-accent hover:bg-pos-card transition-colors cursor-pointer group">
+                {uploading ? (
+                  <span className="text-xs font-bold text-pos-text-muted animate-pulse">Compressing...</span>
+                ) : (
+                  <>
+                    <ImagePlus className="h-6 w-6 text-pos-text-muted group-hover:text-pos-accent transition-colors" />
+                    <span className="text-xs font-bold text-pos-text-muted group-hover:text-pos-accent">Click to upload photo</span>
+                    <span className="text-[10px] text-pos-text-muted">JPG, PNG — auto-resized to 200×200</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
 
           <div className="pt-4 border-t border-pos-border flex gap-3">
@@ -464,15 +499,15 @@ export const AdminMenuManager: React.FC = () => {
                             {categories.find(c => c.name === prod.category)?.emoji} {prod.category}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-black text-emerald-600 dark:text-emerald-400">₹{prod.price}</td>
+                        <td className="py-3 px-4 font-black text-emerald-600">₹{prod.price}</td>
                         <td className="py-3 px-4 text-xs font-bold text-pos-text-muted">{prod.gstRate ?? 5}%</td>
                         <td className="py-3 px-4 text-xs font-bold text-pos-text-muted">{prod.prepTime}m</td>
                         <td className="py-3 px-4 text-center">
                           <button onClick={() => toggleAvailability(prod.id)}
                             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer border ${
                               prod.isAvailable
-                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100'
-                                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-700'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                : 'bg-rose-50 text-rose-700 border-rose-300'
                             }`}>
                             {prod.isAvailable ? <><Check className="h-3 w-3" /> In Stock</> : <><PowerOff className="h-3 w-3" /> 86'd</>}
                           </button>
@@ -480,11 +515,11 @@ export const AdminMenuManager: React.FC = () => {
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => setProductModal({ open: true, editing: prod })}
-                              className="p-1.5 text-pos-text-muted hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg transition-colors cursor-pointer">
+                              className="p-1.5 text-pos-text-muted hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer">
                               <Edit3 className="h-3.5 w-3.5" />
                             </button>
                             <button onClick={() => setDeleteConfirm({ type: 'product', id: prod.id, name: prod.name })}
-                              className="p-1.5 text-pos-text-muted hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer">
+                              className="p-1.5 text-pos-text-muted hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -553,14 +588,14 @@ export const AdminMenuManager: React.FC = () => {
                   {!isAll && (
                     <div className="flex items-center gap-2">
                       <button onClick={() => setCatModal({ open: true, editing: cat })}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 text-pos-text-muted hover:text-amber-500 rounded-xl text-xs font-black border border-pos-border/60 transition-all cursor-pointer">
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/60 hover:bg-white text-pos-text-muted hover:text-amber-500 rounded-xl text-xs font-black border border-pos-border/60 transition-all cursor-pointer">
                         <Edit3 className="h-3.5 w-3.5" /> Edit
                       </button>
                       <button
                         onClick={() => setDeleteConfirm({ type: 'category', id: cat.id, name: cat.name })}
                         disabled={productCount > 0}
                         title={productCount > 0 ? `Move ${productCount} item(s) to another category first` : 'Delete category'}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/60 dark:bg-black/20 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-pos-text-muted hover:text-rose-500 rounded-xl text-xs font-black border border-pos-border/60 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/60 hover:bg-rose-50 text-pos-text-muted hover:text-rose-500 rounded-xl text-xs font-black border border-pos-border/60 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
                         <Trash2 className="h-3.5 w-3.5" /> Delete
                       </button>
                     </div>
@@ -572,7 +607,7 @@ export const AdminMenuManager: React.FC = () => {
 
           {/* Add Category CTA at bottom */}
           <button onClick={() => setCatModal({ open: true })}
-            className="mt-4 w-full py-3 border-2 border-dashed border-pos-border rounded-2xl text-sm font-black text-pos-text-muted hover:text-pos-text hover:border-purple-400 hover:bg-purple-50/30 dark:hover:bg-purple-950/10 transition-all cursor-pointer flex items-center justify-center gap-2">
+            className="mt-4 w-full py-3 border-2 border-dashed border-pos-border rounded-2xl text-sm font-black text-pos-text-muted hover:text-pos-text hover:border-purple-400 hover:bg-purple-50/30 transition-all cursor-pointer flex items-center justify-center gap-2">
             <Plus className="h-4 w-4" /> Add New Category
           </button>
         </div>
@@ -604,7 +639,7 @@ export const AdminMenuManager: React.FC = () => {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-pos-sidebar rounded-2xl border border-pos-border shadow-2xl p-6 max-w-sm w-full">
             <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/40 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
                 <AlertCircle className="h-5 w-5 text-rose-500" />
               </div>
               <div>

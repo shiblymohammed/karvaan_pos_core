@@ -10,11 +10,11 @@ import { LockScreen } from './screens/LockScreen';
 import { ParcelBoardScreen } from './screens/ParcelBoardScreen';
 import { DeliveryDispatchScreen } from './screens/DeliveryDispatchScreen';
 import { useCartStore } from './store/cartStore';
-import { useThemeStore } from './store/themeStore';
 import { useAuthStore } from './store/useAuthStore';
 import { 
   Utensils, LayoutGrid, Flame, Package, QrCode, 
-  Wifi, WifiOff, ShieldCheck, Sun, Moon, Clock, Sparkles, Settings, Lock, Bike
+  Wifi, WifiOff, ShieldCheck, Clock, Sparkles, Settings, Lock, Bike,
+  ChevronLeft, ChevronRight, ChevronDown, LayoutDashboard, LogOut
 } from 'lucide-react';
 import { initSocketListeners } from './services/socket';
 import { socket } from './services/socket';
@@ -23,34 +23,46 @@ import { startAndroidMasterServer, stopAndroidMasterServer } from './services/lo
 import { startMasterSyncPolling, stopMasterSyncPolling } from './services/socket';
 import { SetupScreen } from './screens/SetupScreen';
 
-export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY';
+export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY' | 'DASHBOARD' | 'SETTINGS';
+
+const navItems = [
+  { id: 'POS', label: 'POS Billing', icon: Utensils, role: 'ALL', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+  { id: 'TABLES', label: 'Floor Plan', icon: LayoutGrid, role: 'ALL', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+  { id: 'KDS', label: 'Kitchen (KDS)', icon: Flame, role: 'ALL', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+  { id: 'PARCEL', label: 'Parcel', icon: Package, role: 'NON_WAITER', gradient: 'from-amber-400 to-orange-500', shadow: 'shadow-[0_4px_12px_rgba(245,158,11,0.4)]', border: 'border-amber-500/50' },
+  { id: 'DELIVERY', label: 'Delivery', icon: Bike, role: 'NON_WAITER', gradient: 'from-purple-400 to-indigo-500', shadow: 'shadow-[0_4px_12px_rgba(168,85,247,0.4)]', border: 'border-purple-500/50' },
+  { id: 'QR', label: 'QR Orders', icon: QrCode, role: 'NON_WAITER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+  { id: 'DASHBOARD', label: 'Dashboard', icon: LayoutDashboard, role: 'ADMIN_MANAGER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+  { id: 'INVENTORY', label: 'Inventory', icon: Package, role: 'ADMIN_MANAGER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+  { id: 'ADMIN', label: 'Settings', icon: Settings, role: 'ADMIN_MANAGER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+];
 
 export const App: React.FC = () => {
   const [activeScreen, setActiveScreen] = useState<ScreenType>('POS');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  
   const { isOffline, toggleOffline, items, selectedTableName } = useCartStore();
-  const { theme, toggleTheme } = useThemeStore();
   const { currentUser, isLocked, lockTerminal, logout } = useAuthStore();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showSetup, setShowSetup] = useState(!isServerConfigured());
 
-  // Enforce DOM class on mount and theme change to guarantee 100% reliable theme toggling
-  useEffect(() => {
-    const root = document.documentElement;
-    const body = document.body;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-      root.classList.remove('light');
-      body.classList.add('dark');
-      body.classList.remove('light');
+  const handleNavClick = (screen: ScreenType) => {
+    // @ts-ignore
+    if (document.startViewTransition) {
+      // @ts-ignore
+      document.startViewTransition(() => setActiveScreen(screen));
     } else {
-      root.classList.remove('dark');
-      root.classList.add('light');
-      body.classList.remove('dark');
-      body.classList.add('light');
+      setActiveScreen(screen);
     }
-  }, [theme]);
+  };
 
-  // Initialize WebSocket listeners for cross-device sync (run once on mount)
+  useEffect(() => {
+    document.documentElement.classList.add('dark');
+    document.documentElement.classList.remove('light');
+    document.body.classList.add('dark');
+    document.body.classList.remove('light');
+  }, []);
+
   useEffect(() => {
     initSocketListeners();
   }, []);
@@ -87,7 +99,6 @@ export const App: React.FC = () => {
     return <LockScreen />;
   }
 
-  // Ensure active screen is allowed for the user. If they are Kitchen and on POS, force to KDS.
   if (currentUser.role === 'KITCHEN' && activeScreen !== 'KDS') {
     setActiveScreen('KDS');
   }
@@ -96,238 +107,182 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-pos-bg text-pos-text flex flex-col font-sans selection:bg-pos-accent selection:text-white transition-colors duration-250">
-      {/* Top Navigation Bar */}
-      <header className="bg-pos-sidebar border-b border-pos-border px-3 py-2 md:px-4 md:h-16 flex flex-wrap md:flex-nowrap items-center justify-between gap-y-2 gap-x-2 shadow-glass z-20 transition-colors duration-250">
-        {/* Brand Title */}
-        <div className="flex items-center gap-3 order-1 shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pos-accent to-teal-600 flex items-center justify-center font-black text-white text-lg shadow-glow-accent shrink-0">
-            K
-          </div>
-          <div className="hidden sm:block">
-            <h1 className="font-extrabold text-base tracking-tight text-pos-text flex items-center gap-2">
-              <span>Karvaan POS Core</span>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
-                v1.0 Pro
-              </span>
-            </h1>
-            <p className="text-[11px] text-pos-text-muted hidden md:block font-medium">
-              3-in-1 Platform • Fast Checkout • Offline-First
-            </p>
+    <div className="flex h-screen bg-carbon-lines text-kv-dark font-sans selection:bg-kv-primary selection:text-white overflow-hidden transition-colors duration-300 p-0 md:py-4 md:pr-4 gap-0 md:gap-4 relative">
+      
+
+
+      {/* Sidebar Navigation */}
+      <aside className={`${isSidebarOpen ? 'w-20 md:w-[220px]' : 'w-16 md:w-[64px]'} bg-transparent flex flex-col shrink-0 transition-all duration-300 z-30 relative`}>
+        {/* Edge Collapse Trigger */}
+        <button 
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="hidden md:flex items-center justify-center h-32 w-5 rounded-r-xl bg-[#0d212b] bg-carbon-lines text-slate-400 hover:bg-[#8cc63f] hover:text-[#0f172a] active:scale-95 transition-all absolute -right-5 top-1/2 -translate-y-1/2 z-50 cursor-pointer drop-shadow-2xl group/notch select-none touch-manipulation"
+        >
+          {isSidebarOpen ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </button>
+        {/* Brand Logo */}
+        <div className="h-16 flex items-center justify-between md:px-5 shrink-0 border-b border-white/5 relative">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <img 
+              src="/logo/karvaan_logo_main.png" 
+              alt="Karvaan POS" 
+              className={`h-6 md:h-7 object-contain drop-shadow-sm transition-all duration-300 ${isSidebarOpen ? 'opacity-100 min-w-[120px]' : 'opacity-0 min-w-0 w-0 hidden md:block'}`}
+            />
+            <span className={`md:hidden text-[#8cc63f] font-black text-2xl tracking-tighter w-full text-center ${isSidebarOpen ? 'hidden' : 'block'}`}>K.</span>
+            {!isSidebarOpen && <span className="hidden md:block text-[#8cc63f] font-black text-2xl tracking-tighter w-full text-center">K.</span>}
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="flex items-center gap-1 bg-pos-card p-1 rounded-xl border border-pos-border shadow-sm order-3 md:order-2 w-full md:w-auto overflow-x-auto no-scrollbar flex-nowrap">
+        <nav className="flex-1 overflow-visible py-4 px-1.5 md:px-2 flex flex-col gap-2 items-center md:items-stretch relative z-40 overscroll-none touch-pan-y scroll-smooth">
           {currentUser.role === 'DELIVERY' ? (
-            <span className="text-xs font-black px-3 py-1.5 bg-purple-500/20 text-purple-400 rounded-lg border border-purple-500/30 flex items-center gap-1.5 shadow-sm">
-              <Bike className="h-4 w-4 text-purple-400" /> Delivery Rider Portal
+            <span className="text-xs font-black px-4 py-3 bg-purple-500/10 text-purple-400 rounded-xl border border-purple-500/20 flex items-center gap-3">
+              <Bike className="h-6 w-6 text-purple-400 shrink-0" /> <span className={`transition-all duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 hidden'}`}>Delivery Rider</span>
             </span>
           ) : currentUser.role === 'KITCHEN' ? (
-            <span className="text-xs font-black px-3 py-1.5 bg-amber-500/20 text-amber-400 rounded-lg border border-amber-500/30 flex items-center gap-1.5 shadow-sm">
-              <Flame className="h-4 w-4 text-amber-400" /> KDS Kitchen Monitor
+            <span className="text-xs font-black px-4 py-3 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20 flex items-center gap-3">
+              <Flame className="h-6 w-6 text-amber-400 shrink-0" /> <span className={`transition-all duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 hidden'}`}>Kitchen Monitor</span>
             </span>
           ) : (
             <>
-              <button
-                onClick={() => setActiveScreen('POS')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeScreen === 'POS'
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm'
-                    : 'text-pos-text-muted hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 dark:hover:text-emerald-400'
-                }`}
-              >
-                <Utensils className="h-4 w-4 shrink-0" />
-                <span className="hidden md:inline">POS Billing</span>
-                <span className="md:hidden">POS</span>
-                {items.length > 0 && (
-                  <span className="w-4.5 h-4.5 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center font-black shadow-sm">
-                    {items.length}
-                  </span>
-                )}
-              </button>
+              {navItems.map((item, index) => {
+                if (item.role === 'NON_WAITER' && currentUser.role === 'WAITER') return null;
+                if (item.role === 'ADMIN_MANAGER' && currentUser.role !== 'ADMIN' && currentUser.role !== 'MANAGER') return null;
+                
+                const isActive = activeScreen === item.id;
+                
+                return (
+                  <React.Fragment key={item.id}>
+                    {item.id === 'DASHBOARD' && <div className="my-2 border-t border-white/5 mx-2 hidden md:block"></div>}
+                    <div className="relative group/navitem w-full flex justify-center">
+                      <button
+                        onClick={() => handleNavClick(item.id as ScreenType)}
+                        className={`relative group/btn flex items-center gap-3.5 rounded-xl text-[15px] font-bold transition-all duration-300 ease-out cursor-pointer overflow-hidden select-none touch-manipulation active:scale-95 ${isSidebarOpen ? 'px-3 py-2.5 md:px-3 md:py-2.5 w-full justify-start' : 'w-12 h-12 md:w-12 md:h-12 justify-center shrink-0 p-0 hover:scale-[1.15] hover:z-50'} ${isActive ? 'text-white' : 'text-slate-400 hover:text-white'}`}
+                      >
+                      {isActive && (
+                        <div 
+                          className={`absolute inset-0 z-0 rounded-xl bg-gradient-to-br ${item.gradient} ${item.shadow} border ${item.border}`}
+                          style={{ viewTransitionName: 'sidebar-active-pill' }}
+                        />
+                      )}
+                      {!isActive && (
+                        <div className="absolute inset-0 z-0 rounded-xl bg-transparent group-hover/btn:bg-[#151e32] border border-transparent group-hover/btn:border-white/10 transition-colors duration-300" />
+                      )}
+                      
+                      <item.icon className="h-6 w-6 shrink-0 relative z-10" />
+                      <span className={`whitespace-nowrap relative z-10 transition-all duration-300 ${isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 hidden'}`}>{item.label}</span>
+                      
+                      {item.id === 'POS' && items.length > 0 && (
+                        <span className={`w-5 h-5 rounded-full relative z-10 text-[10px] items-center justify-center font-black shadow-sm ml-auto ${isActive ? 'bg-white text-[#78ad33]' : 'bg-[#8cc63f] text-white'} ${isSidebarOpen ? 'flex' : 'hidden md:hidden'} hidden md:flex`}>
+                          {items.length}
+                        </span>
+                      )}
+                      {item.id === 'TABLES' && selectedTableName && (
+                        <span className={`text-[10px] px-1.5 py-0.5 relative z-10 rounded-md font-black ml-auto hidden md:flex ${isActive ? 'bg-white text-[#78ad33]' : 'bg-[#8cc63f]/20 text-[#8cc63f] border border-[#8cc63f]/30'} ${isSidebarOpen ? 'flex' : 'hidden md:hidden'}`}>
+                          {selectedTableName}
+                        </span>
+                      )}
+                    </button>
 
-              <button
-                onClick={() => setActiveScreen('TABLES')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeScreen === 'TABLES'
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm'
-                    : 'text-pos-text-muted hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 dark:hover:text-emerald-400'
-                }`}
-              >
-                <LayoutGrid className="h-4 w-4 shrink-0" />
-                <span className="hidden md:inline">Floor Plan</span>
-                <span className="md:hidden">Tables</span>
-                {selectedTableName && (
-                  <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-500/40 px-1.5 py-0.5 rounded font-black">
-                    {selectedTableName}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveScreen('KDS')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeScreen === 'KDS'
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm'
-                    : 'text-pos-text-muted hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 dark:hover:text-emerald-400'
-                }`}
-              >
-                <Flame className="h-4 w-4 shrink-0" />
-                <span className="hidden md:inline">Kitchen (KDS)</span>
-                <span className="md:hidden">KDS</span>
-              </button>
-
-              {currentUser.role !== 'WAITER' && (
-                <>
-                  <button
-                    onClick={() => setActiveScreen('PARCEL')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      activeScreen === 'PARCEL'
-                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm'
-                        : 'text-pos-text-muted hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:text-amber-600 dark:hover:text-amber-400'
-                    }`}
-                  >
-                    <Package className="h-4 w-4 shrink-0" />
-                    <span className="hidden md:inline">Parcel Board</span>
-                    <span className="md:hidden">Parcel</span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveScreen('DELIVERY')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      activeScreen === 'DELIVERY'
-                        ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-sm'
-                        : 'text-pos-text-muted hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:text-purple-600 dark:hover:text-purple-400'
-                    }`}
-                  >
-                    <Bike className="h-4 w-4 shrink-0" />
-                    <span className="hidden md:inline">Delivery</span>
-                    <span className="md:hidden">Delivery</span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveScreen('QR')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      activeScreen === 'QR'
-                        ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm'
-                        : 'text-pos-text-muted hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 dark:hover:text-emerald-400'
-                    }`}
-                  >
-                    <QrCode className="h-4 w-4 shrink-0" />
-                    <span className="hidden md:inline">QR Ordering</span>
-                    <span className="md:hidden">QR</span>
-                  </button>
-                </>
-              )}
-
-              {(currentUser.role === 'ADMIN' || currentUser.role === 'MANAGER') && (
-                <>
-                  <button
-                    onClick={() => setActiveScreen('INVENTORY')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      activeScreen === 'INVENTORY'
-                        ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm'
-                        : 'text-pos-text-muted hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 dark:hover:text-emerald-400'
-                    }`}
-                  >
-                    <Package className="h-4 w-4 shrink-0" />
-                    <span className="hidden md:inline">Inventory</span>
-                    <span className="md:hidden">Stock</span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveScreen('ADMIN')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      activeScreen === 'ADMIN'
-                        ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm'
-                        : 'text-pos-text-muted hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 dark:hover:text-emerald-400'
-                    }`}
-                  >
-                    <Settings className="h-4 w-4 shrink-0" />
-                    <span className="hidden md:inline">Admin</span>
-                    <span className="md:hidden">Admin</span>
-                  </button>
-                </>
-              )}
+                    {/* Fluid Popup Tooltip (Only in Collapsed View) */}
+                    {!isSidebarOpen && (
+                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 opacity-0 -translate-x-3 pointer-events-none group-hover/navitem:opacity-100 group-hover/navitem:translate-x-0 transition-all duration-300 z-50 flex items-center drop-shadow-2xl">
+                        <div className="w-1.5 h-1.5 bg-[#151e32] border-t border-l border-white/10 rotate-45 -mr-1 z-0 rounded-[1px]"></div>
+                        <div className="bg-[#151e32] text-white text-[13.5px] font-bold px-3.5 py-2 rounded-xl shadow-2xl border border-white/10 whitespace-nowrap relative z-10">
+                          {item.label}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </React.Fragment>
+                );
+              })}
             </>
           )}
+
+          {/* Bottom Actions Spacer */}
+          <div className="mt-auto"></div>
+          
+          <div className="flex flex-col gap-2 pt-4 border-t border-white/5 w-full">
+            {/* User Profile Badge */}
+            <div className="relative group/navitem w-full flex justify-center mb-2">
+              <div 
+                className={`relative flex items-center gap-3.5 rounded-xl transition-all duration-300 cursor-default select-none overflow-hidden ${isSidebarOpen ? 'px-3 py-2.5 md:px-3 md:py-2.5 w-full justify-start' : 'w-12 h-12 md:w-12 md:h-12 justify-center shrink-0 p-0'}`}
+              >
+                <div className="h-9 w-9 rounded-full bg-[#151e32] border border-white/10 flex items-center justify-center shrink-0 shadow-inner">
+                  <ShieldCheck className="h-5 w-5 text-[#8cc63f]" />
+                </div>
+                <div className={`flex-col items-start shrink-0 truncate transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100 w-auto flex' : 'opacity-0 w-0 hidden'}`}>
+                  <span className="text-sm font-bold text-white leading-tight block truncate">{currentUser.name}</span>
+                  <span className="text-[10px] uppercase font-black text-[#8cc63f] tracking-wide block">{currentUser.role}</span>
+                </div>
+              </div>
+              {!isSidebarOpen && (
+                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 opacity-0 -translate-x-3 pointer-events-none group-hover/navitem:opacity-100 group-hover/navitem:translate-x-0 transition-all duration-300 z-50 flex flex-col items-start drop-shadow-2xl">
+                  <div className="absolute top-1/2 -translate-y-1/2 -left-1.5 w-3 h-3 bg-[#151e32] border-b border-l border-white/10 rotate-45 z-0 rounded-sm"></div>
+                  <div className="bg-[#151e32] px-3.5 py-2 rounded-xl shadow-2xl border border-white/10 whitespace-nowrap relative z-10 flex flex-col">
+                    <span className="text-sm font-bold text-white leading-tight">{currentUser.name}</span>
+                    <span className="text-[10px] uppercase font-black text-[#8cc63f] tracking-wide">{currentUser.role}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Lock Button */}
+            <div className="relative group/navitem w-full flex justify-center">
+              <button
+                onClick={() => lockTerminal()}
+                className={`relative group/btn flex items-center gap-3.5 rounded-xl text-[15px] font-bold transition-all duration-300 ease-out cursor-pointer overflow-hidden select-none touch-manipulation active:scale-95 ${isSidebarOpen ? 'px-3 py-2.5 md:px-3 md:py-2.5 w-full justify-start' : 'w-12 h-12 md:w-12 md:h-12 justify-center shrink-0 p-0 hover:scale-[1.15] hover:z-50'} text-amber-500/80 hover:text-amber-400 hover:bg-amber-500/10`}
+              >
+                <Lock className="h-6 w-6 shrink-0 relative z-10" />
+                <span className={`whitespace-nowrap relative z-10 transition-all duration-300 ${isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 hidden'}`}>Lock Terminal</span>
+              </button>
+              {!isSidebarOpen && (
+                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 opacity-0 -translate-x-3 pointer-events-none group-hover/navitem:opacity-100 group-hover/navitem:translate-x-0 transition-all duration-300 z-50 flex items-center drop-shadow-2xl">
+                  <div className="absolute top-1/2 -translate-y-1/2 -left-1.5 w-3 h-3 bg-[#151e32] border-b border-l border-white/10 rotate-45 z-0 rounded-sm"></div>
+                  <div className="bg-[#151e32] text-amber-400 text-[13.5px] font-bold px-3.5 py-2 rounded-xl shadow-2xl border border-white/10 whitespace-nowrap relative z-10">
+                    Lock Terminal
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Logout Button */}
+            <div className="relative group/navitem w-full flex justify-center">
+              <button
+                onClick={() => logout()}
+                className={`relative group/btn flex items-center gap-3.5 rounded-xl text-[15px] font-bold transition-all duration-300 ease-out cursor-pointer overflow-hidden select-none touch-manipulation active:scale-95 ${isSidebarOpen ? 'px-3 py-2.5 md:px-3 md:py-2.5 w-full justify-start' : 'w-12 h-12 md:w-12 md:h-12 justify-center shrink-0 p-0 hover:scale-[1.15] hover:z-50'} text-rose-500/80 hover:text-rose-400 hover:bg-rose-500/10`}
+              >
+                <LogOut className="h-6 w-6 shrink-0 relative z-10" />
+                <span className={`whitespace-nowrap relative z-10 transition-all duration-300 ${isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 hidden'}`}>Logout</span>
+              </button>
+              {!isSidebarOpen && (
+                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 opacity-0 -translate-x-3 pointer-events-none group-hover/navitem:opacity-100 group-hover/navitem:translate-x-0 transition-all duration-300 z-50 flex items-center drop-shadow-2xl">
+                  <div className="absolute top-1/2 -translate-y-1/2 -left-1.5 w-3 h-3 bg-[#151e32] border-b border-l border-white/10 rotate-45 z-0 rounded-sm"></div>
+                  <div className="bg-[#151e32] text-rose-400 text-[13.5px] font-bold px-3.5 py-2 rounded-xl shadow-2xl border border-white/10 whitespace-nowrap relative z-10">
+                    Logout
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </nav>
+      </aside>
 
-        {/* Right Action Bar: Clock, Theme Switcher & Status Pill */}
-        <div className="flex items-center gap-2 md:gap-2.5 order-2 md:order-3 shrink-0">
-          {/* Live Clock */}
-          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-pos-card rounded-xl border border-pos-border text-xs font-mono font-bold text-pos-text shadow-sm" title="Live Terminal Time">
-            <Clock className="h-3.5 w-3.5 text-pos-accent animate-pulse" />
-            <span>{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-          </div>
-
-          {/* Light / Dark Mode Toggle */}
-          <button
-            onClick={toggleTheme}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-pos-card hover:bg-pos-card-hover border border-pos-border text-pos-text transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
-            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-          >
-            {theme === 'dark' ? (
-              <>
-                <Sun className="h-4 w-4 text-amber-400 animate-spin" style={{ animationDuration: '12s' }} />
-                <span className="hidden sm:inline">Light Mode</span>
-              </>
-            ) : (
-              <>
-                <Moon className="h-4 w-4 text-teal-600 animate-bounce" />
-                <span className="hidden sm:inline">Dark Mode</span>
-              </>
-            )}
-          </button>
-
-          {/* Online / Offline Toggle */}
-          <button
-            onClick={toggleOffline}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold border transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 ${
-              isOffline
-                ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 hover:bg-rose-100 dark:hover:bg-rose-900/60'
-                : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
-            }`}
-            title="Click to simulate network disconnection / connection"
-          >
-            {isOffline ? <WifiOff className="h-4 w-4 text-rose-500 shrink-0" /> : <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />}
-            <span className="hidden xl:inline">{isOffline ? 'Offline (SQLite)' : 'Online (Cloud)'}</span>
-          </button>
-
-          <div className="hidden 2xl:flex items-center gap-1.5 px-3 py-1.5 bg-pos-card rounded-xl border border-pos-border text-xs font-bold text-pos-text-muted shadow-sm">
-            <ShieldCheck className="h-4 w-4 text-pos-accent" />
-            <span>{currentUser.name}</span>
-          </div>
-
-          <button 
-            onClick={lockTerminal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
-            title="Lock Terminal"
-          >
-            <Lock className="h-4 w-4" />
-            <span className="hidden sm:inline">Lock</span>
-          </button>
-          <button 
-            onClick={logout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
-            title="Full Logout"
-          >
-            <span className="hidden sm:inline">Log Out</span>
-          </button>
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col bg-kv-creme relative md:rounded-[24px] shadow-2xl border-0 md:border md:border-white/10 overflow-hidden h-full z-10">
+        
+        {/* Content routing */}
+        <div className="flex-1 overflow-y-auto no-scrollbar relative w-full h-full">
+          {activeScreen === 'POS' && <POSScreen />}
+          {activeScreen === 'TABLES' && <TableMapScreen onNavigateToPOS={() => setActiveScreen('POS')} />}
+          {activeScreen === 'KDS' && <KDSScreen />}
+          {activeScreen === 'INVENTORY' && <InventoryScreen />}
+          {activeScreen === 'QR' && <QROrderScreen />}
+          {activeScreen === 'ADMIN' && <AdminPortalScreen />}
+          {activeScreen === 'PARCEL' && <ParcelBoardScreen />}
+          {activeScreen === 'DELIVERY' && <DeliveryDispatchScreen />}
         </div>
-      </header>
-
-      {/* Main Screen Content View */}
-      <main className="flex-1 overflow-hidden transition-colors duration-250">
-        {activeScreen === 'POS' && <POSScreen />}
-        {activeScreen === 'TABLES' && <TableMapScreen onNavigateToPOS={() => setActiveScreen('POS')} />}
-        {activeScreen === 'KDS' && <KDSScreen />}
-        {activeScreen === 'INVENTORY' && <InventoryScreen />}
-        {activeScreen === 'QR' && <QROrderScreen />}
-        {activeScreen === 'ADMIN' && <AdminPortalScreen />}
-        {activeScreen === 'PARCEL' && <ParcelBoardScreen />}
-        {activeScreen === 'DELIVERY' && <DeliveryDispatchScreen />}
       </main>
     </div>
   );

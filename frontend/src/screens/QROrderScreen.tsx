@@ -99,7 +99,7 @@ export const QROrderScreen: React.FC = () => {
             disabled={waiterCalled}
             className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-extrabold transition-all shadow-2xs active:scale-95 ${
               waiterCalled
-                ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40'
+                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                 : 'bg-pos-bg hover:bg-pos-sidebar text-pos-text border border-pos-border'
             }`}
           >
@@ -112,12 +112,12 @@ export const QROrderScreen: React.FC = () => {
         <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-pos-bg">
           {orderSent ? (
             <div className="py-12 flex flex-col items-center text-center space-y-3">
-              <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 rounded-full flex items-center justify-center border border-emerald-300 dark:border-emerald-500/40">
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-800 rounded-full flex items-center justify-center border border-emerald-300">
                 <CheckCircle2 className="h-10 w-10" />
               </div>
               <h3 className="font-black text-lg text-pos-text">Order Fired to Kitchen!</h3>
               <p className="text-xs text-pos-text-muted px-6 font-medium leading-relaxed">
-                Your ticket <strong className="text-emerald-600 dark:text-emerald-400">{lastOrderNum}</strong> has been routed directly to the Kitchen Display System (KDS) via WebSockets without waiter intervention!
+                Your ticket <strong className="text-emerald-600">{lastOrderNum}</strong> has been routed directly to the Kitchen Display System (KDS) via WebSockets without waiter intervention!
               </p>
               <button
                 onClick={() => setOrderSent(false)}
@@ -139,7 +139,7 @@ export const QROrderScreen: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <h4 className="font-extrabold text-sm text-pos-text truncate">{item.name}</h4>
                   <p className="text-xs text-pos-text-muted mt-0.5 line-clamp-2 font-medium">{item.category}</p>
-                  <span className="inline-block mt-2 font-black text-emerald-600 dark:text-emerald-400 text-sm">₹{item.price}</span>
+                  <span className="inline-block mt-2 font-black text-emerald-600 text-sm">₹{item.price}</span>
                 </div>
 
                 <div>
@@ -160,7 +160,7 @@ export const QROrderScreen: React.FC = () => {
           <div className="p-4 bg-pos-card border-t border-pos-border space-y-3 shrink-0 shadow-lg">
             <div className="flex justify-between items-center text-pos-text font-extrabold border-b border-pos-border pb-2">
               <span>Total Payable</span>
-              <span className="text-base font-black text-emerald-600 dark:text-emerald-400">₹{total}</span>
+              <span className="text-base font-black text-emerald-600">₹{total}</span>
             </div>
 
             <div className="max-h-32 overflow-y-auto space-y-1 py-1 my-2">
@@ -168,7 +168,7 @@ export const QROrderScreen: React.FC = () => {
                 <div key={idx} className="flex justify-between text-xs text-pos-text-muted font-bold">
                   <span>{i.name}</span>
                   <span>
-                    <span className="font-black text-emerald-600 dark:text-emerald-400">{i.qty}</span> x ₹{i.price}
+                    <span className="font-black text-emerald-600">{i.qty}</span> x ₹{i.price}
                   </span>
                 </div>
               ))}

@@ -71,7 +71,7 @@ export const AdminStaffManager: React.FC = () => {
           <div key={s.id} className="bg-pos-card p-5 rounded-2xl border border-pos-border shadow-sm flex flex-col justify-between hover:shadow-glass transition-shadow">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 flex items-center justify-center font-black text-xl border border-emerald-300 dark:border-emerald-500/40 uppercase">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-xl border border-emerald-300 uppercase">
                   {s.name.charAt(0)}
                 </div>
                 <div>
@@ -84,10 +84,10 @@ export const AdminStaffManager: React.FC = () => {
               </div>
               <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
                 s.role === 'DELIVERY'
-                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300 flex items-center gap-1'
+                  ? 'bg-purple-100 text-purple-700 flex items-center gap-1'
                   : s.isActive 
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300' 
-                  : 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300'
+                  ? 'bg-emerald-100 text-emerald-700' 
+                  : 'bg-rose-100 text-rose-700'
               }`}>
                 {s.role === 'DELIVERY' ? <><Bike className="h-3 w-3" /> Rider</> : (s.isActive ? 'Active' : 'Inactive')}
               </span>
@@ -104,7 +104,7 @@ export const AdminStaffManager: React.FC = () => {
                 onClick={() => {
                   if (confirm(`Remove ${s.name}?`)) deleteStaff(s.id);
                 }}
-                className="px-3 py-1.5 bg-pos-bg hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 font-bold text-xs rounded-lg border border-pos-border transition-colors cursor-pointer"
+                className="px-3 py-1.5 bg-pos-bg hover:bg-rose-50 text-rose-500 font-bold text-xs rounded-lg border border-pos-border transition-colors cursor-pointer"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

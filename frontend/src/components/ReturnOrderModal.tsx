@@ -226,7 +226,7 @@ export const ReturnOrderModal: React.FC<ReturnOrderModalProps> = ({
                     key={key}
                     onClick={() => handleToggleItem(key, item.quantity)}
                     className={`p-3.5 flex items-center justify-between gap-3 transition-all cursor-pointer ${
-                      isSelected ? 'bg-amber-500/10 dark:bg-amber-950/20' : 'hover:bg-pos-bg'
+                      isSelected ? 'bg-amber-500/10' : 'hover:bg-pos-bg'
                     }`}
                   >
                     <div className="flex items-center gap-3 flex-1">

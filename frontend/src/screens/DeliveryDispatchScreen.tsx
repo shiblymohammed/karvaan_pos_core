@@ -14,10 +14,10 @@ import { ReturnOrderModal } from '../components/ReturnOrderModal';
 const STATUS_STEPS = ['NEW / PREPARING', 'OUT FOR DELIVERY', 'DELIVERED'];
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  RECEIVED:         { label: 'Order Received',     color: 'text-blue-700 dark:text-blue-300',    bg: 'bg-blue-50 dark:bg-blue-950/40',    border: 'border-blue-200 dark:border-blue-800' },
-  PREPARING:        { label: 'Preparing',          color: 'text-amber-700 dark:text-amber-300',  bg: 'bg-amber-50 dark:bg-amber-950/40',  border: 'border-amber-200 dark:border-amber-800' },
-  READY:            { label: 'Ready for Pickup',   color: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-800' },
-  OUT_FOR_DELIVERY: { label: 'Out for Delivery',  color: 'text-purple-700 dark:text-purple-300', bg: 'bg-purple-50 dark:bg-purple-950/40', border: 'border-purple-200 dark:border-purple-800' },
+  RECEIVED:         { label: 'Order Received',     color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200' },
+  PREPARING:        { label: 'Preparing',          color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-200' },
+  READY:            { label: 'Ready for Pickup',   color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  OUT_FOR_DELIVERY: { label: 'Out for Delivery',  color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
   DELIVERED:        { label: 'Delivered',          color: 'text-gray-500',                       bg: 'bg-gray-50',                         border: 'border-gray-200' },
   CANCELLED:        { label: 'Cancelled',          color: 'text-red-600',                        bg: 'bg-red-50',                          border: 'border-red-200' },
 };
@@ -112,14 +112,14 @@ const OrderCard: React.FC<{
 
         {/* Customer Details */}
         <div className="grid grid-cols-1 gap-1.5 mb-3">
-          <div className="flex items-center gap-2 bg-white/60 dark:bg-black/20 rounded-xl px-3 py-2 border border-white/40">
+          <div className="flex items-center gap-2 bg-white/60 rounded-xl px-3 py-2 border border-white/40">
             <Phone className="h-4 w-4 text-blue-500 shrink-0" />
             <span className="font-black text-pos-text text-sm">{order.customerPhone || '—'}</span>
             <span className="ml-auto text-[10px] text-pos-text-muted">{order.placedAt}</span>
           </div>
 
           {order.deliveryAddress && (
-            <div className="flex items-start gap-2 bg-white/60 dark:bg-black/20 rounded-xl px-3 py-2 border border-white/40">
+            <div className="flex items-start gap-2 bg-white/60 rounded-xl px-3 py-2 border border-white/40">
               <MapPin className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
               <span className="font-bold text-pos-text text-sm leading-snug">{order.deliveryAddress}</span>
             </div>
@@ -127,7 +127,7 @@ const OrderCard: React.FC<{
         </div>
 
         {/* Items Summary */}
-        <div className="bg-white/50 dark:bg-black/20 rounded-xl p-2.5 border border-white/40 mb-3">
+        <div className="bg-white/50 rounded-xl p-2.5 border border-white/40 mb-3">
           <p className="text-[10px] font-black text-pos-text-muted uppercase mb-1.5">Order Items</p>
           {order.items.map((item, i) => (
             <div key={i} className="flex justify-between text-xs py-0.5">
@@ -142,9 +142,9 @@ const OrderCard: React.FC<{
           {STATUS_STEPS.map((step, i) => (
             <React.Fragment key={step}>
               <div className={`flex items-center gap-1 text-[9px] font-black uppercase px-2 py-1 rounded-lg shrink-0 transition-colors ${
-                i < stepIdx ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                i < stepIdx ? 'bg-emerald-100 text-emerald-700' :
                 i === stepIdx ? 'bg-pos-accent text-white shadow-sm' :
-                'bg-white/40 dark:bg-black/20 text-pos-text-muted'
+                'bg-white/40 text-pos-text-muted'
               }`}>
                 {i < stepIdx && <CheckCircle2 className="h-2.5 w-2.5" />}
                 {step}
@@ -156,16 +156,16 @@ const OrderCard: React.FC<{
 
         {/* Assigned Rider */}
         {order.deliveryBoyName && (
-          <div className="flex items-center gap-2 bg-purple-100 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-xl px-3 py-2 mb-3">
+          <div className="flex items-center gap-2 bg-purple-100 border border-purple-200 rounded-xl px-3 py-2 mb-3">
             <Bike className="h-4 w-4 text-purple-600" />
-            <span className="font-black text-sm text-purple-700 dark:text-purple-300">{order.deliveryBoyName}</span>
+            <span className="font-black text-sm text-purple-700">{order.deliveryBoyName}</span>
             <span className="ml-auto text-[10px] font-bold text-purple-500">Assigned Rider</span>
           </div>
         )}
 
         {/* Rider Assignment Dropdown (for Cashier / Admin - Supports Batched Deliveries) */}
         {showAssign && (
-          <div className="mb-3 p-3 bg-white dark:bg-pos-card rounded-xl border border-pos-border shadow-sm">
+          <div className="mb-3 p-3 bg-white rounded-xl border border-pos-border shadow-sm">
             <p className="text-[10px] font-black text-pos-text-muted uppercase mb-2">Select Available Rider (Batched OK):</p>
             {availableRiders.length === 0 ? (
               <div className="flex items-center gap-2 text-red-500 text-xs font-bold py-1">
@@ -175,7 +175,7 @@ const OrderCard: React.FC<{
               <div className="space-y-1.5">
                 {availableRiders.map(r => (
                   <button key={r.id} onClick={() => { onAssign(r.id, r.name); setShowAssign(false); }}
-                    className="w-full flex items-center gap-2 p-2 bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 border border-purple-200 rounded-lg cursor-pointer transition-colors text-left">
+                    className="w-full flex items-center gap-2 p-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg cursor-pointer transition-colors text-left">
                     <div className="w-7 h-7 rounded-full bg-purple-500 text-white flex items-center justify-center font-black text-xs shrink-0">{r.name.charAt(0)}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
@@ -218,7 +218,7 @@ const OrderCard: React.FC<{
             )}
 
             {currentUser?.role !== 'DELIVERY' && (
-              <button onClick={onRemove} className="py-2 px-3 bg-white/60 dark:bg-black/20 hover:bg-red-50 text-red-400 text-xs font-black rounded-xl cursor-pointer border border-red-200 transition-colors active:scale-95" title="Remove Order">
+              <button onClick={onRemove} className="py-2 px-3 bg-white/60 hover:bg-red-50 text-red-400 text-xs font-black rounded-xl cursor-pointer border border-red-200 transition-colors active:scale-95" title="Remove Order">
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
@@ -411,12 +411,12 @@ export const DeliveryDispatchScreen: React.FC = () => {
                 <p className="text-[10px] text-pos-text-muted mt-0.5">Route & Delivery Status</p>
               </div>
               
-              <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-2xl p-4 text-center">
+              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-center">
                 <div className="w-12 h-12 rounded-full bg-purple-500 text-white font-black text-lg flex items-center justify-center mx-auto mb-2 shadow-sm">
                   {currentUser.name?.charAt(0) || 'D'}
                 </div>
                 <h3 className="font-black text-base text-pos-text">{currentUser.name || 'Delivery Rider'}</h3>
-                <span className="inline-block text-[9px] font-black uppercase tracking-wider text-purple-700 bg-purple-100 dark:bg-purple-900/40 dark:text-purple-300 px-2.5 py-0.5 rounded-full mt-1">
+                <span className="inline-block text-[9px] font-black uppercase tracking-wider text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full mt-1">
                   🛵 Active Rider Shift
                 </span>
               </div>
@@ -424,16 +424,16 @@ export const DeliveryDispatchScreen: React.FC = () => {
               <div className="bg-pos-card rounded-2xl border border-pos-border p-4 space-y-3">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-bold text-pos-text-muted">On Road Now:</span>
-                  <span className="font-black text-purple-600 dark:text-purple-400">{orders.filter(o => o.deliveryBoyId === currentUser.id && o.status === 'OUT_FOR_DELIVERY').length}</span>
+                  <span className="font-black text-purple-600">{orders.filter(o => o.deliveryBoyId === currentUser.id && o.status === 'OUT_FOR_DELIVERY').length}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-bold text-pos-text-muted">Completed Today:</span>
-                  <span className="font-black text-emerald-600 dark:text-emerald-400">{orders.filter(o => o.deliveryBoyId === currentUser.id && o.status === 'DELIVERED').length}</span>
+                  <span className="font-black text-emerald-600">{orders.filter(o => o.deliveryBoyId === currentUser.id && o.status === 'DELIVERED').length}</span>
                 </div>
               </div>
 
               <div className="mt-auto p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl">
-                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 text-center leading-relaxed">
+                <p className="text-[11px] font-bold text-amber-700 text-center leading-relaxed">
                   🔒 Shift Cash Settlement & Reconciliation is locked to Admin & Managers at shift end.
                 </p>
               </div>
@@ -464,11 +464,11 @@ export const DeliveryDispatchScreen: React.FC = () => {
                       <div
                         key={rider.id}
                         onClick={() => setSelectedRiderSummary(rider)}
-                        className={`rounded-xl border p-3 transition-all cursor-pointer hover:border-purple-400 active:scale-[0.98] ${isOnDelivery ? 'border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/20' : 'border-pos-border bg-pos-card'}`}
+                        className={`rounded-xl border p-3 transition-all cursor-pointer hover:border-purple-400 active:scale-[0.98] ${isOnDelivery ? 'border-purple-200 bg-purple-50' : 'border-pos-border bg-pos-card'}`}
                         title="Click for Shift Remittance Settlement"
                       >
                         <div className="flex items-center gap-2.5">
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${isOnDelivery ? 'bg-purple-500 text-white' : 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'}`}>
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${isOnDelivery ? 'bg-purple-500 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
                             {rider.name.charAt(0)}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -477,10 +477,10 @@ export const DeliveryDispatchScreen: React.FC = () => {
                           </div>
                         </div>
                         <div className="mt-2 flex items-center justify-between">
-                          <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${isOnDelivery ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800' : 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'}`}>
+                          <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${isOnDelivery ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
                             {isOnDelivery ? <><Bike className="h-2.5 w-2.5" /> {activeOrders.length} On Road</> : <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Available</>}
                           </span>
-                          <span className="text-[10px] font-extrabold text-purple-600 dark:text-purple-400 underline">Shift Settle →</span>
+                          <span className="text-[10px] font-extrabold text-purple-600 underline">Shift Settle →</span>
                         </div>
                       </div>
                     );
@@ -498,7 +498,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
           <div className="bg-pos-card border border-pos-border rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 text-pos-text">
             <div className="flex items-center justify-between border-b border-pos-border pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-purple-100 dark:bg-purple-950/60 rounded-2xl text-purple-600">
+                <div className="p-3 bg-purple-100 rounded-2xl text-purple-600">
                   <User className="h-6 w-6" />
                 </div>
                 <div>
@@ -530,10 +530,10 @@ export const DeliveryDispatchScreen: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-500 rounded-2xl p-4 text-center space-y-1 shadow-md">
-                    <p className="text-xs font-black text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">💵 CASH TO COLLECT FROM RIDER</p>
-                    <p className="text-4xl font-extrabold text-emerald-600 dark:text-emerald-400">₹{cashInHand.toFixed(0)}</p>
-                    <p className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">Physical cash rider collected from COD deliveries today</p>
+                  <div className="bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-4 text-center space-y-1 shadow-md">
+                    <p className="text-xs font-black text-emerald-800 uppercase tracking-wider">💵 CASH TO COLLECT FROM RIDER</p>
+                    <p className="text-4xl font-extrabold text-emerald-600">₹{cashInHand.toFixed(0)}</p>
+                    <p className="text-[10px] text-emerald-700 font-bold">Physical cash rider collected from COD deliveries today</p>
                   </div>
 
                   <button
@@ -559,7 +559,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-pos-border pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-emerald-100 dark:bg-emerald-950/60 rounded-2xl text-emerald-600">
+                <div className="p-3 bg-emerald-100 rounded-2xl text-emerald-600">
                   <Wallet className="h-6 w-6" />
                 </div>
                 <div>

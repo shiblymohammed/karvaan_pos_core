@@ -75,7 +75,7 @@ const SettleModal: React.FC<SettleModalProps> = ({ entry, onClose, onSettle }) =
             className="w-full px-4 py-3 bg-pos-input border border-pos-border rounded-xl text-pos-text text-xl font-black focus:outline-none focus:border-emerald-500 shadow-inner text-center"
           />
           {isPartial && (
-            <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
+            <p className="text-xs font-bold text-amber-600 mt-1.5 flex items-center gap-1">
               <AlertCircle className="h-3.5 w-3.5" />
               Partial payment — ₹{(entry.amount - parseFloat(amount)).toFixed(2)} will remain as new entry
             </p>
@@ -154,13 +154,13 @@ const CustomerDetail: React.FC<CustomerDetailProps> = ({ customer, onBack, onSet
             <p className="text-[10px] font-black text-pos-text-muted uppercase tracking-wider mb-1">Total Billed</p>
             <p className="text-lg font-black text-pos-text">₹{customer.totalBilled.toFixed(0)}</p>
           </div>
-          <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 p-3 text-center">
-            <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Paid</p>
-            <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">₹{customer.totalPaid.toFixed(0)}</p>
+          <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-3 text-center">
+            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-wider mb-1">Paid</p>
+            <p className="text-lg font-black text-emerald-600">₹{customer.totalPaid.toFixed(0)}</p>
           </div>
-          <div className={`rounded-xl border p-3 text-center ${customer.outstanding > 0 ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800' : 'bg-pos-card border-pos-border'}`}>
-            <p className={`text-[10px] font-black uppercase tracking-wider mb-1 ${customer.outstanding > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-pos-text-muted'}`}>Outstanding</p>
-            <p className={`text-lg font-black ${customer.outstanding > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-pos-text'}`}>
+          <div className={`rounded-xl border p-3 text-center ${customer.outstanding > 0 ? 'bg-rose-50 border-rose-200' : 'bg-pos-card border-pos-border'}`}>
+            <p className={`text-[10px] font-black uppercase tracking-wider mb-1 ${customer.outstanding > 0 ? 'text-rose-600' : 'text-pos-text-muted'}`}>Outstanding</p>
+            <p className={`text-lg font-black ${customer.outstanding > 0 ? 'text-rose-600' : 'text-pos-text'}`}>
               ₹{customer.outstanding.toFixed(0)}
             </p>
           </div>
@@ -177,13 +177,13 @@ const CustomerDetail: React.FC<CustomerDetailProps> = ({ customer, onBack, onSet
             <div key={entry.id}
               className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all ${
                 entry.status === 'UNPAID'
-                  ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800'
+                  ? 'bg-rose-50 border-rose-200'
                   : 'bg-pos-card border-pos-border opacity-70'
               }`}>
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                 entry.status === 'PAID'
-                  ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600'
-                  : 'bg-rose-100 dark:bg-rose-900/40 text-rose-600'
+                  ? 'bg-emerald-100 text-emerald-600'
+                  : 'bg-rose-100 text-rose-600'
               }`}>
                 {entry.status === 'PAID' ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
               </div>
@@ -192,13 +192,13 @@ const CustomerDetail: React.FC<CustomerDetailProps> = ({ customer, onBack, onSet
                 <p className="text-xs font-bold text-pos-text-muted mt-0.5">{entry.date}</p>
               </div>
               <div className="text-right">
-                <p className={`font-black text-base ${entry.status === 'UNPAID' ? 'text-rose-600 dark:text-rose-400' : 'text-pos-text-muted line-through'}`}>
+                <p className={`font-black text-base ${entry.status === 'UNPAID' ? 'text-rose-600' : 'text-pos-text-muted line-through'}`}>
                   ₹{entry.amount.toFixed(2)}
                 </p>
                 <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
                   entry.status === 'PAID'
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-                    : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-rose-100 text-rose-700'
                 }`}>
                   {entry.status}
                 </span>
@@ -330,9 +330,9 @@ export const AdminCustomerLedger: React.FC = () => {
 
         {/* KPI Row */}
         <div className="grid grid-cols-3 gap-4 mb-5">
-          <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-2xl p-4">
-            <p className="text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1">Total Outstanding</p>
-            <p className="text-2xl font-black text-rose-600 dark:text-rose-400">₹{totalOutstanding.toFixed(0)}</p>
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
+            <p className="text-xs font-black text-rose-600 uppercase tracking-wider mb-1">Total Outstanding</p>
+            <p className="text-2xl font-black text-rose-600">₹{totalOutstanding.toFixed(0)}</p>
           </div>
           <div className="bg-pos-card border border-pos-border rounded-2xl p-4">
             <p className="text-xs font-black text-pos-text-muted uppercase tracking-wider mb-1">Customers with Dues</p>
@@ -404,7 +404,7 @@ export const AdminCustomerLedger: React.FC = () => {
                 <div className="text-right shrink-0">
                   {customer.outstanding > 0 ? (
                     <div>
-                      <p className="font-black text-base text-rose-600 dark:text-rose-400">
+                      <p className="font-black text-base text-rose-600">
                         ₹{customer.outstanding.toFixed(0)} due
                       </p>
                       <p className="text-[10px] font-bold text-pos-text-muted mt-0.5">
@@ -412,7 +412,7 @@ export const AdminCustomerLedger: React.FC = () => {
                       </p>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                    <div className="flex items-center gap-1.5 text-emerald-600">
                       <CheckCircle2 className="h-4 w-4" />
                       <span className="font-black text-sm">All Settled</span>
                     </div>

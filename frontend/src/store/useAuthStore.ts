@@ -5,6 +5,7 @@ import { useStaffStore, StaffMember } from './useStaffStore';
 interface AuthState {
   currentUser: StaffMember | null;
   isLocked: boolean;
+  loginTime: number | null;
   fullLogin: (username: string, password?: string) => boolean;
   quickUnlock: (pin: string) => boolean;
   lockTerminal: () => void;
@@ -16,12 +17,13 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       currentUser: null, // Starts fully logged out
       isLocked: false,
+      loginTime: null,
 
   fullLogin: (username: string, password?: string) => {
     // 1. Guaranteed Admin Backdoor
     if (username.toLowerCase() === 'admin' && (password === 'admin123' || password === 'admin')) {
       const adminUser = { id: 'admin-1', name: 'Super Admin', username: 'admin', password: 'admin123', role: 'ADMIN', pin: '9999', isActive: true, permissions: { canVoid: true, canDiscount: true } } as any;
-      set({ currentUser: adminUser, isLocked: false });
+      set({ currentUser: adminUser, isLocked: false, loginTime: Date.now() });
       return true;
     }
 
@@ -42,7 +44,7 @@ export const useAuthStore = create<AuthState>()(
       if (typeof user.permissions === 'string') {
         try { user.permissions = JSON.parse(user.permissions); } catch (e) {}
       }
-      set({ currentUser: user, isLocked: false });
+      set({ currentUser: user, isLocked: false, loginTime: Date.now() });
       return true;
     }
     return false;
@@ -64,6 +66,6 @@ export const useAuthStore = create<AuthState>()(
   },
 
   logout: () => {
-    set({ currentUser: null, isLocked: false });
+    set({ currentUser: null, isLocked: false, loginTime: null });
   },
 }), { name: 'pos-auth-storage' }));

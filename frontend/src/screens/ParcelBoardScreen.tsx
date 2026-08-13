@@ -5,9 +5,9 @@ import { Package, Phone, Clock, ChefHat, CheckCircle2, XCircle, User, Search, Be
 const STATUS_FLOW: DeliveryStatus[] = ['RECEIVED', 'PREPARING', 'READY', 'CANCELLED'];
 
 const STATUS_CONFIG: Record<DeliveryStatus, { label: string; color: string; bg: string; border: string; icon: React.ReactNode }> = {
-  RECEIVED: { label: 'Received', color: 'text-blue-700 dark:text-blue-300', bg: 'bg-blue-50 dark:bg-blue-950/40', border: 'border-blue-200 dark:border-blue-800', icon: <Bell className="h-3 w-3" /> },
-  PREPARING: { label: 'Preparing', color: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-800', icon: <ChefHat className="h-3 w-3" /> },
-  READY: { label: 'Ready for Pickup', color: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-800', icon: <CheckCircle2 className="h-3 w-3" /> },
+  RECEIVED: { label: 'Received', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200', icon: <Bell className="h-3 w-3" /> },
+  PREPARING: { label: 'Preparing', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: <ChefHat className="h-3 w-3" /> },
+  READY: { label: 'Ready for Pickup', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: <CheckCircle2 className="h-3 w-3" /> },
   OUT_FOR_DELIVERY: { label: 'Out for Delivery', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200', icon: null },
   DELIVERED: { label: 'Delivered', color: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-200', icon: null },
   CANCELLED: { label: 'Cancelled', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: <XCircle className="h-3 w-3" /> },

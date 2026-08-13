@@ -61,8 +61,8 @@ export const CustomerSelectModal: React.FC<Props> = ({ currentCustomer, onSelect
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-pos-border">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center">
-              <User className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center">
+              <User className="h-4 w-4 text-emerald-600" />
             </div>
             <h3 className="font-black text-pos-text text-base">Guest Details</h3>
           </div>
@@ -73,10 +73,10 @@ export const CustomerSelectModal: React.FC<Props> = ({ currentCustomer, onSelect
 
         {/* Tabs */}
         <div className="flex border-b border-pos-border">
-          <button onClick={() => setTab('NEW')} className={`flex-1 py-2.5 text-xs font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${tab === 'NEW' ? 'text-emerald-600 border-b-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20' : 'text-pos-text-muted hover:text-pos-text'}`}>
+          <button onClick={() => setTab('NEW')} className={`flex-1 py-2.5 text-xs font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${tab === 'NEW' ? 'text-emerald-600 border-b-2 border-emerald-500 bg-emerald-50' : 'text-pos-text-muted hover:text-pos-text'}`}>
             <Plus className="h-3.5 w-3.5" /> New Customer
           </button>
-          <button onClick={() => setTab('EXISTING')} className={`flex-1 py-2.5 text-xs font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${tab === 'EXISTING' ? 'text-blue-600 border-b-2 border-blue-500 bg-blue-50 dark:bg-blue-950/20' : 'text-pos-text-muted hover:text-pos-text'}`}>
+          <button onClick={() => setTab('EXISTING')} className={`flex-1 py-2.5 text-xs font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${tab === 'EXISTING' ? 'text-blue-600 border-b-2 border-blue-500 bg-blue-50' : 'text-pos-text-muted hover:text-pos-text'}`}>
             <Search className="h-3.5 w-3.5" /> Existing ({allCustomers.length})
           </button>
         </div>
@@ -101,8 +101,8 @@ export const CustomerSelectModal: React.FC<Props> = ({ currentCustomer, onSelect
 
               {/* Live match found */}
               {phoneMatch && (
-                <div className="mt-2 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl">
-                  <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase mb-1.5 flex items-center gap-1">
+                <div className="mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <p className="text-[10px] font-black text-emerald-600 uppercase mb-1.5 flex items-center gap-1">
                     <Check className="h-3 w-3" /> Existing customer found!
                   </p>
                   <div className="flex items-center justify-between">
@@ -137,7 +137,7 @@ export const CustomerSelectModal: React.FC<Props> = ({ currentCustomer, onSelect
 
             <div className="flex gap-2 pt-1">
               {currentCustomer && (
-                <button onClick={() => { onSelect(null); onClose(); }} className="px-3 py-2 bg-red-50 dark:bg-red-950/20 text-red-500 text-xs font-black rounded-xl border border-red-200 cursor-pointer hover:bg-red-100 transition-colors">
+                <button onClick={() => { onSelect(null); onClose(); }} className="px-3 py-2 bg-red-50 text-red-500 text-xs font-black rounded-xl border border-red-200 cursor-pointer hover:bg-red-100 transition-colors">
                   Remove Guest
                 </button>
               )}
@@ -181,7 +181,7 @@ export const CustomerSelectModal: React.FC<Props> = ({ currentCustomer, onSelect
                     onClick={() => handleSelectExisting(c)}
                     className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-pos-bg transition-colors cursor-pointer mb-1 border ${
                       currentCustomer?.phone === c.phone
-                        ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/20'
+                        ? 'border-emerald-300 bg-emerald-50'
                         : 'border-transparent'
                     }`}
                   >

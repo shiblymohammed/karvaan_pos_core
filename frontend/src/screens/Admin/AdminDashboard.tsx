@@ -232,17 +232,17 @@ export const AdminDashboard: React.FC = () => {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <KpiCard label="Gross Revenue" value={fmt(summary?.grossRevenue || 0)}
                   sub={`${summary?.totalBills || 0} bills settled`}
-                  icon={<TrendingUp className="h-6 w-6" />} color="text-emerald-600 dark:text-emerald-400" />
+                  icon={<TrendingUp className="h-6 w-6" />} color="text-emerald-600" />
                 <KpiCard label="Net Revenue" value={fmt(summary?.netRevenue || 0)}
                   sub={`After ₹${(summary?.totalDiscount || 0).toFixed(0)} discount`}
-                  icon={<DollarSign className="h-6 w-6" />} color="text-blue-600 dark:text-blue-400" />
+                  icon={<DollarSign className="h-6 w-6" />} color="text-blue-600" />
                 <KpiCard label="Avg Order Value"
                   value={fmt(summary && summary.totalBills > 0 ? summary.grossRevenue / summary.totalBills : 0)}
                   sub="Per transaction"
-                  icon={<CreditCard className="h-6 w-6" />} color="text-amber-600 dark:text-amber-400" />
+                  icon={<CreditCard className="h-6 w-6" />} color="text-amber-600" />
                 <KpiCard label="Deliveries Done" value={`${summary?.deliveriesCompleted || 0}`}
                   sub="Delivered orders"
-                  icon={<Bike className="h-6 w-6" />} color="text-purple-600 dark:text-purple-400" />
+                  icon={<Bike className="h-6 w-6" />} color="text-purple-600" />
               </div>
 
               {/* GST Summary */}
@@ -256,11 +256,11 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-xs font-bold text-pos-text-muted mb-1">CGST (2.5%)</p>
-                      <p className="text-xl font-black text-blue-600 dark:text-blue-400">{fmt(summary.totalGst / 2)}</p>
+                      <p className="text-xl font-black text-blue-600">{fmt(summary.totalGst / 2)}</p>
                     </div>
                     <div>
                       <p className="text-xs font-bold text-pos-text-muted mb-1">SGST (2.5%)</p>
-                      <p className="text-xl font-black text-indigo-600 dark:text-indigo-400">{fmt(summary.totalGst / 2)}</p>
+                      <p className="text-xl font-black text-indigo-600">{fmt(summary.totalGst / 2)}</p>
                     </div>
                   </div>
                 </div>
@@ -385,9 +385,9 @@ export const AdminDashboard: React.FC = () => {
                         <td className="py-2.5 px-4 font-bold text-sm text-pos-text">{b.billNumber}</td>
                         <td className="py-2.5 px-4">
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${
-                            b.orderType === 'DINE_IN' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' :
-                            b.orderType === 'DELIVERY' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400' :
-                            'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                            b.orderType === 'DINE_IN' ? 'bg-emerald-100 text-emerald-700' :
+                            b.orderType === 'DELIVERY' ? 'bg-blue-100 text-blue-700' :
+                            'bg-amber-100 text-amber-700'
                           }`}>
                             {b.orderType?.replace('_', ' ')}
                           </span>
@@ -401,7 +401,7 @@ export const AdminDashboard: React.FC = () => {
                         <td className="py-2.5 px-4 text-sm font-bold text-rose-500">
                           {b.discount > 0 ? `-₹${b.discount.toFixed(0)}` : '—'}
                         </td>
-                        <td className="py-2.5 px-4 font-black text-emerald-600 dark:text-emerald-400 text-right">
+                        <td className="py-2.5 px-4 font-black text-emerald-600 text-right">
                           {fmt(b.grandTotal)}
                         </td>
                         <td className="py-2.5 px-4 text-xs font-bold text-pos-text-muted text-right">
@@ -413,7 +413,7 @@ export const AdminDashboard: React.FC = () => {
                   <tfoot>
                     <tr className="border-t-2 border-pos-border bg-pos-sidebar">
                       <td colSpan={5} className="py-3 px-4 font-black text-sm text-pos-text">Total ({bills.length} bills)</td>
-                      <td className="py-3 px-4 font-black text-emerald-600 dark:text-emerald-400 text-right text-base">
+                      <td className="py-3 px-4 font-black text-emerald-600 text-right text-base">
                         {fmt(bills.reduce((s, b) => s + b.grandTotal, 0))}
                       </td>
                       <td />

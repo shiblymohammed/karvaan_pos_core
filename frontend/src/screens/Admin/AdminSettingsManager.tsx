@@ -143,7 +143,7 @@ export const AdminSettingsManager: React.FC = () => {
             {discounts.map(discount => (
               <div key={discount.id} className="flex items-center justify-between bg-pos-bg border border-pos-border rounded-lg px-4 py-2 shadow-2xs">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 flex items-center justify-center font-black text-xs">
+                  <div className="w-8 h-8 rounded bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-xs">
                     {discount.type === 'PERCENTAGE' ? '%' : '₹'}
                   </div>
                   <div>
@@ -192,7 +192,7 @@ export const AdminSettingsManager: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <div>
                     <h4 className="font-bold text-sm text-pos-text">{addon.name}</h4>
-                    <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">+₹{addon.price}</p>
+                    <p className="text-xs font-bold text-emerald-600">+₹{addon.price}</p>
                   </div>
                 </div>
                 <button onClick={() => deleteAddon(addon.id)} className="text-pos-text-muted hover:text-rose-500 cursor-pointer">
@@ -207,8 +207,8 @@ export const AdminSettingsManager: React.FC = () => {
       {/* ─── Network Setup Section ─────────────────────────────── */}
       <div className="bg-pos-card rounded-2xl border border-pos-border p-5">
         <div className="flex items-center gap-2 mb-5">
-          <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center">
-            <Wifi className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+            <Wifi className="h-4 w-4 text-blue-600" />
           </div>
           <div>
             <h3 className="text-base font-black text-pos-text">Network Setup</h3>
@@ -235,7 +235,7 @@ export const AdminSettingsManager: React.FC = () => {
           </div>
 
           {networkStatus === 'ok' && (
-            <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">✓ Connected ({networkLatency}ms) — Click Save to apply</p>
+            <p className="text-xs font-bold text-emerald-600">✓ Connected ({networkLatency}ms) — Click Save to apply</p>
           )}
           {networkStatus === 'fail' && (
             <p className="text-xs font-bold text-rose-500">✗ Cannot reach server — check IP and ensure backend is running</p>

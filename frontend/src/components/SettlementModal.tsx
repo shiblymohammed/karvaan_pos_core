@@ -196,7 +196,7 @@ const SettlementModal: React.FC<SettlementModalProps> = ({
               </div>
               <div className="flex justify-between items-center border-t border-pos-border/50 pt-1 mt-1">
                 <span className="text-xs font-bold text-pos-text-muted">Change Due</span>
-                <span className="font-black text-emerald-600 dark:text-emerald-400">₹{changeDue.toFixed(2)}</span>
+                <span className="font-black text-emerald-600">₹{changeDue.toFixed(2)}</span>
               </div>
             </div>
 

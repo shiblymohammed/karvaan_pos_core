@@ -41,10 +41,10 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
   };
 
   const statusBadges = {
-    AVAILABLE: 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-500/40 font-extrabold',
-    OCCUPIED: 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-500/40 font-extrabold',
-    RESERVED: 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-500/40 font-extrabold',
-    BILLED: 'bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-500/40 font-extrabold',
+    AVAILABLE: 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold',
+    OCCUPIED: 'bg-rose-100 text-rose-800 border border-rose-300 font-extrabold',
+    RESERVED: 'bg-amber-100 text-amber-800 border border-amber-300 font-extrabold',
+    BILLED: 'bg-blue-100 text-blue-800 border border-blue-300 font-extrabold',
   };
 
 
@@ -68,7 +68,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
         <div>
           <h2 className="text-xl font-extrabold text-pos-text flex items-center gap-2">
             <span>🪑 Dining Room Floor Plan</span>
-            <span className="text-xs px-2.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 rounded-full border border-emerald-300 dark:border-emerald-500/40 font-extrabold">
+            <span className="text-xs px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-300 font-extrabold">
               Live Map
             </span>
           </h2>
@@ -80,7 +80,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
         {/* Floor Analytics Summary Pills */}
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 bg-pos-card px-4 py-2 rounded-xl border border-pos-border shadow-2xs">
-            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
               <DollarSign className="h-4 w-4" />
             </div>
             <div>
@@ -90,7 +90,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
           </div>
 
           <div className="flex items-center gap-2 bg-pos-card px-4 py-2 rounded-xl border border-pos-border shadow-2xs">
-            <div className="p-1.5 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400">
+            <div className="p-1.5 rounded-lg bg-teal-500/10 text-teal-600">
               <PieChart className="h-4 w-4" />
             </div>
             <div>
@@ -112,7 +112,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 statusFilter === st
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm scale-[1.02]'
-                  : 'bg-pos-bg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-pos-text-muted hover:text-emerald-600 dark:hover:text-emerald-400 border border-pos-border'
+                  : 'bg-pos-bg hover:bg-emerald-50 text-pos-text-muted hover:text-emerald-600 border border-pos-border'
               }`}
             >
               {st === 'ALL' ? 'All Tables' : st}
@@ -122,16 +122,16 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
 
         {/* Status Legend */}
         <div className="flex items-center gap-3 text-xs flex-wrap font-semibold">
-          <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+          <span className="flex items-center gap-1 text-emerald-700">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Available
           </span>
-          <span className="flex items-center gap-1 text-rose-700 dark:text-rose-400">
+          <span className="flex items-center gap-1 text-rose-700">
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Occupied
           </span>
-          <span className="flex items-center gap-1 text-blue-700 dark:text-blue-400">
+          <span className="flex items-center gap-1 text-blue-700">
             <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Billed
           </span>
-          <span className="flex items-center gap-1 text-amber-700 dark:text-amber-400">
+          <span className="flex items-center gap-1 text-amber-700">
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Reserved
           </span>
         </div>
@@ -153,11 +153,11 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
             {/* Top Row: Number & Capacity Badge */}
             <div className="flex items-start justify-between">
               <div>
-                <span className="text-2xl font-black tracking-tight text-pos-text group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                <span className="text-2xl font-black tracking-tight text-pos-text group-hover:text-emerald-600 transition-colors">
                   {table.number}
                 </span>
               </div>
-              <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-xl bg-pos-bg dark:bg-slate-800/50 text-pos-text-muted border border-pos-border shadow-inner group-hover:border-pos-accent/30 transition-colors">
+              <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-xl bg-pos-bg text-pos-text-muted border border-pos-border shadow-inner group-hover:border-pos-accent/30 transition-colors">
                 <Users className="h-3.5 w-3.5 text-pos-text-muted group-hover:text-pos-accent transition-colors" />
                 <span>{table.capacity} Seats</span>
               </span>
@@ -169,7 +169,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
                 <div>
                   <div className="text-[10px] uppercase font-bold text-pos-text-muted">Current Folio:</div>
                   <div className={`text-xl font-black ${
-                    table.status === 'OCCUPIED' ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'
+                    table.status === 'OCCUPIED' ? 'text-rose-600' : 'text-blue-600'
                   }`}>
                     ₹{table.currentBill}
                   </div>
@@ -185,12 +185,12 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
                   )}
                 </div>
               ) : table.status === 'RESERVED' ? (
-                <div className="text-xs text-amber-600 dark:text-amber-400 font-extrabold flex items-center gap-1">
+                <div className="text-xs text-amber-600 font-extrabold flex items-center gap-1">
                   <Clock className="h-3.5 w-3.5" />
                   <span>Reserved VIP Table</span>
                 </div>
               ) : (
-                <div className="text-xs text-emerald-600 dark:text-emerald-400 font-extrabold flex items-center gap-1">
+                <div className="text-xs text-emerald-600 font-extrabold flex items-center gap-1">
                   <Check className="h-3.5 w-3.5" />
                   <span>Ready for Guests</span>
                 </div>
@@ -241,7 +241,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
 
       {/* TABLE ACTION MODAL */}
       {selectedTable && (
-        <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-pos-sidebar w-full max-w-md rounded-2xl border border-pos-border p-6 shadow-2xl space-y-5">
             <div className="flex items-center justify-between border-b border-pos-border pb-3">
               <div className="flex items-center gap-2">
@@ -270,12 +270,12 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
                     className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all shadow-2xs cursor-pointer ${
                       selectedTable.status === st
                         ? st === 'AVAILABLE'
-                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 scale-[1.02] shadow-sm'
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-700 scale-[1.02] shadow-sm'
                           : st === 'OCCUPIED'
-                          ? 'bg-rose-500/20 border-rose-500 text-rose-700 dark:text-rose-300 scale-[1.02] shadow-sm'
+                          ? 'bg-rose-500/20 border-rose-500 text-rose-700 scale-[1.02] shadow-sm'
                           : st === 'BILLED'
-                          ? 'bg-blue-500/20 border-blue-500 text-blue-700 dark:text-blue-300 scale-[1.02] shadow-sm'
-                          : 'bg-amber-500/20 border-amber-500 text-amber-700 dark:text-amber-300 scale-[1.02] shadow-sm'
+                          ? 'bg-blue-500/20 border-blue-500 text-blue-700 scale-[1.02] shadow-sm'
+                          : 'bg-amber-500/20 border-amber-500 text-amber-700 scale-[1.02] shadow-sm'
                         : 'bg-pos-card border-pos-border text-pos-text-muted hover:text-pos-text hover:bg-pos-card-hover'
                     }`}
                   >
