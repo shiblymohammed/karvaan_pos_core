@@ -43,7 +43,7 @@ export const POSScreen: React.FC = () => {
   const { tables, floors, setTableStatus } = useTableStore();
   const { getActiveWaiters } = useStaffStore();
   const { checkIs86d, depleteForOrder } = useInventoryStore();
-  const { notes: predefinedNotes, discounts: predefinedDiscounts } = useSettingsStore();
+  const { notes: predefinedNotes, discounts: predefinedDiscounts, orderPrefix } = useSettingsStore();
   
   const activeWaiters = getActiveWaiters();
 
@@ -62,6 +62,7 @@ export const POSScreen: React.FC = () => {
   const [showParkedOrders, setShowParkedOrders] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   
   // Settlement state
   const [settleState, setSettleState] = useState<{ isOpen: boolean; method: PaymentMethod }>({
@@ -183,7 +184,7 @@ export const POSScreen: React.FC = () => {
     });
 
     const billData = {
-      orderNumber: `KORD-${Math.floor(Math.random() * 10000)}`,
+      orderNumber: `${orderPrefix}-${Math.floor(Math.random() * 10000)}`,
       billNumber: `INV-${Date.now().toString().slice(-6)}`,
       table: selectedTableName || 'Takeaway',
       cashier: currentUser?.name || 'System',
@@ -296,7 +297,7 @@ export const POSScreen: React.FC = () => {
   // --- DELIVERY-specific dispatch (supports both COD and Pre-Paid Online) ---
   const handleDispatchDelivery = (isPrepaid: boolean = false) => {
     if (items.length === 0) return;
-    const orderNum = `KORD-${Math.floor(Math.random() * 10000)}`;
+    const orderNum = `${orderPrefix}-${Math.floor(Math.random() * 10000)}`;
     const billNum = `DEL-${Date.now().toString().slice(-6)}`;
     const deliveryGrandTotal = grandTotal + (deliveryFee || 0);
 
@@ -381,7 +382,7 @@ export const POSScreen: React.FC = () => {
     if (items.length === 0) return;
     const billData = {
       billNumber: `PRE-${Math.floor(100000 + Math.random() * 900000)}`,
-      orderNumber: `KORD-${Math.floor(1000 + Math.random() * 9000)}`,
+      orderNumber: `${orderPrefix}-${Math.floor(1000 + Math.random() * 9000)}`,
       table: selectedTableName || 'Takeaway',
       cashier: currentUser?.name || 'System',
       waiter: selectedWaiter || 'Counter Staff',
@@ -418,11 +419,11 @@ export const POSScreen: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 text-slate-800">
+    <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 text-slate-800 pb-[72px] lg:pb-0">
       {/* LEFT AREA: Product Catalog & Carousel / Parked Orders View */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
-        {/* Top Notch Tabs (Cutout) */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50">
+        {/* Top Notch Tabs (Desktop Only) */}
+        <div className="hidden md:block absolute top-0 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center bg-white/70 backdrop-blur-xl p-1 rounded-b-2xl shadow-lg border border-t-0 border-white/80 gap-1">
             
             <button 
@@ -461,24 +462,37 @@ export const POSScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Global Search Bar (Top Right) */}
+        {/* Global Expandable Search Button (Top Right) */}
         {!showParkedOrders && (
-          <div className="absolute top-2 right-4 md:right-5 z-50 w-64 md:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search menu..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-10 py-2 bg-white/70 backdrop-blur-xl border border-white/80 rounded-full text-slate-800 placeholder-slate-500 focus:outline-none focus:bg-white focus:border-[#b5ef85] focus:ring-2 focus:ring-[#b5ef85]/40 transition-all text-[13px] font-medium shadow-md"
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 active:bg-slate-300 transition-colors cursor-pointer"
-                title="Clear Search"
+          <div className="absolute top-3 right-4 z-50 flex items-center justify-end">
+            {isSearchExpanded ? (
+              <div className="relative w-64 md:w-80 animate-in slide-in-from-right-8 duration-300">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Search menu..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2.5 bg-white/80 backdrop-blur-2xl border border-white/80 rounded-2xl text-slate-800 placeholder-slate-500 focus:outline-none focus:bg-white focus:border-[#b5ef85] focus:ring-2 focus:ring-[#b5ef85]/40 transition-all text-[13px] font-bold shadow-lg"
+                />
+                <button 
+                  onClick={() => {
+                    setSearchQuery('');
+                    setIsSearchExpanded(false);
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 active:bg-slate-300 transition-colors cursor-pointer"
+                  title="Close Search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsSearchExpanded(true)}
+                className="w-12 h-12 bg-white/70 backdrop-blur-xl border border-white/80 rounded-2xl shadow-lg flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white active:scale-95 transition-all"
               >
-                <X className="h-4 w-4" />
+                <Search className="w-5 h-5 stroke-[2.5]" />
               </button>
             )}
           </div>
@@ -567,7 +581,8 @@ export const POSScreen: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-16">
+          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-14 md:pt-16">
+            
             <CategorySidebar activeCategory={activeCategory} onSelectCategory={setActiveCategory} />
             
             <div className="flex-1 flex flex-col p-4 md:p-5 overflow-hidden">
@@ -598,6 +613,67 @@ export const POSScreen: React.FC = () => {
         onPreBill={handlePrintPreBill}
         onManagerAuthRequest={setManagerAuthAction}
       />
+
+      {/* MOBILE STICKY BOTTOM BAR & SEGMENT CONTROL */}
+      {!isMobileCartOpen && (
+        <div className="lg:hidden fixed bottom-[88px] left-4 right-4 z-40 flex flex-col gap-2">
+          
+          {/* Menu / Parked Orders Toggle */}
+          <div className="flex bg-white/70 backdrop-blur-xl p-1 rounded-2xl shadow-lg border border-white/50 w-full animate-in slide-in-from-bottom-4">
+            <button
+              onClick={() => setShowParkedOrders(false)}
+              className={`flex-1 relative py-2.5 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 ${!showParkedOrders ? 'text-white' : 'text-slate-500'}`}
+            >
+              {!showParkedOrders && (
+                <motion.div
+                  layoutId="mobileNotchTab"
+                  className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10"
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              )}
+              Menu Catalogue
+            </button>
+            <button
+              onClick={() => setShowParkedOrders(true)}
+              className={`flex-1 relative flex items-center justify-center gap-1.5 py-2.5 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 ${showParkedOrders ? 'text-white' : 'text-slate-500'}`}
+            >
+              {showParkedOrders && (
+                <motion.div
+                  layoutId="mobileNotchTab"
+                  className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10"
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              )}
+              Parked Orders
+              {heldOrders.length > 0 && (
+                <span className={`${showParkedOrders ? 'bg-[#b5ef85] text-slate-900' : 'bg-slate-200 text-slate-500'} text-[10px] font-black px-1.5 py-0.5 rounded-full transition-colors`}>
+                  {heldOrders.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Cart Island */}
+          {items.length > 0 && (
+            <div className="bg-[#0d212b] text-white p-3 px-4 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 animate-in slide-in-from-bottom-8">
+              <div className="flex flex-col">
+                <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">{items.length} Item{items.length !== 1 ? 's' : ''}</span>
+                <span className="text-lg font-black text-[#b5ef85]">₹{grandTotal.toFixed(2)}</span>
+              </div>
+              <button
+                onClick={() => setIsMobileCartOpen(true)}
+                className="bg-[#b5ef85] text-[#0d212b] px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-[#a2db74] active:scale-95 transition-all shadow-lg"
+              >
+                <span>View Cart</span>
+                <div className="w-5 h-5 bg-[#0d212b]/10 rounded-full flex items-center justify-center">
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <SettlementModal 
         isOpen={settleState.isOpen}
         onClose={() => setSettleState({ ...settleState, isOpen: false })}

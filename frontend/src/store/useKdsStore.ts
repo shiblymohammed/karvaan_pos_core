@@ -12,12 +12,13 @@ export interface KdsTicket {
   firedAt: string;
   status: 'COOKING' | 'READY' | 'SERVED';
   elapsedMinutes: number;
+  readyAt?: string;
 }
 
 const MOCK_INITIAL_TICKETS: KdsTicket[] = [
   {
     id: 'kot-101',
-    orderNumber: 'KORD-1042',
+    orderNumber: 'KOT-1042',
     tableNumber: 'T1',
     items: [
       { name: 'Margherita Pepperoni Pizza', quantity: 1, notes: 'Extra crispy crust', status: 'COOKING' },
@@ -29,7 +30,7 @@ const MOCK_INITIAL_TICKETS: KdsTicket[] = [
   },
   {
     id: 'kot-102',
-    orderNumber: 'KORD-1043',
+    orderNumber: 'KOT-1043',
     tableNumber: 'VIP-1',
     items: [
       { name: 'Four Cheese Truffle Pizza', quantity: 2, notes: 'No garlic oil', status: 'COOKING' },
@@ -72,7 +73,7 @@ export const useKdsStore = create<KdsState>()(
 
   updateTicketStatus: (id, status) => {
     set((state) => ({
-      tickets: state.tickets.map((t) => (t.id === id ? { ...t, status } : t)),
+      tickets: state.tickets.map((t) => (t.id === id ? { ...t, status, readyAt: status === 'READY' ? new Date().toISOString() : t.readyAt } : t)),
     }));
     // Broadcast to all other devices
     emitAction('update_kds_status', { orderId: id, status });

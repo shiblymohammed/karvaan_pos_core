@@ -1,0 +1,18 @@
+{
+  "name": "Karvaan POS – Core Edition",
+  "short_name": "Karvaan POS",
+  "description": "Zero-Latency Restaurant Point of Sale Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#8cc63f",
+  "background_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/logo/karvaan_logo_main.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { QrCode, Utensils, CheckCircle2, ShoppingBag, Plus, Minus, Send, Sparkles, Smartphone, Bell, Coffee } from 'lucide-react';
 import { useMenuStore } from '../store/useMenuStore';
 import { useKdsStore } from '../store/useKdsStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { useInventoryStore } from '../store/useInventoryStore';
 
 export const QROrderScreen: React.FC = () => {
@@ -37,7 +38,7 @@ export const QROrderScreen: React.FC = () => {
 
   const handleSendToKitchen = () => {
     if (cart.length === 0) return;
-    const orderNum = `QR-${Math.floor(100 + Math.random() * 900)}`;
+    const orderNum = `${useSettingsStore.getState().orderPrefix}-${Math.floor(100 + Math.random() * 900)}`;
 
     useKdsStore.getState().addTicket({
       id: `kot-${Date.now()}`,

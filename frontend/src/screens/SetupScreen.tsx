@@ -119,52 +119,52 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-pos-bg flex items-center justify-center p-6">
-      <div className="w-full max-w-2xl">
+    <div className="min-h-screen bg-pos-bg flex items-start justify-center overflow-y-auto p-4 sm:p-6 pb-safe">
+      <div className="w-full max-w-2xl my-auto py-6 sm:py-10">
 
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-pos-accent to-teal-600 flex items-center justify-center font-black text-white text-3xl shadow-glow-accent mb-4">
+        <div className="text-center mb-5 sm:mb-8">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-2xl bg-gradient-to-br from-pos-accent to-teal-600 flex items-center justify-center font-black text-white text-2xl sm:text-3xl shadow-glow-accent mb-3 sm:mb-4">
             K
           </div>
-          <h1 className="text-3xl font-black text-pos-text">Network Setup</h1>
-          <p className="text-pos-text-muted font-bold mt-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-pos-text">Network Setup</h1>
+          <p className="text-pos-text-muted font-bold mt-1.5 sm:mt-2 text-sm sm:text-base">
             Configure how this device connects to the POS network.
           </p>
         </div>
 
         {/* Mode Selection */}
-        <div className="bg-pos-card p-6 rounded-3xl border border-pos-border shadow-sm mb-6">
-          <label className="block text-sm font-black text-pos-text uppercase tracking-wider mb-3">
+        <div className="bg-pos-card p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-pos-border shadow-sm mb-4 sm:mb-6">
+          <label className="block text-xs sm:text-sm font-black text-pos-text uppercase tracking-wider mb-2 sm:mb-3">
             Operating Mode
           </label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 mb-3 sm:mb-4">
             <button
               onClick={() => setOpMode('NODE_SERVER')}
-              className={`p-4 rounded-2xl border text-left transition-all ${
+              className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl border text-left transition-all ${
                 opMode === 'NODE_SERVER' || opMode === 'WAITER_CLIENT'
                   ? 'border-emerald-500 bg-emerald-50/10 shadow-glow-accent'
                   : 'border-pos-border bg-pos-bg hover:border-pos-accent/50'
               }`}
             >
               <div className="flex items-center gap-2 mb-1">
-                <Server className={`h-5 w-5 ${opMode === 'NODE_SERVER' ? 'text-emerald-500' : 'text-pos-text-muted'}`} />
-                <span className="font-bold text-pos-text">Standard (Node Server)</span>
+                <Server className={`h-4 w-4 sm:h-5 sm:w-5 ${opMode === 'NODE_SERVER' ? 'text-emerald-500' : 'text-pos-text-muted'}`} />
+                <span className="font-bold text-pos-text text-sm sm:text-base">Standard (Node Server)</span>
               </div>
               <p className="text-xs text-pos-text-muted font-semibold">Connect to a Windows PC or Waiter Client</p>
             </button>
             
             <button
               onClick={() => setOpMode('ANDROID_MASTER')}
-              className={`p-4 rounded-2xl border text-left transition-all ${
+              className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl border text-left transition-all ${
                 opMode === 'ANDROID_MASTER'
                   ? 'border-blue-500 bg-blue-50/10 shadow-[0_0_15px_rgba(59,130,246,0.15)]'
                   : 'border-pos-border bg-pos-bg hover:border-blue-500/50'
               }`}
             >
               <div className="flex items-center gap-2 mb-1">
-                <Smartphone className={`h-5 w-5 ${opMode === 'ANDROID_MASTER' ? 'text-blue-500' : 'text-pos-text-muted'}`} />
-                <span className="font-bold text-pos-text">Android Master</span>
+                <Smartphone className={`h-4 w-4 sm:h-5 sm:w-5 ${opMode === 'ANDROID_MASTER' ? 'text-blue-500' : 'text-pos-text-muted'}`} />
+                <span className="font-bold text-pos-text text-sm sm:text-base">Android Master</span>
               </div>
               <p className="text-xs text-pos-text-muted font-semibold">This tablet hosts the local network</p>
             </button>
@@ -172,14 +172,14 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
         </div>
 
         {opMode !== 'ANDROID_MASTER' ? (
-        <div className="bg-pos-card rounded-2xl border border-pos-border shadow-lg p-6 space-y-6">
+        <div className="bg-pos-card rounded-xl sm:rounded-2xl border border-pos-border shadow-lg p-4 sm:p-6 space-y-4 sm:space-y-6">
 
           {/* Server URL Input */}
           <div>
             <label className="block text-xs font-black text-pos-text-muted uppercase tracking-wider mb-2">
               Backend Server URL
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <div className="relative flex-1">
                 <Server className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-pos-text-muted" />
                 <input
@@ -187,15 +187,15 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
                   value={url}
                   onChange={e => { setUrl(e.target.value); setStatus('idle'); }}
                   placeholder="http://192.168.1.100:3001"
-                  className="w-full pl-9 pr-3 py-3 bg-pos-input border border-pos-border rounded-xl text-pos-text font-bold focus:outline-none focus:border-pos-accent text-sm shadow-inner"
+                  className="w-full pl-9 pr-3 py-2.5 sm:py-3 bg-pos-input border border-pos-border rounded-xl text-pos-text font-bold focus:outline-none focus:border-pos-accent text-sm shadow-inner"
                 />
               </div>
               <button onClick={handleProbe} disabled={status === 'probing' || !url.trim()}
-                className="px-4 py-3 bg-pos-accent hover:opacity-90 text-white font-black rounded-xl transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2 text-sm">
+                className="px-4 py-2.5 sm:py-3 bg-pos-accent hover:opacity-90 text-white font-black rounded-xl transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
                 {status === 'probing'
                   ? <Loader2 className="h-4 w-4 animate-spin" />
                   : <Wifi className="h-4 w-4" />}
-                Test
+                Test Connection
               </button>
             </div>
 
@@ -283,11 +283,11 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
           </div>
 
           {/* What this device will be used as */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <div className="flex items-start gap-3">
-              <Server className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 sm:p-4">
+            <div className="flex items-start gap-2 sm:gap-3">
+              <Server className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 mt-0.5 shrink-0" />
               <div>
-                <p className="text-sm font-black text-blue-700 mb-1">
+                <p className="text-xs sm:text-sm font-black text-blue-700 mb-1">
                   {url === 'http://localhost:3001' || url.includes('localhost')
                     ? '🖥️ Single PC Mode — Backend runs on this machine'
                     : '📡 Multi-Terminal Mode — Connecting to remote server'}
@@ -302,15 +302,15 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
             <button onClick={handleSkip}
-              className="flex-1 py-3 bg-pos-bg hover:bg-pos-sidebar text-pos-text font-bold rounded-xl border border-pos-border transition-colors cursor-pointer text-sm">
+              className="flex-1 py-2.5 sm:py-3 bg-pos-bg hover:bg-pos-sidebar text-pos-text font-bold rounded-xl border border-pos-border transition-colors cursor-pointer text-sm">
               Skip (Use Localhost)
             </button>
             <button
               onClick={handleSave}
               disabled={status !== 'ok' && url !== 'http://localhost:3001' && !url.includes('localhost')}
-              className="flex-2 px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2 text-sm">
+              className="flex-[2] px-6 sm:px-8 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2 text-sm">
               <Check className="h-4 w-4" /> Save & Connect
             </button>
           </div>

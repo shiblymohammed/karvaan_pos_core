@@ -122,7 +122,22 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
   };
 
   return (
-    <div className={`${isMobileCartOpen ? 'fixed inset-0 z-50 bg-white m-0 rounded-none' : `hidden lg:flex col-span-12 lg:col-span-4 bg-white rounded-l-[32px] border-l border-slate-200 z-20`} flex-col justify-between overflow-hidden transition-all shadow-[-8px_0_24px_rgba(0,0,0,0.02)]`}>
+    <>
+      {/* Mobile Backdrop */}
+      {isMobileCartOpen && (
+        <div 
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden transition-opacity"
+          onClick={() => setIsMobileCartOpen(false)}
+        />
+      )}
+      
+      {/* Sidebar / Bottom Sheet */}
+      <div className={`fixed inset-x-0 bottom-0 top-12 z-50 bg-white rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col justify-between overflow-hidden transition-transform duration-300 ease-out lg:static lg:flex lg:col-span-4 lg:w-[400px] xl:w-[450px] lg:rounded-none lg:rounded-l-[32px] lg:shadow-[-8px_0_24px_rgba(0,0,0,0.02)] ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+        
+        {/* Mobile Swipe Handle */}
+        <div className="w-full flex justify-center pt-3 pb-1 lg:hidden" onClick={() => setIsMobileCartOpen(false)}>
+          <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
+        </div>
       <FolioHeader
         orderType={orderType}
         setOrderType={setOrderType}
@@ -191,5 +206,6 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         onDispatchDelivery={(isPrepaid) => { /* Handled in POSScreen */ }}
       />
     </div>
+    </>
   );
 };

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { POSScreen } from './screens/POSScreen';
 import { TableMapScreen } from './screens/TableMapScreen';
 import { KDSScreen } from './screens/KDSScreen';
+import { QueueScreen } from './screens/QueueScreen';
 import { InventoryScreen } from './screens/InventoryScreen';
 import { QROrderScreen } from './screens/QROrderScreen';
+import { useFullscreen } from './hooks/useFullscreen';
 import { AdminPortalScreen } from './screens/AdminPortalScreen';
 import { FullLoginScreen } from './screens/FullLoginScreen';
 import { LockScreen } from './screens/LockScreen';
@@ -11,10 +13,12 @@ import { ParcelBoardScreen } from './screens/ParcelBoardScreen';
 import { DeliveryDispatchScreen } from './screens/DeliveryDispatchScreen';
 import { useCartStore } from './store/cartStore';
 import { useAuthStore } from './store/useAuthStore';
+import { useSettingsStore } from './store/useSettingsStore';
 import { 
   Utensils, LayoutGrid, Flame, Package, QrCode, 
   Wifi, WifiOff, ShieldCheck, Clock, Sparkles, Settings, Lock, Bike,
-  ChevronLeft, ChevronRight, ChevronDown, LayoutDashboard, LogOut
+  ChevronLeft, ChevronRight, ChevronDown, LayoutDashboard, LogOut,
+  MoreHorizontal, X, MonitorSpeaker
 } from 'lucide-react';
 import { initSocketListeners } from './services/socket';
 import { socket } from './services/socket';
@@ -23,12 +27,13 @@ import { startAndroidMasterServer, stopAndroidMasterServer } from './services/lo
 import { startMasterSyncPolling, stopMasterSyncPolling } from './services/socket';
 import { SetupScreen } from './screens/SetupScreen';
 
-export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY' | 'DASHBOARD' | 'SETTINGS';
+export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY' | 'DASHBOARD' | 'SETTINGS' | 'QUEUE';
 
 const navItems = [
   { id: 'POS', label: 'POS Billing', icon: Utensils, role: 'ALL', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
   { id: 'TABLES', label: 'Floor Plan', icon: LayoutGrid, role: 'ALL', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
   { id: 'KDS', label: 'Kitchen (KDS)', icon: Flame, role: 'ALL', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+  { id: 'QUEUE', label: 'Order TV', icon: MonitorSpeaker, role: 'ALL', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
   { id: 'PARCEL', label: 'Parcel', icon: Package, role: 'NON_WAITER', gradient: 'from-amber-400 to-orange-500', shadow: 'shadow-[0_4px_12px_rgba(245,158,11,0.4)]', border: 'border-amber-500/50' },
   { id: 'DELIVERY', label: 'Delivery', icon: Bike, role: 'NON_WAITER', gradient: 'from-purple-400 to-indigo-500', shadow: 'shadow-[0_4px_12px_rgba(168,85,247,0.4)]', border: 'border-purple-500/50' },
   { id: 'QR', label: 'QR Orders', icon: QrCode, role: 'NON_WAITER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
@@ -38,22 +43,27 @@ const navItems = [
 ];
 
 export const App: React.FC = () => {
-  const [activeScreen, setActiveScreen] = useState<ScreenType>('POS');
+  const [activeScreen, setActiveScreen] = useState<ScreenType>(() => {
+    return (localStorage.getItem('karvaanActiveScreen') as ScreenType) || 'POS';
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobileNavMoreOpen, setIsMobileNavMoreOpen] = useState(false);
   
   const { isOffline, toggleOffline, items, selectedTableName } = useCartStore();
   const { currentUser, isLocked, lockTerminal, logout } = useAuthStore();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showSetup, setShowSetup] = useState(!isServerConfigured());
 
+  // Dynamic theme-color: green for main app, dark for login/lock/setup
+  const themeContext = showSetup ? 'setup' : (!currentUser || isLocked) ? 'login' : 'app';
+  const { requestFullscreen } = useFullscreen(themeContext);
+
+  useEffect(() => {
+    localStorage.setItem('karvaanActiveScreen', activeScreen);
+  }, [activeScreen]);
+
   const handleNavClick = (screen: ScreenType) => {
-    // @ts-ignore
-    if (document.startViewTransition) {
-      // @ts-ignore
-      document.startViewTransition(() => setActiveScreen(screen));
-    } else {
-      setActiveScreen(screen);
-    }
+    setActiveScreen(screen);
   };
 
   useEffect(() => {
@@ -64,6 +74,7 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    useSettingsStore.getState().fetchSettings();
     initSocketListeners();
   }, []);
 
@@ -106,13 +117,26 @@ export const App: React.FC = () => {
     setActiveScreen('DELIVERY');
   }
 
+  // Mobile Bottom Nav Logic
+  const isWaiter = currentUser.role === 'WAITER';
+  const mobilePrimaryItems = isWaiter 
+    ? navItems.filter(i => ['POS', 'TABLES', 'KDS'].includes(i.id))
+    : navItems.filter(i => ['POS', 'TABLES', 'KDS', 'DASHBOARD'].includes(i.id));
+
+  const mobileMoreItems = isWaiter 
+    ? [] 
+    : navItems.filter(i => 
+        !['POS', 'TABLES', 'KDS', 'DASHBOARD'].includes(i.id) && 
+        (i.role === 'ALL' || i.role === 'NON_WAITER' || (i.role === 'ADMIN_MANAGER' && (currentUser.role === 'ADMIN' || currentUser.role === 'MANAGER')))
+      );
+
   return (
-    <div className="flex h-screen bg-carbon-lines text-kv-dark font-sans selection:bg-kv-primary selection:text-white overflow-hidden transition-colors duration-300 p-0 md:py-4 md:pr-4 gap-0 md:gap-4 relative">
+    <div className="flex flex-col md:flex-row h-[100dvh] bg-carbon-lines text-kv-dark font-sans selection:bg-kv-primary selection:text-white overflow-hidden transition-colors duration-300 p-0 md:py-4 md:pr-4 gap-0 md:gap-4 relative">
       
 
 
-      {/* Sidebar Navigation */}
-      <aside className={`${isSidebarOpen ? 'w-20 md:w-[220px]' : 'w-16 md:w-[64px]'} bg-transparent flex flex-col shrink-0 transition-all duration-300 z-30 relative`}>
+      {/* Sidebar Navigation (Desktop/Tablet) */}
+      <aside className={`${isSidebarOpen ? 'w-20 md:w-[220px]' : 'w-16 md:w-[64px]'} hidden md:flex bg-transparent flex-col shrink-0 transition-all duration-300 z-30 relative`}>
         {/* Edge Collapse Trigger */}
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -277,6 +301,7 @@ export const App: React.FC = () => {
           {activeScreen === 'POS' && <POSScreen />}
           {activeScreen === 'TABLES' && <TableMapScreen onNavigateToPOS={() => setActiveScreen('POS')} />}
           {activeScreen === 'KDS' && <KDSScreen />}
+          {activeScreen === 'QUEUE' && <QueueScreen />}
           {activeScreen === 'INVENTORY' && <InventoryScreen />}
           {activeScreen === 'QR' && <QROrderScreen />}
           {activeScreen === 'ADMIN' && <AdminPortalScreen />}
@@ -284,6 +309,110 @@ export const App: React.FC = () => {
           {activeScreen === 'DELIVERY' && <DeliveryDispatchScreen />}
         </div>
       </main>
+
+      {/* MOBILE BOTTOM NAVIGATION BAR */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 z-30 pointer-events-none">
+        <nav className="flex items-center justify-around bg-[#0d212b]/80 backdrop-blur-2xl pb-safe pt-2 pb-2 px-2 rounded-[28px] border border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.4)] pointer-events-auto">
+        {currentUser.role === 'DELIVERY' ? (
+          <div className="w-full text-center text-purple-400 font-bold text-sm py-2">Delivery Rider Mode</div>
+        ) : currentUser.role === 'KITCHEN' ? (
+          <div className="w-full text-center text-amber-400 font-bold text-sm py-2">Kitchen Monitor Mode</div>
+        ) : (
+          <>
+            {mobilePrimaryItems.map(item => {
+              const isActive = activeScreen === item.id;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavClick(item.id as ScreenType)}
+                  className={`flex flex-col items-center justify-center gap-1 w-16 h-12 rounded-xl transition-all ${isActive ? 'text-[#8cc63f]' : 'text-slate-400 hover:text-white'}`}
+                >
+                  <Icon className={`w-6 h-6 ${isActive ? 'stroke-[2.5]' : 'stroke-2'}`} />
+                  <span className={`text-[9px] font-bold ${isActive ? 'text-white' : ''}`}>{item.label}</span>
+                </button>
+              );
+            })}
+            
+            {/* MORE BUTTON */}
+            {!isWaiter && (
+              <button
+                onClick={() => setIsMobileNavMoreOpen(true)}
+                className={`flex flex-col items-center justify-center gap-1 w-16 h-12 rounded-xl transition-all ${isMobileNavMoreOpen ? 'text-[#8cc63f]' : 'text-slate-400 hover:text-white'}`}
+              >
+                <MoreHorizontal className="w-6 h-6 stroke-2" />
+                <span className="text-[9px] font-bold">More</span>
+              </button>
+            )}
+          </>
+        )}
+        </nav>
+      </div>
+
+      {/* MOBILE "MORE" DRAWER */}
+      {isMobileNavMoreOpen && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden transition-opacity"
+            onClick={() => setIsMobileNavMoreOpen(false)}
+          />
+          <div className="fixed inset-x-0 bottom-0 z-50 bg-gradient-to-b from-[#1a2b38]/95 to-[#0d212b]/95 backdrop-blur-3xl rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden animate-in slide-in-from-bottom-full md:hidden border-t border-white/10">
+            <div className="w-full flex justify-center pt-3 pb-2" onClick={() => setIsMobileNavMoreOpen(false)}>
+              <div className="w-12 h-1.5 bg-white/20 rounded-full" />
+            </div>
+            
+            <div className="p-4 grid grid-cols-4 gap-4">
+              {mobileMoreItems.map(item => {
+                const isActive = activeScreen === item.id;
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      handleNavClick(item.id as ScreenType);
+                      setIsMobileNavMoreOpen(false);
+                    }}
+                    className="flex flex-col items-center justify-center gap-2 p-2 group"
+                  >
+                    <div className={`w-14 h-14 rounded-[20px] flex items-center justify-center transition-all active:scale-95 ${isActive ? `bg-gradient-to-br ${item.gradient} shadow-lg text-white` : 'bg-white/10 hover:bg-white/20 border border-white/5 text-slate-300'}`}>
+                      <Icon className="w-7 h-7" />
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-300 text-center leading-tight">{item.label}</span>
+                  </button>
+                );
+              })}
+              
+              <button
+                onClick={() => {
+                  lockTerminal();
+                  setIsMobileNavMoreOpen(false);
+                }}
+                className="flex flex-col items-center justify-center gap-2 p-2"
+              >
+                <div className="w-14 h-14 rounded-[20px] flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/5 text-amber-400 transition-all active:scale-95">
+                  <Lock className="w-7 h-7" />
+                </div>
+                <span className="text-[10px] font-bold text-slate-300 text-center leading-tight">Lock</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  logout();
+                  setIsMobileNavMoreOpen(false);
+                }}
+                className="flex flex-col items-center justify-center gap-2 p-2"
+              >
+                <div className="w-14 h-14 rounded-[20px] flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/5 text-rose-500 transition-all active:scale-95">
+                  <LogOut className="w-7 h-7" />
+                </div>
+                <span className="text-[10px] font-bold text-slate-300 text-center leading-tight">Logout</span>
+              </button>
+            </div>
+            <div className="h-safe-bottom bg-transparent" />
+          </div>
+        </>
+      )}
+
     </div>
   );
 };

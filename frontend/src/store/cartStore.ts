@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useTableStore } from './useTableStore';
 import { useKdsStore } from './useKdsStore';
+import { useSettingsStore } from './useSettingsStore';
 import { socket, emitAction } from '../services/socket';
 
 export interface CartItem {
@@ -220,7 +221,7 @@ export const useCartStore = create<CartState>()(
     if (newItems.length > 0) {
       useKdsStore.getState().addTicket({
         id: `kot-${Date.now()}`,
-        orderNumber: `KOT-${Math.floor(Math.random() * 9000)}`,
+        orderNumber: `${useSettingsStore.getState().orderPrefix}-${Math.floor(Math.random() * 9000)}`,
         tableNumber: state.orderType === 'DINE_IN'
           ? (state.selectedTableName || 'Takeaway')
           : (state.orderType === 'PARCEL' ? '📦 Parcel' : '🛵 Delivery'),

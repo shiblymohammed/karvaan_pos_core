@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Flame, Clock, CheckCircle2, Bell, RefreshCw, AlertTriangle, Utensils, Volume2, Filter, Package, Bike } from 'lucide-react';
+import { Flame, Clock, CheckCircle2, RefreshCw, AlertTriangle, Utensils, Volume2, Filter, Package, Bike, LayoutGrid, Columns, LayoutList, ChefHat } from 'lucide-react';
 import { useKdsStore } from '../store/useKdsStore';
+import { motion, AnimatePresence } from 'framer-motion';
+
+type ViewMode = 'GRID' | 'COMPACT' | 'KANBAN';
 
 export const KDSScreen: React.FC = () => {
   const { tickets, updateTicketStatus, updateElapsedTimes } = useKdsStore();
   const [slaFilter, setSlaFilter] = useState<'ALL' | 'NORMAL' | 'WARNING' | 'URGENT'>('ALL');
   const [audioEnabled, setAudioEnabled] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>('GRID');
 
   const playReadyChime = () => {
     if (!audioEnabled) return;
@@ -35,7 +39,7 @@ export const KDSScreen: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const handleStatusProgression = (ticketId: string, nextStatus: 'READY' | 'SERVED') => {
+  const handleStatusProgression = (ticketId: string, nextStatus: 'COOKING' | 'READY' | 'SERVED') => {
     if (nextStatus === 'READY') {
       playReadyChime();
     }
@@ -47,30 +51,25 @@ export const KDSScreen: React.FC = () => {
     updateTicketStatus(ticketId, nextStatus);
   };
 
-  // High-visibility KDS card container styles for long-distance restaurant kitchen viewing
   const getSlaCardStyle = (mins: number, status: string, orderType?: string) => {
-    if (status === 'READY') return 'border-t-8 border-t-emerald-500 border-2 border-emerald-500 bg-pos-card shadow-glass ring-2 ring-emerald-500/30';
-    if (orderType === 'PARCEL') return 'border-t-8 border-t-amber-500 border-2 border-amber-400 bg-pos-card shadow-glass ring-1 ring-amber-400/30';
-    if (orderType === 'DELIVERY') return 'border-t-8 border-t-purple-500 border-2 border-purple-400 bg-pos-card shadow-glass ring-1 ring-purple-400/30';
-    if (mins >= 15) return 'border-t-8 border-t-rose-600 border-2 border-rose-600 bg-pos-card shadow-glass ring-2 ring-rose-600/40 animate-pulse';
-    if (mins >= 10) return 'border-t-8 border-t-amber-500 border-2 border-amber-500 bg-pos-card shadow-glass';
-    return 'border-t-8 border-t-blue-500 border-2 border-pos-border bg-pos-card shadow-sm hover:shadow-glass';
+    const base = "backdrop-blur-xl rounded-3xl border-2 transition-all duration-300 overflow-hidden flex flex-col justify-between";
+    if (status === 'READY') return `${base} border-transparent bg-[#b5ef85]/90`;
+    if (orderType === 'PARCEL') return `${base} border-amber-300/60 bg-amber-50/80`;
+    if (orderType === 'DELIVERY') return `${base} border-purple-300/60 bg-purple-50/80`;
+    if (mins >= 15) return `${base} border-rose-400 bg-rose-50/90`;
+    if (mins >= 10) return `${base} border-amber-400/80 bg-amber-50/90`;
+    return `${base} border-slate-200/80 bg-white/70 hover:bg-white`;
   };
 
   const getSlaHeaderStyle = (mins: number, status: string, orderType?: string) => {
-    if (status === 'READY') return 'bg-emerald-600 text-white';
-    if (orderType === 'PARCEL') return 'bg-amber-500 text-white';
-    if (orderType === 'DELIVERY') return 'bg-purple-600 text-white';
-    if (mins >= 15) return 'bg-rose-600 text-white';
-    if (mins >= 10) return 'bg-amber-500 text-slate-900';
-    return 'bg-slate-800 text-white';
+    return 'border-b border-black/5 bg-transparent';
   };
 
   const getSlaBadgeStyle = (mins: number, status: string) => {
-    if (status === 'READY') return 'bg-white text-emerald-800 font-black shadow-md';
-    if (mins >= 15) return 'bg-white text-rose-700 font-black shadow-md';
-    if (mins >= 10) return 'bg-slate-900 text-amber-300 font-black shadow-md';
-    return 'bg-white/20 text-white font-black';
+    if (status === 'READY') return 'bg-white/60 text-kv-dark font-black shadow-sm';
+    if (mins >= 15) return 'bg-rose-500 text-white font-black shadow-sm animate-pulse';
+    if (mins >= 10) return 'bg-amber-400 text-amber-950 font-black shadow-sm';
+    return 'bg-slate-100/80 text-slate-700 font-black';
   };
 
   // Filter out SERVED tickets and apply SLA filters
@@ -89,35 +88,172 @@ export const KDSScreen: React.FC = () => {
     return b.elapsedMinutes - a.elapsedMinutes;
   });
 
+  const renderTicketCard = (ticket: any, isCompact: boolean) => (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 0.3 }}
+      key={ticket.id}
+      className={`${getSlaCardStyle(
+        ticket.elapsedMinutes,
+        ticket.status,
+        ticket.orderType
+      )}`}
+    >
+      {/* Card Header */}
+      <div>
+        <div className={`${isCompact ? 'p-3' : 'p-4'} flex items-center justify-between gap-2 ${getSlaHeaderStyle(
+          ticket.elapsedMinutes,
+          ticket.status,
+          ticket.orderType
+        )}`}>
+          <div className="flex items-center gap-3">
+            <span className={`${isCompact ? 'text-xl px-2.5 py-1' : 'text-3xl px-3.5 py-1.5'} font-black rounded-2xl bg-white/60 text-slate-800 tracking-tight shadow-sm border border-white/50`}>
+              {ticket.tableNumber}
+            </span>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <h4 className={`font-black uppercase text-slate-800 tracking-tight ${isCompact ? 'text-sm' : 'text-base'}`}>{ticket.orderNumber}</h4>
+                {ticket.orderType === 'PARCEL' && (
+                  <span className={`flex items-center gap-1 font-black bg-white/60 rounded-full uppercase tracking-wide text-slate-700 ${isCompact ? 'text-[8px] px-1.5 py-0.5' : 'text-[10px] px-2 py-0.5'}`}>
+                    <Package className={isCompact ? 'h-2 w-2' : 'h-3 w-3'} /> Parcel
+                  </span>
+                )}
+                {ticket.orderType === 'DELIVERY' && (
+                  <span className={`flex items-center gap-1 font-black bg-white/60 rounded-full uppercase tracking-wide text-slate-700 ${isCompact ? 'text-[8px] px-1.5 py-0.5' : 'text-[10px] px-2 py-0.5'}`}>
+                    <Bike className={isCompact ? 'h-2 w-2' : 'h-3 w-3'} /> Delivery
+                  </span>
+                )}
+              </div>
+              <p className={`${isCompact ? 'text-[10px]' : 'text-xs'} font-bold text-slate-500`}>
+                {ticket.customerName ? `👤 ${ticket.customerName}` : `Fired ${new Date(ticket.firedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`${isCompact ? 'text-sm px-2 py-1' : 'text-lg px-3 py-1.5'} rounded-2xl flex items-center gap-1.5 ${getSlaBadgeStyle(
+              ticket.elapsedMinutes,
+              ticket.status
+            )}`}
+          >
+            <Clock className={`${isCompact ? 'h-3 w-3' : 'h-4 w-4'} shrink-0 ${ticket.elapsedMinutes >= 15 ? 'animate-bounce' : ''}`} />
+            <span>{ticket.elapsedMinutes}m</span>
+          </span>
+        </div>
+
+        {/* Food Items List */}
+        <div className={`${isCompact ? 'p-3 space-y-2' : 'p-4 space-y-3.5'} max-h-[300px] overflow-y-auto bg-transparent`}>
+          {ticket.items.map((item: any, idx: number) => (
+            <div key={idx} className={`flex items-start justify-between border-b border-kv-border last:border-none last:pb-0 ${isCompact ? 'pb-2' : 'pb-3'}`}>
+              <div className="flex items-start gap-3 w-full">
+                <span className={`${isCompact ? 'text-sm px-2 py-0.5' : 'text-base px-2.5 py-1'} font-black rounded-xl bg-white/60 text-slate-800 shadow-sm border border-white/50 shrink-0 mt-0.5`}>
+                  {item.quantity}x
+                </span>
+                <div className="flex-1">
+                  <span className={`font-bold text-slate-800 leading-snug block tracking-tight ${isCompact ? 'text-sm' : 'text-base'}`}>{item.name}</span>
+                  {item.notes && (
+                    <div className={`font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-200 rounded-xl flex items-center shadow-sm ${isCompact ? 'text-[10px] px-2 py-1 mt-1 gap-1' : 'text-sm px-3 py-1.5 mt-2 gap-2'}`}>
+                      <AlertTriangle className={`${isCompact ? 'h-3 w-3' : 'h-4 w-4'} text-amber-600 shrink-0`} />
+                      <span>{item.notes}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Action Footer Buttons */}
+      <div className={`p-3 bg-white/40 border-t border-black/5 ${isCompact ? 'flex gap-2' : ''}`}>
+        {ticket.status === 'RECEIVED' && (
+          <button
+            onClick={() => handleStatusProgression(ticket.id, 'COOKING')}
+            className={`w-full py-3 bg-amber-400 hover:bg-amber-500 text-amber-950 font-black text-base uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer border border-amber-300/50 ${isCompact ? 'py-2 text-xs' : ''}`}
+          >
+            <Flame className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />
+            <span>Start Cooking</span>
+          </button>
+        )}
+        {ticket.status === 'COOKING' && (
+          <button
+            onClick={() => handleStatusProgression(ticket.id, 'READY')}
+            className={`w-full bg-[#b5ef85] hover:bg-[#a2db74] text-[#0d212b] font-black uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer border border-[#b5ef85]/50 ${isCompact ? 'py-2 text-xs' : 'py-4 text-base'}`}
+          >
+            <ChefHat className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />
+            <span>Mark Ready</span>
+          </button>
+        )}
+        {ticket.status === 'READY' && (
+          <button
+            onClick={() => handleStatusProgression(ticket.id, 'SERVED')}
+            className={`w-full bg-slate-800 hover:bg-slate-700 text-white font-black uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer ${isCompact ? 'py-2 text-xs' : 'py-4 text-base'}`}
+          >
+            <CheckCircle2 className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />
+            <span>Mark Served</span>
+          </button>
+        )}
+      </div>
+    </motion.div>
+  );
+
   return (
     <div className="p-6 h-[calc(100vh-64px)] overflow-y-auto bg-pos-bg space-y-6 text-pos-text transition-colors duration-300">
       {/* KDS Header Bar */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-pos-sidebar p-5 rounded-2xl border border-pos-border shadow-glass transition-colors duration-300">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-teal-100 text-teal-800 rounded-xl border border-teal-300">
-            <Flame className="h-6 w-6 text-pos-accent animate-bounce" />
+            <Flame className="h-6 w-6 text-pos-accent" />
           </div>
           <div>
             <h2 className="text-xl font-extrabold text-pos-text flex items-center gap-2">
               <span>Kitchen Display System (KDS)</span>
               <span
-                className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300`}
+                className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300"
               >
                 ● Live Local Cache
               </span>
             </h2>
             <p className="text-xs text-pos-text-muted mt-0.5">
-              High-visibility live ticket routing designed for 10ft kitchen distance viewing.
+              High-visibility live ticket routing for kitchen staff.
             </p>
           </div>
         </div>
 
-        {/* SLA Filter Bar & Audio Chime Toggle */}
         <div className="flex items-center gap-3 flex-wrap">
+          {/* View Toggles */}
           <div className="flex items-center gap-1 bg-pos-card p-1 rounded-xl border border-pos-border shadow-2xs">
-            <span className="text-xs font-bold text-pos-text-muted px-2 flex items-center gap-1">
+            <button
+              onClick={() => setViewMode('GRID')}
+              className={`p-2 rounded-lg transition-all cursor-pointer ${viewMode === 'GRID' ? 'bg-pos-accent text-white shadow-sm' : 'text-pos-text-muted hover:text-pos-text hover:bg-pos-card-hover'}`}
+              title="Grid View (Default)"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('COMPACT')}
+              className={`p-2 rounded-lg transition-all cursor-pointer ${viewMode === 'COMPACT' ? 'bg-pos-accent text-white shadow-sm' : 'text-pos-text-muted hover:text-pos-text hover:bg-pos-card-hover'}`}
+              title="Compact View"
+            >
+              <LayoutList className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('KANBAN')}
+              className={`p-2 rounded-lg transition-all cursor-pointer ${viewMode === 'KANBAN' ? 'bg-pos-accent text-white shadow-sm' : 'text-pos-text-muted hover:text-pos-text hover:bg-pos-card-hover'}`}
+              title="Kanban Board View"
+            >
+              <Columns className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* SLA Filter Bar */}
+          <div className="flex items-center gap-1 bg-pos-card p-1 rounded-xl border border-pos-border shadow-2xs">
+            <span className="text-xs font-bold text-pos-text-muted px-2 hidden sm:flex items-center gap-1">
               <Filter className="h-3 w-3 text-pos-accent" />
-              <span>SLA Filter:</span>
+              <span>SLA:</span>
             </span>
             {(['ALL', 'NORMAL', 'WARNING', 'URGENT'] as const).map((flt) => (
               <button
@@ -144,21 +280,21 @@ export const KDSScreen: React.FC = () => {
                 ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                 : 'bg-pos-card text-pos-text-muted border-pos-border'
             }`}
-            title="Toggle Web Audio Bell Chime for kitchen staff"
+            title="Toggle Web Audio Bell Chime"
           >
             <Volume2 className="h-4 w-4" />
-            <span>{audioEnabled ? 'Chime ON' : 'Chime Muted'}</span>
+            <span className="hidden sm:inline">{audioEnabled ? 'Chime ON' : 'Muted'}</span>
           </button>
         </div>
       </div>
 
-      {/* Tickets Grid - High-Distance Visibility Standard */}
+      {/* Tickets Display Container */}
       {filteredTickets.length === 0 ? (
         <div className="h-80 flex flex-col items-center justify-center text-center p-8 bg-pos-card rounded-2xl border border-pos-border shadow-2xs">
           <div className="w-16 h-16 rounded-2xl bg-pos-bg border border-pos-border flex items-center justify-center mb-3">
             <CheckCircle2 className="h-8 w-8 text-emerald-500" />
           </div>
-          <h3 className="text-xl font-extrabold text-pos-text">No Tickets in this Filter!</h3>
+          <h3 className="text-xl font-extrabold text-pos-text">No Tickets!</h3>
           <p className="text-sm text-pos-text-muted mt-1 max-w-sm font-medium">
             {slaFilter === 'ALL'
               ? 'All orders complete & served! New Kitchen Order Tickets (KOT) will appear here instantly.'
@@ -166,104 +302,69 @@ export const KDSScreen: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filteredTickets.map((ticket) => (
-            <div
-              key={ticket.id}
-              className={`rounded-2xl flex flex-col justify-between transition-all duration-200 overflow-hidden ${getSlaCardStyle(
-                ticket.elapsedMinutes,
-                ticket.status,
-                ticket.orderType
-              )}`}
+        <AnimatePresence mode="wait">
+          {viewMode === 'KANBAN' ? (
+            <motion.div
+              key="kanban-view"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full min-h-[60vh]"
             >
-              {/* Massive High-Contrast Card Header Bar */}
-              <div>
-                <div className={`p-4 flex items-center justify-between gap-2 ${getSlaHeaderStyle(
-                  ticket.elapsedMinutes,
-                  ticket.status,
-                  ticket.orderType
-                )}`}>
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl font-black px-3.5 py-1.5 rounded-xl bg-black/20 text-white tracking-tight shadow-sm">
-                      {ticket.tableNumber}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <h4 className="font-black text-base tracking-wide uppercase">{ticket.orderNumber}</h4>
-                        {ticket.orderType === 'PARCEL' && (
-                          <span className="flex items-center gap-1 text-[10px] font-black bg-white/20 rounded-full px-2 py-0.5 uppercase tracking-wide">
-                            <Package className="h-3 w-3" /> Parcel
-                          </span>
-                        )}
-                        {ticket.orderType === 'DELIVERY' && (
-                          <span className="flex items-center gap-1 text-[10px] font-black bg-white/20 rounded-full px-2 py-0.5 uppercase tracking-wide">
-                            <Bike className="h-3 w-3" /> Delivery
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs font-bold opacity-90">
-                        {ticket.customerName ? `👤 ${ticket.customerName}` : `Fired ${new Date(ticket.firedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                      </p>
-                    </div>
-                  </div>
-
-                  <span
-                    className={`text-lg px-3 py-1 rounded-xl flex items-center gap-1.5 ${getSlaBadgeStyle(
-                      ticket.elapsedMinutes,
-                      ticket.status
-                    )}`}
-                  >
-                    <Clock className="h-5 w-5 animate-pulse shrink-0" />
-                    <span>{ticket.elapsedMinutes}m</span>
-                  </span>
+              {/* Kanban Column: Received */}
+              <div className="bg-kv-creme/50 rounded-2xl p-4 border border-kv-border flex flex-col">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 bg-kv-surface border border-kv-border rounded-lg"><Package className="h-5 w-5 text-kv-dark" /></div>
+                  <h3 className="text-lg font-black text-kv-dark">Received ({sortedTickets.filter(t => t.status === 'RECEIVED').length})</h3>
                 </div>
-
-                {/* Massive Readable Food Items List */}
-                <div className="p-4 space-y-3.5 max-h-[340px] overflow-y-auto bg-pos-card">
-                  {ticket.items.map((item, idx) => (
-                    <div key={idx} className="flex items-start justify-between pb-3 border-b border-pos-border/40 last:border-none last:pb-0">
-                      <div className="flex items-start gap-3 w-full">
-                        <span className="text-base font-black px-2.5 py-1 rounded-lg bg-emerald-500 text-white shadow-2xs shrink-0 mt-0.5">
-                          {item.quantity}x
-                        </span>
-                        <div className="flex-1">
-                          <span className="font-black text-pos-text text-base leading-snug block">{item.name}</span>
-                          {item.notes && (
-                            <div className="text-sm font-black uppercase tracking-wide text-amber-950 bg-amber-200 border-2 border-amber-400 px-3 py-1.5 rounded-xl mt-2 flex items-center gap-2 shadow-sm">
-                              <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 animate-pulse" />
-                              <span>⚠️ {item.notes}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex flex-col gap-4 overflow-y-auto flex-1 p-1">
+                  <AnimatePresence>
+                    {sortedTickets.filter(t => t.status === 'RECEIVED').map(t => renderTicketCard(t, true))}
+                  </AnimatePresence>
+                </div>
+              </div>
+              
+              {/* Kanban Column: Cooking */}
+              <div className="bg-kv-creme/50 rounded-2xl p-4 border border-kv-border flex flex-col">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 bg-kv-surface border border-kv-border text-amber-600 rounded-lg"><Flame className="h-5 w-5" /></div>
+                  <h3 className="text-lg font-black text-kv-dark">Cooking ({sortedTickets.filter(t => t.status === 'COOKING').length})</h3>
+                </div>
+                <div className="flex flex-col gap-4 overflow-y-auto flex-1 p-1">
+                  <AnimatePresence>
+                    {sortedTickets.filter(t => t.status === 'COOKING').map(t => renderTicketCard(t, true))}
+                  </AnimatePresence>
                 </div>
               </div>
 
-              {/* Massive Touchscreen Action Footer Buttons */}
-              <div className="p-3 bg-pos-bg border-t border-pos-border">
-                {ticket.status === 'COOKING' ? (
-                  <button
-                    onClick={() => handleStatusProgression(ticket.id, 'READY')}
-                    className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-base uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-glow-accent transition-all active:scale-95 cursor-pointer"
-                  >
-                    <Bell className="h-5 w-5 animate-bounce" />
-                    <span>🔔 Mark Ready & Chime</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleStatusProgression(ticket.id, 'SERVED')}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-black text-base uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer"
-                  >
-                    <CheckCircle2 className="h-5 w-5" />
-                    <span>✓ Mark Served to Table</span>
-                  </button>
-                )}
+              {/* Kanban Column: Ready */}
+              <div className="bg-kv-creme/50 rounded-2xl p-4 border border-kv-border flex flex-col">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 bg-kv-primary/10 border border-kv-primary/30 text-kv-primary rounded-lg"><ChefHat className="h-5 w-5" /></div>
+                  <h3 className="text-lg font-black text-kv-dark">Ready for Pickup ({sortedTickets.filter(t => t.status === 'READY').length})</h3>
+                </div>
+                <div className="flex flex-col gap-4 overflow-y-auto flex-1 p-1">
+                  <AnimatePresence>
+                    {sortedTickets.filter(t => t.status === 'READY').map(t => renderTicketCard(t, true))}
+                  </AnimatePresence>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            </motion.div>
+          ) : (
+            /* Grid and Compact Views */
+            <motion.div
+              key="grid-view"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className={`grid gap-5 ${viewMode === 'COMPACT' ? 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}
+            >
+              <AnimatePresence>
+                {sortedTickets.map((ticket) => renderTicketCard(ticket, viewMode === 'COMPACT'))}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
       )}
     </div>
   );

@@ -7,6 +7,8 @@ import { BillingController } from './billing/billing.controller';
 import { BackupModule } from './backup/backup.module';
 import { HistoryModule } from './history/history.module';
 import { SyncModule } from './sync/sync.module';
+import { UploadModule } from './upload/upload.module';
+import { SettingsModule } from './settings/settings.module';
 
 
 @Module({
@@ -16,6 +18,8 @@ import { SyncModule } from './sync/sync.module';
     BackupModule,
     HistoryModule,
     SyncModule,
+    UploadModule,
+    SettingsModule,
   ],
 
   controllers: [BillingController],

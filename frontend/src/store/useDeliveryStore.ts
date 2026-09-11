@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { socket, emitAction } from '../services/socket';
+import { useSettingsStore } from './useSettingsStore';
 
 export type OrderType = 'DINE_IN' | 'PARCEL' | 'DELIVERY';
 export type DeliveryStatus = 'RECEIVED' | 'PREPARING' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
@@ -91,7 +92,8 @@ export const useDeliveryStore = create<DeliveryState>()(
       },
 
       addOrder: (orderData) => {
-        const orderNum = `ORD-${Date.now().toString().slice(-5)}`;
+        const prefix = useSettingsStore.getState().orderPrefix;
+        const orderNum = `${prefix}-${Date.now().toString().slice(-5)}`;
         const newOrder: DeliveryOrder = {
           ...orderData,
           id: `dord-${Date.now()}`,

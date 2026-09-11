@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 import { getServerUrl } from './serverConfig';
 import { enqueueAction, getPendingActions, clearAction } from './offlineQueue';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 
 // ─── Backend WebSocket Connection ─────────────────────────────────────────────
@@ -247,6 +248,13 @@ export function initSocketListeners() {
         socket.on('waste_updated', (wasteLogs: any[]) => {
           console.log('🗑️ [POS] Waste logs updated from another terminal. Count:', wasteLogs.length);
           useInventoryStore.setState({ wasteLogs });
+        });
+
+        // --- Settings updated on another terminal ---
+        socket.on('settings_updated', (settings: any) => {
+          console.log('⚙️ [POS] Settings updated from another terminal.');
+          // Use setState on the store to update immediately without firing the PUT loop
+          useSettingsStore.setState(settings);
         });
 
         // --- Bill settled on this or another terminal ---

@@ -254,3 +254,9 @@ model BackupLog {
   error     String?
   createdAt DateTime @default(now())
 }
+
+model SystemSetting {
+  id        String   @id @default("singleton")
+  data      String   // JSON string of all settings
+  updatedAt DateTime @updatedAt
+}

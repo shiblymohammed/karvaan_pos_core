@@ -11,10 +11,12 @@ import { AdminCustomerLedger } from './Admin/AdminCustomerLedger';
 import { AdminInventoryScreen } from './Admin/AdminInventoryScreen';
 import { AdminTableManager } from './Admin/AdminTableManager';
 
-type AdminTab = 'MENU' | 'STAFF' | 'SETTINGS' | 'LEDGER' | 'INVENTORY' | 'TABLES';
+type AdminTab = 'MENU' | 'STAFF' | 'QUICK_KEYS' | 'SETTINGS' | 'LEDGER' | 'INVENTORY' | 'TABLES';
 
 export const AdminPortalScreen: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<AdminTab>('MENU');
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
+    return (localStorage.getItem('adminActiveTab') as AdminTab) || 'MENU';
+  });
   const [offlineCount, setOfflineCount] = useState(0);
 
   useEffect(() => {
@@ -23,6 +25,10 @@ export const AdminPortalScreen: React.FC = () => {
     window.addEventListener('offline-queue-updated', updateCount);
     return () => window.removeEventListener('offline-queue-updated', updateCount);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('adminActiveTab', activeTab);
+  }, [activeTab]);
 
   const handleForceSync = async () => {
     if (!socket.connected) {
@@ -92,6 +98,18 @@ export const AdminPortalScreen: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('QUICK_KEYS')}
+            className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+              activeTab === 'QUICK_KEYS'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-glow-accent scale-[1.02]'
+                : 'text-pos-text-muted hover:bg-pos-card hover:text-emerald-500'
+            }`}
+          >
+            <Keyboard className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
+            POS Quick-Keys
+          </button>
+
+          <button
             onClick={() => setActiveTab('SETTINGS')}
             className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
               activeTab === 'SETTINGS'
@@ -100,7 +118,7 @@ export const AdminPortalScreen: React.FC = () => {
             }`}
           >
             <Settings className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
-            System & Quick-Keys
+            System Config
           </button>
           <button
             onClick={() => setActiveTab('INVENTORY')}
@@ -160,7 +178,8 @@ export const AdminPortalScreen: React.FC = () => {
         {activeTab === 'MENU' && <AdminMenuManager />}
         {activeTab === 'TABLES' && <AdminTableManager />}
         {activeTab === 'STAFF' && <AdminStaffManager />}
-        {activeTab === 'SETTINGS' && <AdminSettingsManager />}
+        {activeTab === 'QUICK_KEYS' && <AdminSettingsManager type="quick" />}
+        {activeTab === 'SETTINGS' && <AdminSettingsManager type="system" />}
         {activeTab === 'LEDGER' && <AdminCustomerLedger />}
         {activeTab === 'INVENTORY' && <AdminInventoryScreen />}
       </main>
