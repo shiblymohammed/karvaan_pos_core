@@ -32,32 +32,32 @@ const ParcelCard: React.FC<{ order: DeliveryOrder; onAdvance: () => void; onCanc
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <span className="text-[10px] font-black uppercase tracking-widest text-pos-text-muted">{order.orderNumber}</span>
-          <h3 className="font-black text-pos-text text-base leading-tight">{order.customerName}</h3>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{order.orderNumber}</span>
+          <h3 className="font-black text-slate-800 text-base leading-tight">{order.customerName}</h3>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className={`flex items-center gap-1 text-[10px] font-black uppercase px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+          <span className={`flex items-center gap-1 text-[10px] font-black uppercase px-2 py-1 rounded-xl border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
             {cfg.icon} {cfg.label}
           </span>
         </div>
       </div>
 
       {/* Customer Info */}
-      <div className="flex items-center gap-3 text-xs text-pos-text-muted">
+      <div className="flex items-center gap-3 text-xs text-slate-500">
         <span className="flex items-center gap-1"><Phone className="h-3 w-3" /> {order.customerPhone}</span>
         <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {order.placedAt}</span>
         {elapsed > 0 && <span className={`font-bold ${elapsed > 15 ? 'text-red-500' : elapsed > 8 ? 'text-amber-500' : 'text-emerald-500'}`}>{elapsed}m ago</span>}
       </div>
 
       {/* Items */}
-      <div className="bg-pos-bg/50 rounded-xl p-2.5 border border-pos-border/50">
+      <div className="bg-white/50 backdrop-blur-md rounded-2xl p-2.5 border border-white/60">
         {order.items.map((item, i) => (
           <div key={i} className="flex justify-between text-xs py-0.5">
-            <span className="font-bold text-pos-text">{item.quantity}× {item.name}</span>
-            <span className="text-pos-text-muted">₹{(item.price * item.quantity).toFixed(0)}</span>
+            <span className="font-bold text-slate-800">{item.quantity}× {item.name}</span>
+            <span className="text-slate-500">₹{(item.price * item.quantity).toFixed(0)}</span>
           </div>
         ))}
-        <div className="flex justify-between text-sm font-black text-pos-text border-t border-pos-border mt-1.5 pt-1.5">
+        <div className="flex justify-between text-sm font-black text-slate-800 border-t border-slate-200/50 mt-1.5 pt-1.5">
           <span>Total</span>
           <span className="text-emerald-600">₹{order.grandTotal.toFixed(2)}</span>
         </div>
@@ -66,17 +66,17 @@ const ParcelCard: React.FC<{ order: DeliveryOrder; onAdvance: () => void; onCanc
       {/* Actions */}
       <div className="flex gap-2">
         {canAdvance && (
-          <button onClick={onAdvance} className="flex-1 py-2 bg-amber-500 hover:bg-amber-400 text-white text-xs font-black rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm">
+          <button onClick={onAdvance} className="flex-1 py-2 bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-black rounded-2xl transition-all active:scale-95 cursor-pointer shadow-sm border border-amber-300">
             {order.status === 'RECEIVED' ? '▶ Start Preparing' : '✓ Mark Ready'}
           </button>
         )}
         {isReady && (
-          <button onClick={onSettle} className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm animate-pulse">
+          <button onClick={onSettle} className="flex-1 py-2 bg-[#b5ef85] hover:bg-[#a2db74] text-[#0d212b] text-xs font-black rounded-2xl transition-all active:scale-95 cursor-pointer shadow-sm border border-[#b5ef85]/50 animate-pulse">
             🎉 Picked Up / Close
           </button>
         )}
         {order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && (
-          <button onClick={onCancel} className="py-2 px-3 bg-pos-card hover:bg-red-50 text-red-500 text-xs font-black rounded-xl transition-all active:scale-95 cursor-pointer border border-red-200 shadow-sm">
+          <button onClick={onCancel} className="py-2 px-3 bg-white hover:bg-red-50 text-red-500 text-xs font-black rounded-2xl transition-all active:scale-95 cursor-pointer border border-red-200 shadow-sm">
             ✕
           </button>
         )}
@@ -104,67 +104,67 @@ export const ParcelBoardScreen: React.FC = () => {
   };
 
   return (
-    <div className="h-[calc(100vh-64px)] bg-pos-bg overflow-hidden flex flex-col text-pos-text">
+    <div className="h-[calc(100vh-64px)] bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 overflow-hidden flex flex-col text-slate-800">
       {/* Header */}
-      <div className="bg-pos-sidebar border-b border-pos-border px-6 py-4 flex items-center justify-between gap-4">
+      <div className="bg-white/70 backdrop-blur-xl border-b border-white/60 px-6 py-4 flex items-center justify-between gap-4 shadow-sm relative z-10">
         <div>
-          <h1 className="text-xl font-black text-pos-text flex items-center gap-2"><Package className="h-6 w-6 text-amber-500" /> Parcel Board</h1>
-          <p className="text-xs font-bold text-pos-text-muted">{parcelOrders.length} active parcel orders</p>
+          <h1 className="text-xl font-black text-slate-800 flex items-center gap-2"><Package className="h-6 w-6 text-amber-500" /> Parcel Board</h1>
+          <p className="text-xs font-bold text-slate-500">{parcelOrders.length} active parcel orders</p>
         </div>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-pos-text-muted" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders..." className="pl-9 pr-4 py-2 bg-pos-card border border-pos-border rounded-xl text-sm font-bold placeholder:text-pos-text-muted focus:outline-none focus:border-pos-accent" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders..." className="pl-9 pr-4 py-2 bg-white/60 backdrop-blur-md border border-white/50 rounded-2xl text-sm font-bold placeholder:text-slate-400 text-slate-800 focus:outline-none focus:border-white shadow-sm" />
         </div>
       </div>
 
       {/* Pipeline Columns */}
       <div className="flex-1 overflow-auto p-6">
         {parcelOrders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4 text-pos-text-muted">
+          <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-500 bg-white/40 backdrop-blur-md rounded-3xl border border-white/50 max-w-lg mx-auto p-12 shadow-sm">
             <Package className="h-16 w-16 opacity-20" />
-            <p className="text-lg font-black">No active parcel orders</p>
+            <p className="text-lg font-black text-slate-800">No active parcel orders</p>
             <p className="text-sm">New parcel orders will appear here</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
             {/* Received Column */}
-            <div>
+            <div className="bg-white/40 backdrop-blur-md rounded-3xl p-4 border border-white/50 shadow-sm flex flex-col">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-3 h-3 rounded-full bg-blue-500" />
-                <h2 className="font-black text-sm text-pos-text uppercase tracking-wide">Received</h2>
+                <div className="w-3 h-3 rounded-full bg-blue-500 shadow-sm" />
+                <h2 className="font-black text-sm text-slate-800 uppercase tracking-wide">Received</h2>
                 <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{received.length}</span>
               </div>
               <div className="space-y-3">
                 {received.map(o => (
-                  <ParcelCard key={o.id} order={o} onAdvance={() => handleAdvance(o)} onCancel={() => updateOrderStatus(o.id, 'CANCELLED')} onSettle={() => removeOrder(o.id)} />
+                  <ParcelCard key={o.id} order={o} onAdvance={() => handleAdvance(o)} onCancel={() => updateOrderStatus(o.id, 'CANCELLED')} onSettle={() => updateOrderStatus(o.id, 'DELIVERED')} />
                 ))}
               </div>
             </div>
 
             {/* Preparing Column */}
-            <div>
+            <div className="bg-white/40 backdrop-blur-md rounded-3xl p-4 border border-white/50 shadow-sm flex flex-col">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse" />
-                <h2 className="font-black text-sm text-pos-text uppercase tracking-wide">Preparing</h2>
+                <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse shadow-sm" />
+                <h2 className="font-black text-sm text-slate-800 uppercase tracking-wide">Preparing</h2>
                 <span className="text-[10px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{preparing.length}</span>
               </div>
               <div className="space-y-3">
                 {preparing.map(o => (
-                  <ParcelCard key={o.id} order={o} onAdvance={() => handleAdvance(o)} onCancel={() => updateOrderStatus(o.id, 'CANCELLED')} onSettle={() => removeOrder(o.id)} />
+                  <ParcelCard key={o.id} order={o} onAdvance={() => handleAdvance(o)} onCancel={() => updateOrderStatus(o.id, 'CANCELLED')} onSettle={() => updateOrderStatus(o.id, 'DELIVERED')} />
                 ))}
               </div>
             </div>
 
             {/* Ready Column */}
-            <div>
+            <div className="bg-white/40 backdrop-blur-md rounded-3xl p-4 border border-white/50 shadow-sm flex flex-col">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                <h2 className="font-black text-sm text-pos-text uppercase tracking-wide">Ready for Pickup</h2>
+                <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm" />
+                <h2 className="font-black text-sm text-slate-800 uppercase tracking-wide">Ready for Pickup</h2>
                 <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{ready.length}</span>
               </div>
               <div className="space-y-3">
                 {ready.map(o => (
-                  <ParcelCard key={o.id} order={o} onAdvance={() => handleAdvance(o)} onCancel={() => updateOrderStatus(o.id, 'CANCELLED')} onSettle={() => removeOrder(o.id)} />
+                  <ParcelCard key={o.id} order={o} onAdvance={() => handleAdvance(o)} onCancel={() => updateOrderStatus(o.id, 'CANCELLED')} onSettle={() => updateOrderStatus(o.id, 'DELIVERED')} />
                 ))}
               </div>
             </div>

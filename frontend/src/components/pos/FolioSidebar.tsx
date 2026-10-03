@@ -11,7 +11,7 @@ import { FolioFooter } from './FolioFooter';
 import { FolioItemCard } from './FolioItemCard';
 import { EmptyCartState } from './EmptyCartState';
 import { PaymentMethod } from '../SettlementModal';
-import { CheckCircle2, Utensils } from 'lucide-react';
+import { CheckCircle2, Utensils, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface FolioSidebarProps {
   isMobileCartOpen: boolean;
@@ -22,6 +22,8 @@ interface FolioSidebarProps {
   onReturnFolio: () => void;
   onPreBill: () => void;
   onManagerAuthRequest: (action: any) => void;
+  onDispatchDelivery?: (isPrepaid: boolean) => void;
+  onCompleteDelivery?: () => void;
 }
 
 export const FolioSidebar: React.FC<FolioSidebarProps> = ({
@@ -32,7 +34,9 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
   onShowMapPicker,
   onReturnFolio,
   onPreBill,
-  onManagerAuthRequest
+  onManagerAuthRequest,
+  onDispatchDelivery,
+  onCompleteDelivery
 }) => {
   const { 
     items, selectedTableId, selectedTableName, selectedWaiter, 
@@ -44,6 +48,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
   } = useCartStore();
 
   const [activeFolioTab, setActiveFolioTab] = useState<'CURRENT' | 'PARKED'>('CURRENT');
+  const [isFolioExpanded, setIsFolioExpanded] = useState(true);
   const { tables, floors } = useTableStore();
   const { getActiveWaiters } = useStaffStore();
   const { currentUser } = useAuthStore();
@@ -72,10 +77,11 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
     }
   }
 
-  const totalGst = (subtotal - discount + floorSurcharge) * 0.05;
+  const appliedParcelCharge = orderType === 'PARCEL' ? (useSettingsStore.getState().parcelChargeAmount || 0) : 0;
+  const totalGst = (subtotal - discount + floorSurcharge + appliedParcelCharge) * 0.05;
   const cgst = totalGst / 2;
   const sgst = totalGst / 2;
-  const grandTotal = Math.max(0, subtotal - discount + floorSurcharge + cgst + sgst);
+  const grandTotal = Math.max(0, subtotal - discount + floorSurcharge + appliedParcelCharge + cgst + sgst);
 
   const getKitchenStatusBadge = (tableName: string | null, type?: string) => {
     let tableToMatch = type === 'PARCEL' ? '📦 Parcel' : type === 'DELIVERY' ? '🛵 Delivery' : (tableName || 'Takeaway');
@@ -131,12 +137,57 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         />
       )}
       
+      {/* Collapse Button (Desktop/Tablet) */}
+      <button 
+        onClick={() => setIsFolioExpanded(!isFolioExpanded)}
+        className={`hidden lg:flex flex-col items-center justify-center rounded-l-2xl border-y border-l transition-all duration-300 fixed top-1/2 -translate-y-1/2 z-[60] cursor-pointer shadow-[-12px_0_30px_rgba(0,0,0,0.25)] select-none touch-manipulation group/foliobtn overflow-visible
+          ${isFolioExpanded ? 'h-20 w-5 hover:w-6' : 'h-36 w-8 hover:w-9'}
+          ${isFolioExpanded 
+            ? 'bg-white/70 backdrop-blur-xl border-white/60 text-slate-400 hover:bg-white hover:text-slate-700 hover:shadow-[-5px_0_15px_rgba(0,0,0,0.1)]' 
+            : (items.length > 0 
+                ? 'bg-gradient-to-b from-[#b5ef85] to-[#8cc63f] border-[#b5ef85]/50 text-[#0f172a] hover:shadow-[-15px_0_40px_rgba(140,198,63,0.3)]' 
+                : 'bg-[#15202b] bg-[linear-gradient(135deg,_#1e293b,_#0f172a)] border-white/10 text-slate-400 hover:text-white hover:border-white/30 hover:shadow-[-15px_0_40px_rgba(0,0,0,0.4)]')} 
+          ${isFolioExpanded ? 'xl:right-[446px] lg:right-[416px]' : 'lg:right-[16px]'}`}
+      >
+        {/* Ambient Glow effect when items are pending and it's closed */}
+        {!isFolioExpanded && items.length > 0 && (
+          <div className="absolute inset-0 rounded-l-2xl bg-[#8cc63f] blur-md opacity-40 animate-pulse -z-10" />
+        )}
+
+        {/* Floating Pulsing Badge */}
+        {!isFolioExpanded && items.length > 0 && (
+          <div className="absolute -top-2.5 -left-3.5">
+            <span className="relative flex h-[26px] w-[26px]">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-60"></span>
+              <span className="relative flex items-center justify-center rounded-full h-[26px] w-[26px] bg-gradient-to-br from-red-500 to-rose-700 border border-white/40 text-white text-[12px] font-black shadow-xl transform transition-transform group-hover/foliobtn:scale-110">
+                {items.length}
+              </span>
+            </span>
+          </div>
+        )}
+
+        {/* Icon & Sideways Label */}
+        {isFolioExpanded ? (
+          <ChevronRight className="h-5 w-5 transition-transform duration-300 group-hover/foliobtn:translate-x-0.5 drop-shadow-md" />
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <ChevronLeft className="h-5 w-5 transition-transform duration-300 group-hover/foliobtn:-translate-x-0.5 drop-shadow-md" />
+            {items.length > 0 && (
+              <span className="text-[10px] font-black tracking-widest -rotate-90 mt-4 opacity-80 shadow-black drop-shadow-sm">CART</span>
+            )}
+          </div>
+        )}
+      </button>
+
       {/* Sidebar / Bottom Sheet */}
-      <div className={`fixed inset-x-0 bottom-0 top-12 z-50 bg-white rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col justify-between overflow-hidden transition-transform duration-300 ease-out lg:static lg:flex lg:col-span-4 lg:w-[400px] xl:w-[450px] lg:rounded-none lg:rounded-l-[32px] lg:shadow-[-8px_0_24px_rgba(0,0,0,0.02)] ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+      <div className={`fixed inset-x-0 bottom-0 top-12 z-50 bg-white/90 backdrop-blur-3xl rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col justify-between overflow-hidden transition-all duration-300 ease-out lg:static lg:flex lg:col-span-4 ${isFolioExpanded ? 'lg:w-[400px] xl:w-[430px] border-l border-white/40 shadow-[-12px_0_40px_rgba(0,0,0,0.06)]' : 'lg:w-0 border-l-0 shadow-none'} lg:rounded-none lg:rounded-l-[32px] ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+        
+        {/* Inner Fixed-Width Wrapper to prevent layout jump during width animation */}
+        <div className="w-full lg:w-[400px] xl:w-[430px] h-full flex flex-col flex-1 shrink-0">
         
         {/* Mobile Swipe Handle */}
-        <div className="w-full flex justify-center pt-3 pb-1 lg:hidden" onClick={() => setIsMobileCartOpen(false)}>
-          <div className="w-12 h-1.5 bg-slate-300 rounded-full" />
+        <div className="w-full flex justify-center pt-3 pb-1 lg:hidden bg-transparent" onClick={() => setIsMobileCartOpen(false)}>
+          <div className="w-12 h-1.5 bg-slate-300/80 rounded-full" />
         </div>
       <FolioHeader
         orderType={orderType}
@@ -160,13 +211,17 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         onClearFolio={handleClearFolio}
         onReturnFolio={onReturnFolio}
         currentUserRole={currentUser?.role}
+        operatingMode={useSettingsStore.getState().operatingMode || 'FINE_DINING'}
       />
 
-      <div className="flex-1 overflow-y-auto bg-slate-50/50 p-2 md:p-3 relative">
+      <div className="flex-1 overflow-y-auto p-2 md:p-3 relative z-0">
+        {/* Subtle inner shadow at the top for depth */}
+        <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-b from-black/[0.02] to-transparent pointer-events-none z-10" />
+        
         {items.length === 0 ? (
           <EmptyCartState />
         ) : (
-          <div className="flex flex-col">
+          <div className="flex flex-col gap-2 relative z-0">
             {items.map((item, idx) => (
               <FolioItemCard
                 key={`${item.productId}-${idx}`}
@@ -195,6 +250,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         orderType={orderType}
         deliveryStatus={deliveryStatus}
         deliveryFee={deliveryFee}
+        parcelCharge={useSettingsStore.getState().parcelChargeAmount}
         collectedMethod={collectedMethod}
         deliveryAddress={deliveryAddress}
         currentUserRole={currentUser?.role}
@@ -202,9 +258,10 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         onSettle={onSettle}
         onSendKot={sendKot}
         onPreBill={onPreBill}
-        onCompleteDelivery={() => { /* Handled in POSScreen for bill generation */ }}
-        onDispatchDelivery={(isPrepaid) => { /* Handled in POSScreen */ }}
+        onCompleteDelivery={onCompleteDelivery || (() => {})}
+        onDispatchDelivery={onDispatchDelivery || (() => {})}
       />
+      </div>
     </div>
     </>
   );

@@ -46,6 +46,9 @@ interface SettingsState {
   orderTvWaterColor: string;
   setOrderTvWaterColor: (color: string) => void;
 
+  orderTvShowDelivery: boolean;
+  setOrderTvShowDelivery: (show: boolean) => void;
+
   orderTvReadyBadgeEnabled: boolean;
   setOrderTvReadyBadge: (enabled: boolean) => void;
 
@@ -86,6 +89,18 @@ interface SettingsState {
   orderPrefix: string;
   setOrderPrefix: (prefix: string) => void;
 
+  parcelChargeAmount: number;
+  setParcelChargeAmount: (amount: number) => void;
+
+  timeFormat: '12h' | '24h';
+  setTimeFormat: (format: '12h' | '24h') => void;
+
+  dateFormat: 'AUTO' | 'MANUAL';
+  setDateFormat: (format: 'AUTO' | 'MANUAL') => void;
+
+  operatingMode: 'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN';
+  setOperatingMode: (mode: 'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN') => void;
+
   fetchSettings: () => Promise<void>;
 }
 
@@ -105,6 +120,14 @@ export const useSettingsStore = create<SettingsState>()(
         { id: 'd3', label: 'Manager Comp (100%)', amount: 100, type: 'PERCENTAGE' },
         { id: 'd4', label: 'Zomato Gold (₹100 Flat)', amount: 100, type: 'FLAT' },
       ],
+      parcelChargeAmount: 0,
+      setParcelChargeAmount: (amount) => set({ parcelChargeAmount: amount }),
+      timeFormat: '12h',
+      setTimeFormat: (format) => set({ timeFormat: format }),
+      dateFormat: 'AUTO',
+      setDateFormat: (format) => set({ dateFormat: format }),
+      operatingMode: 'FINE_DINING',
+      setOperatingMode: (mode) => set({ operatingMode: mode }),
       orderTvShowPopup: true,
       orderTvPlayAudio: true,
       orderTvAudioTone: 'chime',
@@ -115,6 +138,7 @@ export const useSettingsStore = create<SettingsState>()(
       orderTvTtsEnabled: false,
       orderTvTtsVoiceName: '',
       orderTvWaterColor: '#fbbf24',
+      orderTvShowDelivery: true,
       orderTvReadyBadgeEnabled: true,
       orderTvWaterFillEnabled: true,
       orderTvTimeWaitingEnabled: true,
@@ -171,6 +195,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setOrderTvWaterColor: (color) => set(() => ({
         orderTvWaterColor: color
+      })),
+
+      setOrderTvShowDelivery: (show) => set(() => ({
+        orderTvShowDelivery: show
       })),
 
       setOrderTvReadyBadge: (enabled) => set(() => ({

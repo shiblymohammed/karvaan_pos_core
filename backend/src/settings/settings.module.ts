@@ -7,5 +7,6 @@ import { KdsGateway } from '../kds/kds.gateway';
 @Module({
   controllers: [SettingsController],
   providers: [SettingsService, PrismaService, KdsGateway],
+  exports: [SettingsService],
 })
 export class SettingsModule {}

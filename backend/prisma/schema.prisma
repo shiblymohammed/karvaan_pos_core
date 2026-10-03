@@ -46,6 +46,8 @@ model Category {
   id        String    @id @default(uuid())
   name      String    @unique
   sortOrder Int       @default(0)
+  iconName  String?
+  imageUrl  String?
   products  Product[]
 }
 
@@ -58,6 +60,7 @@ model Product {
   categoryId      String
   isAvailable     Boolean  @default(true)
   prepTimeMinutes Int      @default(12)
+  imageEmoji      String?
   imageUrl        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

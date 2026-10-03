@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { 
   Search, Barcode, Plus, Minus, Trash2, Pause, Play, 
   CreditCard, Banknote, QrCode, Split, Share2, Printer, 
@@ -36,6 +36,7 @@ export const POSScreen: React.FC = () => {
     orderType, deliveryAddress, deliveryFee, deliveryStatus, collectedMethod,
     addItem, removeItemByIndex, updateQuantityByIndex, setTable, setWaiter, 
     holdCurrentOrder, resumeOrder, clearCart, updateItemNoteByIndex, sendKot,
+    isMobileCartOpen, setIsMobileCartOpen,
     setDiscount, setCustomer, setOrderType, setDeliveryAddress, setDeliveryFee
   } = useCartStore();
   const kdsTickets = useKdsStore(state => state.tickets);
@@ -43,9 +44,17 @@ export const POSScreen: React.FC = () => {
   const { tables, floors, setTableStatus } = useTableStore();
   const { getActiveWaiters } = useStaffStore();
   const { checkIs86d, depleteForOrder } = useInventoryStore();
-  const { notes: predefinedNotes, discounts: predefinedDiscounts, orderPrefix } = useSettingsStore();
+  const { notes: predefinedNotes, discounts: predefinedDiscounts, orderPrefix, parcelChargeAmount, operatingMode } = useSettingsStore();
   
   const activeWaiters = getActiveWaiters();
+
+  React.useEffect(() => {
+    if (operatingMode === 'CLOUD_KITCHEN' && orderType !== 'DELIVERY' && orderType !== 'PARCEL') {
+      setOrderType('DELIVERY');
+    } else if (operatingMode === 'QSR' && orderType === 'DINE_IN') {
+      // Allow Dine_in but under the hood, might just map to Eat-In
+    }
+  }, [operatingMode, orderType, setOrderType]);
 
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
@@ -58,7 +67,6 @@ export const POSScreen: React.FC = () => {
   const [selectedAddons, setSelectedAddons] = useState<PaidAddon[]>([]);
   const [returnModalData, setReturnModalData] = useState<ReturnOrderData | null>(null);
   const [managerAuthAction, setManagerAuthAction] = useState<{ isOpen: boolean; title: string; desc: string; onConfirm: (authBy: string) => void } | null>(null);
-  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [showParkedOrders, setShowParkedOrders] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,6 +93,52 @@ export const POSScreen: React.FC = () => {
     return sum + (item.price + addonTotal) * item.quantity;
   }, 0);
 
+  // Global Keyboard Shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+      
+      if (e.key === 'Escape') {
+        if (showCustomerModal) setShowCustomerModal(false);
+        else if (showMapPicker) setShowMapPicker(false);
+        else if (settleState.isOpen) setSettleState({ ...settleState, isOpen: false });
+        else if (customNoteModal) setCustomNoteModal(null);
+        else if (returnModalData) setReturnModalData(null);
+        else if (managerAuthAction) setManagerAuthAction(null);
+        else if (isMobileCartOpen) setIsMobileCartOpen(false);
+        else if (!isInput && items.length > 0) {
+          if (selectedTableId) {
+            holdCurrentOrder();
+          } else {
+            clearCart();
+          }
+        }
+      }
+
+      if (isInput) return;
+
+      if (e.key === 'F1') {
+        e.preventDefault();
+        const hasNewItems = items.some(i => i.status === 'NEW');
+        if (hasNewItems) sendKot();
+      } else if (e.key === 'F2') {
+        e.preventDefault();
+        if (items.length > 0) setReceiptType('PREBILL');
+      } else if (e.key === 'F9') {
+        e.preventDefault();
+        setShowCustomerModal(true);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    showCustomerModal, showMapPicker, settleState.isOpen, 
+    customNoteModal, returnModalData, managerAuthAction, isMobileCartOpen,
+    items, selectedWaiter, selectedTableId, selectedTableName, orderType, customer
+  ]);
+
   // Floor Surcharge Calculation
   let floorSurcharge = 0;
   let floorSurchargeLabel = '';
@@ -103,10 +157,11 @@ export const POSScreen: React.FC = () => {
     }
   }
 
-  const totalGst = (subtotal - discount + floorSurcharge) * 0.05;
+  const appliedParcelCharge = orderType === 'PARCEL' ? (parcelChargeAmount || 0) : 0;
+  const totalGst = (subtotal - discount + floorSurcharge + appliedParcelCharge) * 0.05;
   const cgst = totalGst / 2;
   const sgst = totalGst / 2;
-  const grandTotal = Math.max(0, subtotal - discount + floorSurcharge + cgst + sgst);
+  const grandTotal = Math.max(0, subtotal - discount + floorSurcharge + appliedParcelCharge + cgst + sgst);
 
   // Helper to dynamically check kitchen status — supports DINE_IN, PARCEL, DELIVERY
   const getKitchenStatusBadge = (tableName: string | null, orderType?: string) => {
@@ -176,12 +231,16 @@ export const POSScreen: React.FC = () => {
   const handleCheckout = async (tenders: TenderState) => {
     if (items.length === 0) return;
     
-    // We determine primary method by whichever has highest tender
-    let primaryMethod = 'CASH';
-    let maxAmt = 0;
-    Object.entries(tenders).forEach(([m, amt]) => {
-      if (amt > maxAmt) { maxAmt = amt; primaryMethod = m; }
-    });
+    // Determine primary method label: SPLIT when multiple methods are used
+    const usedMethods = Object.entries(tenders).filter(([, amt]) => amt > 0);
+    let primaryMethod: string;
+    if (usedMethods.length > 1) {
+      primaryMethod = 'SPLIT';
+    } else if (usedMethods.length === 1) {
+      primaryMethod = usedMethods[0][0];
+    } else {
+      primaryMethod = 'CASH';
+    }
 
     const billData = {
       orderNumber: `${orderPrefix}-${Math.floor(Math.random() * 10000)}`,
@@ -196,6 +255,7 @@ export const POSScreen: React.FC = () => {
       sgst,
       grandTotal,
       method: primaryMethod,
+      tenders: { ...tenders },
       time: new Date().toLocaleTimeString(),
       date: new Date().toLocaleDateString(),
     };
@@ -255,6 +315,7 @@ export const POSScreen: React.FC = () => {
     // For PARCEL only: push to delivery store (DELIVERY uses handleDispatchDelivery)
     if (orderType === 'PARCEL') {
       useDeliveryStore.getState().addOrder({
+        orderNumber: useCartStore.getState().currentOrderNumber || billData.orderNumber,
         orderType: 'PARCEL',
         customerName: customer?.name || 'Walk-In Guest',
         customerPhone: customer?.phone || '',
@@ -287,6 +348,7 @@ export const POSScreen: React.FC = () => {
       discount: billData.discount,
       grandTotal: billData.grandTotal,
       method: billData.method,
+      tenders: billData.tenders,
       waiter: billData.waiter,
       customerName: customer?.name,
       customerPhone: customer?.phone,
@@ -297,7 +359,7 @@ export const POSScreen: React.FC = () => {
   // --- DELIVERY-specific dispatch (supports both COD and Pre-Paid Online) ---
   const handleDispatchDelivery = (isPrepaid: boolean = false) => {
     if (items.length === 0) return;
-    const orderNum = `${orderPrefix}-${Math.floor(Math.random() * 10000)}`;
+    const resolvedOrderNumber = useCartStore.getState().currentOrderNumber || `${orderPrefix}-${Math.floor(Math.random() * 10000)}`;
     const billNum = `DEL-${Date.now().toString().slice(-6)}`;
     const deliveryGrandTotal = grandTotal + (deliveryFee || 0);
 
@@ -318,7 +380,7 @@ export const POSScreen: React.FC = () => {
     if (newItems.length > 0) {
       useKdsStore.getState().addTicket({
         id: `kot-${Date.now()}`,
-        orderNumber: orderNum,
+        orderNumber: resolvedOrderNumber,
         tableNumber: '🛵 Delivery',
         orderType: 'DELIVERY',
         customerName: customer?.name,
@@ -335,6 +397,7 @@ export const POSScreen: React.FC = () => {
 
     // Create the delivery order (COD = PENDING, Pre-Paid = COLLECTED with UPI method)
     const dispatchedOrder = useDeliveryStore.getState().addOrder({
+      orderNumber: resolvedOrderNumber,
       orderType: 'DELIVERY',
       customerName: customer?.name || 'Customer',
       customerPhone: customer?.phone || '',
@@ -352,7 +415,7 @@ export const POSScreen: React.FC = () => {
 
     // Show delivery receipt for printing
     const billData = {
-      orderNumber: orderNum,
+      orderNumber: resolvedOrderNumber,
       billNumber: billNum,
       table: '🛵 Delivery',
       cashier: currentUser?.name || 'System',
@@ -419,7 +482,7 @@ export const POSScreen: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 text-slate-800 pb-[72px] lg:pb-0">
+    <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 text-slate-800 pb-[72px] md:pb-0">
       {/* LEFT AREA: Product Catalog & Carousel / Parked Orders View */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         {/* Top Notch Tabs (Desktop Only) */}
@@ -462,46 +525,10 @@ export const POSScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Global Expandable Search Button (Top Right) */}
-        {!showParkedOrders && (
-          <div className="absolute top-3 right-4 z-50 flex items-center justify-end">
-            {isSearchExpanded ? (
-              <div className="relative w-64 md:w-80 animate-in slide-in-from-right-8 duration-300">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Search menu..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 bg-white/80 backdrop-blur-2xl border border-white/80 rounded-2xl text-slate-800 placeholder-slate-500 focus:outline-none focus:bg-white focus:border-[#b5ef85] focus:ring-2 focus:ring-[#b5ef85]/40 transition-all text-[13px] font-bold shadow-lg"
-                />
-                <button 
-                  onClick={() => {
-                    setSearchQuery('');
-                    setIsSearchExpanded(false);
-                  }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 active:bg-slate-300 transition-colors cursor-pointer"
-                  title="Close Search"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsSearchExpanded(true)}
-                className="w-12 h-12 bg-white/70 backdrop-blur-xl border border-white/80 rounded-2xl shadow-lg flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white active:scale-95 transition-all"
-              >
-                <Search className="w-5 h-5 stroke-[2.5]" />
-              </button>
-            )}
-          </div>
-        )}
-        
         {showParkedOrders ? (
-          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-16">
+          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-2 md:pt-10">
             {/* Parked Orders Grid */}
-            <div className="flex-1 p-4 md:p-6 overflow-y-auto">
+            <div className="flex-1 p-4 md:p-6 pb-[240px] lg:pb-6 overflow-y-auto">
               {heldOrders.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full opacity-60">
                   <Clock className="w-16 h-16 text-slate-400 mb-4" />
@@ -511,30 +538,30 @@ export const POSScreen: React.FC = () => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                   {heldOrders.map((order) => (
-                    <div key={order.id} className="bg-white/80 backdrop-blur-md p-5 rounded-3xl shadow-sm border border-white/60 flex flex-col gap-3 hover:shadow-lg hover:border-white transition-all group">
-                      <div className="flex justify-between items-start mb-1">
-                        <div>
-                          <h4 className="font-bold text-slate-800 text-lg leading-tight">{order.name}</h4>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span className="text-[11px] text-slate-500 font-bold bg-white px-2 py-0.5 rounded-full flex items-center shadow-sm">
+                    <div key={order.id} className="bg-white/80 backdrop-blur-md p-3 md:p-4 rounded-2xl shadow-sm border border-white/60 flex flex-col gap-2 hover:shadow-lg hover:border-white transition-all group overflow-hidden">
+                      <div className="flex justify-between items-start gap-2 flex-wrap sm:flex-nowrap mb-0.5">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-bold text-slate-800 text-base leading-tight truncate">{order.name}</h4>
+                          <div className="flex items-center flex-wrap gap-1.5 mt-1">
+                            <span className="text-[10px] text-slate-500 font-bold bg-white px-1.5 py-0.5 rounded-full flex items-center shadow-sm shrink-0">
                               <Clock className="w-3 h-3 mr-1" />
-                              {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {order.timestamp.includes('T') ? new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : order.timestamp}
                             </span>
                             {order.orderType && (
-                              <span className="text-[10px] text-blue-700 font-black bg-blue-50/80 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-wider">
+                              <span className="text-[9px] text-blue-700 font-black bg-blue-50/80 px-1.5 py-0.5 rounded-full border border-blue-100 uppercase tracking-wider shrink-0">
                                 {order.orderType.replace('_', ' ')}
                               </span>
                             )}
                           </div>
                         </div>
-                        <span className="bg-[#b5ef85] text-slate-900 text-xs font-black px-2.5 py-1 rounded-lg shadow-sm shrink-0">
+                        <span className="bg-[#b5ef85] text-slate-900 text-[11px] font-black px-2 py-0.5 rounded-md shadow-sm shrink-0">
                           {order.items.length} items
                         </span>
                       </div>
                       
                       {/* Meta info */}
                       {(order.tableName || order.waiterName || order.customerName) && (
-                        <div className="flex flex-wrap gap-2 py-2 border-y border-slate-100/80">
+                        <div className="flex flex-wrap gap-1.5 py-1.5 border-y border-slate-100/80">
                           {order.tableName && (
                             <span className="text-[11px] font-bold text-slate-500 bg-slate-50/80 px-2 py-1 rounded-md border border-slate-100">
                               Table: <span className="text-slate-800">{order.tableName}</span>
@@ -547,19 +574,19 @@ export const POSScreen: React.FC = () => {
                           )}
                           {order.customerName && (
                             <span className="text-[11px] font-bold text-slate-500 bg-slate-50/80 px-2 py-1 rounded-md border border-slate-100">
-                              Customer: <span className="text-slate-800">{order.customerName}</span>
+                              Customer: <span className="text-slate-800 truncate max-w-[100px] inline-block align-bottom">{order.customerName}</span>
                             </span>
                           )}
                         </div>
                       )}
                       
                       {/* Items List */}
-                      <div className="flex flex-col gap-1.5 mt-1 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
+                      <div className="flex flex-col gap-1 mt-0.5 max-h-[120px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200">
                         {order.items.map((item, i) => (
-                          <div key={i} className="flex justify-between items-start text-[12px] bg-slate-50/80 border border-slate-100/50 p-2 rounded-xl">
-                            <span className="text-slate-700 font-bold w-6 shrink-0">{item.quantity}x</span>
-                            <span className="text-slate-600 font-semibold flex-1 pr-2 leading-tight">{item.name}</span>
-                            <span className="text-slate-500 font-bold ml-1">₹{item.price * item.quantity}</span>
+                          <div key={i} className="flex justify-between items-start text-[11px] bg-slate-50/80 border border-slate-100/50 p-1.5 rounded-lg gap-1">
+                            <span className="text-slate-700 font-bold w-5 shrink-0">{item.quantity}x</span>
+                            <span className="text-slate-600 font-semibold flex-1 leading-tight break-words">{item.name}</span>
+                            <span className="text-slate-500 font-bold shrink-0">₹{item.price * item.quantity}</span>
                           </div>
                         ))}
                       </div>
@@ -569,9 +596,9 @@ export const POSScreen: React.FC = () => {
                           resumeOrder(order.id);
                           setShowParkedOrders(false);
                         }}
-                        className="mt-auto pt-2 w-full bg-[#0d212b] text-[#b5ef85] font-bold py-3 rounded-2xl hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-md group-hover:shadow-lg"
+                        className="mt-auto w-full bg-[#0d212b] text-[#b5ef85] text-sm font-bold py-2 rounded-xl hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow-md group-hover:shadow-lg"
                       >
-                        <Utensils className="w-4 h-4" />
+                        <Utensils className="w-3.5 h-3.5" />
                         Resume Order
                       </button>
                     </div>
@@ -581,13 +608,111 @@ export const POSScreen: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-14 md:pt-16">
+          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-2 md:pt-14">
             
-            <CategorySidebar activeCategory={activeCategory} onSelectCategory={setActiveCategory} />
+            {/* Unified Mobile Top Bar: Categories + Search */}
+            <div className="flex items-center gap-2 px-2 md:px-4 z-40 bg-white/20 backdrop-blur-md rounded-2xl mx-2 md:mx-4 py-1.5 border border-white/40 shadow-sm mt-1">
+              <div className="flex-1 overflow-hidden">
+                <CategorySidebar activeCategory={activeCategory} onSelectCategory={setActiveCategory} />
+              </div>
+              
+              <div className="shrink-0 flex items-center justify-end relative z-50">
+                {isSearchExpanded ? (
+                  <div className="relative w-48 md:w-80 animate-in slide-in-from-right-8 duration-300">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Search menu..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-10 py-2 bg-white/80 backdrop-blur-2xl border border-white/80 rounded-xl text-slate-800 placeholder-slate-500 focus:outline-none focus:bg-white focus:border-[#b5ef85] focus:ring-2 focus:ring-[#b5ef85]/40 transition-all text-[13px] font-bold shadow-sm"
+                    />
+                    <button 
+                      onClick={() => {
+                        setSearchQuery('');
+                        setIsSearchExpanded(false);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 active:bg-slate-300 transition-colors cursor-pointer"
+                      title="Close Search"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setIsSearchExpanded(true)}
+                    className="w-[44px] h-[44px] bg-white/70 backdrop-blur-md border border-white/80 rounded-xl shadow-sm flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white active:scale-95 transition-all"
+                  >
+                    <Search className="w-5 h-5 stroke-[2.5]" />
+                  </button>
+                )}
+              </div>
+            </div>
             
-            <div className="flex-1 flex flex-col p-4 md:p-5 overflow-hidden">
+            <div className="flex-1 flex flex-col p-2 md:p-5 md:pb-24 lg:pb-5 overflow-hidden">
               <MenuGrid activeCategory={activeCategory} onCustomize={openCustomizationModal} searchQuery={searchQuery} />
             </div>
+          </div>
+        )}
+
+        {/* MOBILE STICKY BOTTOM BAR & SEGMENT CONTROL */}
+        {!isMobileCartOpen && (
+          <div className="lg:hidden absolute bottom-4 left-4 right-4 z-40 flex flex-col gap-2">
+            
+            {/* Menu / Parked Orders Toggle */}
+            <div className="md:hidden flex bg-white/70 backdrop-blur-xl p-1 rounded-2xl shadow-lg border border-white/50 w-full animate-in slide-in-from-bottom-4">
+              <button
+                onClick={() => setShowParkedOrders(false)}
+                className={`flex-1 relative py-2.5 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 ${!showParkedOrders ? 'text-white' : 'text-slate-500'}`}
+              >
+                {!showParkedOrders && (
+                  <motion.div
+                    layoutId="mobileNotchTab"
+                    className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10"
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  />
+                )}
+                Menu Catalogue
+              </button>
+              <button
+                onClick={() => setShowParkedOrders(true)}
+                className={`flex-1 relative flex items-center justify-center gap-1.5 py-2.5 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 ${showParkedOrders ? 'text-white' : 'text-slate-500'}`}
+              >
+                {showParkedOrders && (
+                  <motion.div
+                    layoutId="mobileNotchTab"
+                    className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10"
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  />
+                )}
+                Parked Orders
+                {heldOrders.length > 0 && (
+                  <span className={`${showParkedOrders ? 'bg-[#b5ef85] text-slate-900' : 'bg-slate-200 text-slate-500'} text-[10px] font-black px-1.5 py-0.5 rounded-full transition-colors`}>
+                    {heldOrders.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Cart Island */}
+            {items.length > 0 && (
+              <div className="bg-[#0d212b] text-white p-3 px-4 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 animate-in slide-in-from-bottom-8">
+                <div className="flex flex-col">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">{items.length} Item{items.length !== 1 ? 's' : ''}</span>
+                  <span className="text-lg font-black text-[#b5ef85]">₹{grandTotal.toFixed(2)}</span>
+                </div>
+                <button
+                  onClick={() => setIsMobileCartOpen(true)}
+                  className="bg-[#b5ef85] text-[#0d212b] px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-[#a2db74] active:scale-95 transition-all shadow-lg"
+                >
+                  <span>View Cart</span>
+                  <div className="w-5 h-5 bg-[#0d212b]/10 rounded-full flex items-center justify-center">
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </div>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -612,67 +737,9 @@ export const POSScreen: React.FC = () => {
         }}
         onPreBill={handlePrintPreBill}
         onManagerAuthRequest={setManagerAuthAction}
+        onDispatchDelivery={handleDispatchDelivery}
       />
 
-      {/* MOBILE STICKY BOTTOM BAR & SEGMENT CONTROL */}
-      {!isMobileCartOpen && (
-        <div className="lg:hidden fixed bottom-[88px] left-4 right-4 z-40 flex flex-col gap-2">
-          
-          {/* Menu / Parked Orders Toggle */}
-          <div className="flex bg-white/70 backdrop-blur-xl p-1 rounded-2xl shadow-lg border border-white/50 w-full animate-in slide-in-from-bottom-4">
-            <button
-              onClick={() => setShowParkedOrders(false)}
-              className={`flex-1 relative py-2.5 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 ${!showParkedOrders ? 'text-white' : 'text-slate-500'}`}
-            >
-              {!showParkedOrders && (
-                <motion.div
-                  layoutId="mobileNotchTab"
-                  className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10"
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                />
-              )}
-              Menu Catalogue
-            </button>
-            <button
-              onClick={() => setShowParkedOrders(true)}
-              className={`flex-1 relative flex items-center justify-center gap-1.5 py-2.5 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 ${showParkedOrders ? 'text-white' : 'text-slate-500'}`}
-            >
-              {showParkedOrders && (
-                <motion.div
-                  layoutId="mobileNotchTab"
-                  className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10"
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                />
-              )}
-              Parked Orders
-              {heldOrders.length > 0 && (
-                <span className={`${showParkedOrders ? 'bg-[#b5ef85] text-slate-900' : 'bg-slate-200 text-slate-500'} text-[10px] font-black px-1.5 py-0.5 rounded-full transition-colors`}>
-                  {heldOrders.length}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Cart Island */}
-          {items.length > 0 && (
-            <div className="bg-[#0d212b] text-white p-3 px-4 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 animate-in slide-in-from-bottom-8">
-              <div className="flex flex-col">
-                <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">{items.length} Item{items.length !== 1 ? 's' : ''}</span>
-                <span className="text-lg font-black text-[#b5ef85]">₹{grandTotal.toFixed(2)}</span>
-              </div>
-              <button
-                onClick={() => setIsMobileCartOpen(true)}
-                className="bg-[#b5ef85] text-[#0d212b] px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-[#a2db74] active:scale-95 transition-all shadow-lg"
-              >
-                <span>View Cart</span>
-                <div className="w-5 h-5 bg-[#0d212b]/10 rounded-full flex items-center justify-center">
-                  <ChevronUp className="w-3.5 h-3.5" />
-                </div>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       <SettlementModal 
         isOpen={settleState.isOpen}
@@ -706,9 +773,25 @@ export const POSScreen: React.FC = () => {
               <div className="text-center border-b border-pos-border pb-2">
                 <p className="font-extrabold text-sm uppercase">★ KARVAAN BISTRO & CAFE ★</p>
                 <p className="text-[10px] font-bold text-pos-text-muted">GSTIN: 27AADCK1234F1Z9</p>
-                <p className="text-[10px] font-bold text-pos-text-muted">Table: {lastBill.table} | Method: {lastBill.method}</p>
+                <p className="text-[10px] font-bold text-pos-text-muted">Table: {lastBill.table} | {lastBill.method === 'SPLIT' ? 'SPLIT PAYMENT' : `Method: ${lastBill.method}`}</p>
                 <p className="text-[10px] font-bold text-pos-text-muted mt-1">Cashier: {lastBill.cashier} | Server: {lastBill.waiter}</p>
               </div>
+
+              {/* Split payment breakdown */}
+              {lastBill.method === 'SPLIT' && lastBill.tenders && (
+                <div className="space-y-0.5 py-1 border-b border-pos-border">
+                  <p className="text-[10px] font-black uppercase text-pos-text-muted tracking-wide mb-1">Payment Breakdown:</p>
+                  {Object.entries(lastBill.tenders as Record<string, number>)
+                    .filter(([, amt]) => amt > 0)
+                    .map(([method, amt]) => (
+                      <div key={method} className="flex justify-between text-[10px] font-bold">
+                        <span>{method}:</span>
+                        <span>₹{(amt as number).toFixed(2)}</span>
+                      </div>
+                    ))
+                  }
+                </div>
+              )}
 
               <div className="space-y-1 py-1 border-b border-pos-border">
                 {lastBill.items.map((i: any, idx: number) => {

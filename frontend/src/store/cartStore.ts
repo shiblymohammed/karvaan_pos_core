@@ -25,6 +25,7 @@ export interface ParkedOrder {
   waiterName?: string | null;
   customerName?: string | null;
   orderType?: 'DINE_IN' | 'PARCEL' | 'DELIVERY';
+  orderNumber?: string | null;
   deliveryAddress?: string;
   deliveryFee?: number;
   timestamp: string;
@@ -42,12 +43,17 @@ interface CartState {
   isOffline: boolean;
   customer: { name: string; phone: string } | null;
   orderType: 'DINE_IN' | 'PARCEL' | 'DELIVERY';
+  currentOrderNumber: string | null;
   deliveryAddress: string;
   deliveryFee: number;
   deliveryStatus: string | null;
   collectedMethod: string | null;
   
+  // UI State
+  isMobileCartOpen: boolean;
+  
   // Actions
+  setIsMobileCartOpen: (isOpen: boolean) => void;
   addItem: (product: { id: string; name: string; price: number; category?: string }, notes?: string, addons?: { id: string; name: string; price: number }[]) => void;
   removeItemByIndex: (index: number) => void;
   updateQuantityByIndex: (index: number, delta: number) => void;
@@ -64,12 +70,14 @@ interface CartState {
   clearCart: () => void;
   toggleOffline: () => void;
   setCustomer: (customer: { name: string; phone: string } | null) => void;
+  transferCartTable: (fromTableId: string, toTableId: string, toTableName: string) => void;
 }
 
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
+      currentOrderNumber: null,
       selectedTableId: null,
       selectedTableName: null,
       selectedWaiter: null,
@@ -82,8 +90,23 @@ export const useCartStore = create<CartState>()(
       deliveryFee: 0,
       deliveryStatus: null,
       collectedMethod: null,
+      isMobileCartOpen: false,
 
-  addItem: (product, notes, addons) => {
+      transferCartTable: (fromTableId, toTableId, toTableName) => {
+        set((state) => ({
+          heldOrders: state.heldOrders.map((o) =>
+            o.tableId === fromTableId
+              ? { ...o, tableId: toTableId, tableName: `Table ${toTableName}`, name: `Table ${toTableName}` }
+              : o
+          ),
+          selectedTableId: state.selectedTableId === fromTableId ? toTableId : state.selectedTableId,
+          selectedTableName: state.selectedTableId === fromTableId ? toTableName : state.selectedTableName,
+        }));
+      },
+
+      setIsMobileCartOpen: (isOpen) => set({ isMobileCartOpen: isOpen }),
+
+      addItem: (product, notes, addons) => {
     set((state) => {
       // If there are notes or addons, we treat it as a unique line item so they don't stack directly with standard items
       const hasCustomizations = !!notes || (addons && addons.length > 0);
@@ -185,16 +208,17 @@ export const useCartStore = create<CartState>()(
 
     const newParked: ParkedOrder = {
       id: `PARK-${Date.now()}`,
-      name: label || state.selectedTableName || `Order #${state.heldOrders.length + 1}`,
+      name: label || state.selectedTableName || state.customer?.name || `Order #${state.heldOrders.length + 1}`,
       items: [...state.items],
       tableId: state.selectedTableId,
       tableName: state.selectedTableName,
       waiterName: state.selectedWaiter,
       customerName: state.customer?.name,
       orderType: state.orderType,
+      orderNumber: state.currentOrderNumber,
       deliveryAddress: state.deliveryAddress,
       deliveryFee: state.deliveryFee,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toISOString(),
     };
 
     const nextHeldOrders = [newParked, ...state.heldOrders.filter(o => o.tableId !== state.selectedTableId || !state.selectedTableId)];
@@ -207,6 +231,7 @@ export const useCartStore = create<CartState>()(
       selectedWaiter: null,
       customer: null,
       discount: 0,
+      currentOrderNumber: null,
     });
 
     // Broadcast parked orders to all other devices
@@ -217,11 +242,17 @@ export const useCartStore = create<CartState>()(
     const state = get();
     if (state.items.length === 0) return;
 
+    let orderNum = state.currentOrderNumber;
+    if (!orderNum) {
+      orderNum = `${useSettingsStore.getState().orderPrefix}-${Math.floor(Math.random() * 9000)}`;
+      set({ currentOrderNumber: orderNum });
+    }
+
     const newItems = state.items.filter(i => i.status === 'NEW');
     if (newItems.length > 0) {
       useKdsStore.getState().addTicket({
         id: `kot-${Date.now()}`,
-        orderNumber: `${useSettingsStore.getState().orderPrefix}-${Math.floor(Math.random() * 9000)}`,
+        orderNumber: orderNum,
         tableNumber: state.orderType === 'DINE_IN'
           ? (state.selectedTableName || 'Takeaway')
           : (state.orderType === 'PARCEL' ? '📦 Parcel' : '🛵 Delivery'),
@@ -237,7 +268,7 @@ export const useCartStore = create<CartState>()(
 
     // Mark all items as sent and hold the order
     set({
-      items: state.items.map(i => ({ ...i, status: 'SENT' }))
+      items: get().items.map(i => ({ ...i, status: 'SENT' }))
     });
 
     get().holdCurrentOrder();
@@ -262,6 +293,7 @@ export const useCartStore = create<CartState>()(
       selectedWaiter: target.waiterName || null,
       customer: target.customerName ? { name: target.customerName, phone: '' } : null,
       orderType: target.orderType || 'DINE_IN',
+      currentOrderNumber: target.orderNumber || null,
       deliveryAddress: target.deliveryAddress || '',
       deliveryFee: target.deliveryFee || 0,
       deliveryStatus: target.deliveryStatus || null,
@@ -274,9 +306,18 @@ export const useCartStore = create<CartState>()(
   },
 
   clearCart: () => {
-    set((state) => {
-      useKdsStore.getState().clearTableTickets(state.selectedTableName || 'Takeaway');
-      return { items: [], selectedTableId: null, selectedTableName: null, selectedWaiter: null, customer: null, discount: 0, orderType: 'DINE_IN', deliveryAddress: '', deliveryFee: 0, deliveryStatus: null, collectedMethod: null };
+    const state = get();
+    if (state.selectedTableId) {
+      useTableStore.getState().setTableStatus(state.selectedTableId, 'AVAILABLE');
+    }
+    
+    const kdsTable = state.orderType === 'DINE_IN'
+      ? (state.selectedTableName || 'Takeaway')
+      : (state.orderType === 'PARCEL' ? '📦 Parcel' : '🛵 Delivery');
+
+    useKdsStore.getState().clearTableTickets(kdsTable);
+    set({
+      items: [], selectedTableId: null, selectedTableName: null, selectedWaiter: null, customer: null, discount: 0, orderType: 'DINE_IN', currentOrderNumber: null, deliveryAddress: '', deliveryFee: 0, deliveryStatus: null, collectedMethod: null
     });
   },
 

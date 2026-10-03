@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Clock, MessageSquare, Plus } from 'lucide-react';
+import * as Icons from 'lucide-react';
 import { Product } from '../../store/useMenuStore';
 import { motion } from 'framer-motion';
 
@@ -52,8 +53,8 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
           {product.imageUrl ? (
             <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-4xl">
-              {product.imageEmoji || '🍽️'}
+            <div className="w-full h-full flex items-center justify-center text-4xl text-slate-400">
+              {product.iconName ? React.createElement((Icons as any)[product.iconName] || Icons.Utensils, { className: 'w-12 h-12' }) : (product.imageEmoji || '🍽️')}
             </div>
           )}
         </div>
@@ -91,10 +92,10 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
               e.stopPropagation();
               onCustomize(product);
             }}
-            className="w-10 h-10 bg-[#b5ef85] rounded-xl flex items-center justify-center text-[#0d212b] hover:bg-[#a2db74] transition-all active:scale-90 shadow-md shrink-0"
+            className={`w-10 h-10 rounded-xl flex items-center justify-center text-[#0d212b] transition-all duration-300 active:scale-90 shadow-md shrink-0 ${isInCart ? 'bg-white shadow-emerald-500/20 rotate-0' : 'bg-[#b5ef85] hover:bg-[#a2db74] hover:rotate-90'}`}
             title="Customize / Add"
           >
-            <Plus className="h-5 w-5 stroke-[2.5]" />
+            {isInCart ? <Icons.Check className="h-5 w-5 stroke-[3] text-emerald-600" /> : <Plus className="h-5 w-5 stroke-[2.5]" />}
           </button>
         </div>
       </div>

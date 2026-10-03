@@ -70,7 +70,7 @@ let KdsGateway = class KdsGateway {
             });
             const staffMembers = await this.prisma.user.findMany({
                 where: { isActive: true },
-                select: { id: true, name: true, role: true, phone: true, isActive: true, permissions: true, pin: true },
+                select: { id: true, name: true, username: true, password: true, role: true, phone: true, isActive: true, permissions: true, pin: true },
             });
             const inventoryStock = await this.prisma.inventoryItem.findMany({
                 orderBy: { name: 'asc' },
@@ -269,6 +269,8 @@ let KdsGateway = class KdsGateway {
                     where: { pin: member.pin },
                     update: {
                         name: member.name,
+                        username: member.username || null,
+                        password: member.password || null,
                         role: member.role || 'CASHIER',
                         phone: member.phone || null,
                         isActive: member.isActive !== false,
@@ -277,6 +279,8 @@ let KdsGateway = class KdsGateway {
                     create: {
                         id: member.id,
                         name: member.name,
+                        username: member.username || null,
+                        password: member.password || null,
                         pin: member.pin,
                         role: member.role || 'CASHIER',
                         phone: member.phone || null,

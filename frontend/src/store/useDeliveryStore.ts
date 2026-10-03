@@ -6,15 +6,7 @@ import { useSettingsStore } from './useSettingsStore';
 export type OrderType = 'DINE_IN' | 'PARCEL' | 'DELIVERY';
 export type DeliveryStatus = 'RECEIVED' | 'PREPARING' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
 
-export interface DeliveryBoy {
-  id: string;
-  name: string;
-  phone: string;
-  isActive: boolean;
-  isAvailable: boolean;
-  totalDeliveries: number;
-  activeOrderId?: string;
-}
+
 
 export interface DeliveryOrder {
   id: string;
@@ -29,7 +21,7 @@ export interface DeliveryOrder {
   grandTotal: number;
   status: DeliveryStatus;
   paymentStatus: 'PENDING' | 'COLLECTED';  // COD = PENDING until collected at door
-  paymentMethod?: 'CASH' | 'UPI' | 'CARD'; // collected at delivery
+  paymentMethod?: 'CASH' | 'UPI' | 'CARD' | 'SPLIT' | 'PREPAID'; // collected at delivery
   collectedAmount?: number;
   deliveryBoyId?: string;
   deliveryBoyName?: string;
@@ -39,61 +31,24 @@ export interface DeliveryOrder {
 }
 
 interface DeliveryState {
-  deliveryBoys: DeliveryBoy[];
   orders: DeliveryOrder[];
 
-  // Delivery Boy management
-  addDeliveryBoy: (boy: Omit<DeliveryBoy, 'id' | 'totalDeliveries' | 'isAvailable'>) => void;
-  updateDeliveryBoy: (id: string, data: Partial<DeliveryBoy>) => void;
-  toggleDeliveryBoyActive: (id: string) => void;
-
   // Order management
-  addOrder: (order: Omit<DeliveryOrder, 'id' | 'orderNumber' | 'placedAt' | 'updatedAt'>) => DeliveryOrder;
+  addOrder: (order: Omit<DeliveryOrder, 'id' | 'placedAt' | 'updatedAt'> & { orderNumber?: string }) => DeliveryOrder;
   updateOrderStatus: (id: string, status: DeliveryStatus) => void;
-  collectPayment: (id: string, method: 'CASH' | 'UPI' | 'CARD', amount: number) => void;
+  collectPayment: (id: string, method: 'CASH' | 'UPI' | 'CARD' | 'SPLIT' | 'PREPAID', amount: number) => void;
   assignDeliveryBoy: (orderId: string, deliveryBoyId: string, deliveryBoyName?: string) => void;
   removeOrder: (id: string) => void;
 }
 
-const INITIAL_DELIVERY_BOYS: DeliveryBoy[] = [
-  { id: 'db-1', name: 'Rahul Kumar', phone: '9876543210', isActive: true, isAvailable: true, totalDeliveries: 47 },
-  { id: 'db-2', name: 'Ajay Singh', phone: '9876543211', isActive: true, isAvailable: true, totalDeliveries: 32 },
-  { id: 'db-3', name: 'Ravi Verma', phone: '9876543212', isActive: true, isAvailable: true, totalDeliveries: 18 },
-];
-
 export const useDeliveryStore = create<DeliveryState>()(
   persist(
     (set, get) => ({
-      deliveryBoys: INITIAL_DELIVERY_BOYS,
       orders: [],
-
-      addDeliveryBoy: (boy) => {
-        const newBoy: DeliveryBoy = {
-          ...boy,
-          id: `db-${Date.now()}`,
-          isAvailable: true,
-          totalDeliveries: 0,
-        };
-        set((state) => ({ deliveryBoys: [newBoy, ...state.deliveryBoys] }));
-      },
-
-      updateDeliveryBoy: (id, data) => {
-        set((state) => ({
-          deliveryBoys: state.deliveryBoys.map((b) => b.id === id ? { ...b, ...data } : b),
-        }));
-      },
-
-      toggleDeliveryBoyActive: (id) => {
-        set((state) => ({
-          deliveryBoys: state.deliveryBoys.map((b) =>
-            b.id === id ? { ...b, isActive: !b.isActive } : b
-          ),
-        }));
-      },
 
       addOrder: (orderData) => {
         const prefix = useSettingsStore.getState().orderPrefix;
-        const orderNum = `${prefix}-${Date.now().toString().slice(-5)}`;
+        const orderNum = orderData.orderNumber || `${prefix}-${Date.now().toString().slice(-5)}`;
         const newOrder: DeliveryOrder = {
           ...orderData,
           id: `dord-${Date.now()}`,
@@ -125,8 +80,12 @@ export const useDeliveryStore = create<DeliveryState>()(
         }));
         emitAction('sync_delivery_orders', get().orders);
 
+        // Build a "completed" parked entry so FOH can see it settled
         const order = get().orders.find((o) => o.id === id);
         if (order) {
+          import('./useKdsStore').then(({ useKdsStore }) => {
+            useKdsStore.getState().clearTableTickets(order.orderNumber);
+          });
           import('./cartStore').then(({ useCartStore }) => {
             const currentHeld = useCartStore.getState().heldOrders;
             const completedParked = {
@@ -157,8 +116,7 @@ export const useDeliveryStore = create<DeliveryState>()(
       },
 
       assignDeliveryBoy: (orderId, deliveryBoyId, deliveryBoyName?: string) => {
-        const boy = get().deliveryBoys.find((b) => b.id === deliveryBoyId);
-        const name = deliveryBoyName || boy?.name || 'Assigned Rider';
+        const name = deliveryBoyName || 'Assigned Rider';
 
         set((state) => ({
           orders: state.orders.map((o) =>
@@ -166,27 +124,11 @@ export const useDeliveryStore = create<DeliveryState>()(
               ? { ...o, deliveryBoyId, deliveryBoyName: name, status: 'OUT_FOR_DELIVERY', updatedAt: new Date().toISOString() }
               : o
           ),
-          deliveryBoys: state.deliveryBoys.map((b) =>
-            b.id === deliveryBoyId
-              ? { ...b, isAvailable: false, activeOrderId: orderId }
-              : b
-          ),
         }));
         emitAction('sync_delivery_orders', get().orders);
       },
 
       removeOrder: (id) => {
-        // Free up the delivery boy if assigned
-        const order = get().orders.find((o) => o.id === id);
-        if (order?.deliveryBoyId) {
-          set((state) => ({
-            deliveryBoys: state.deliveryBoys.map((b) =>
-              b.id === order.deliveryBoyId
-                ? { ...b, isAvailable: true, activeOrderId: undefined, totalDeliveries: b.totalDeliveries + 1 }
-                : b
-            ),
-          }));
-        }
         set((state) => ({ orders: state.orders.filter((o) => o.id !== id) }));
         emitAction('sync_delivery_orders', get().orders);
       },

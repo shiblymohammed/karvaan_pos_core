@@ -250,7 +250,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ─── TABLE STATUS — PERSIST TO DATABASE ─────────────────────────────────────
 
   @SubscribeMessage('table_status_change')
-  async handleTableStatus(@MessageBody() payload: { tableId: string; status: string; subtotal?: number }) {
+  async handleTableStatus(@MessageBody() payload: { tableId: string; status: string; subtotal?: number; mergedWith?: string[]; mergedInto?: string | null }) {
     console.log(`🪑 [Table Gateway] Table ${payload.tableId} → ${payload.status}`);
 
     this.tableStatuses[payload.tableId] = { status: payload.status, subtotal: payload.subtotal };

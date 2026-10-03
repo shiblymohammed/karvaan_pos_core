@@ -1,4 +1,4 @@
-﻿/**
+/**
  * tauriCommands.ts
  * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * TypeScript bridge to Tauri Rust commands.
@@ -177,14 +177,15 @@ export function buildKotReceipt(params: {
     .align(0)
     .separator()
     .bold(true)
-    .text('ITEM                    QTY')
+    .text('ITEM                         QTY')
     .newline()
     .bold(false)
     .separator();
   params.items.forEach(item => {
-    const name = item.name.padEnd(24).substring(0, 24);
-    esc.text(`${name}${item.qty}`).newline();
-    if (item.notes) esc.text(`  ** ${item.notes}`).newline();
+    const name = item.name.substring(0, 29).padEnd(29);
+    const qty = String(item.qty).padStart(3);
+    esc.text(`${name}${qty}`).newline();
+    if (item.notes) esc.text(`  ** ${item.notes.substring(0, 27)}`).newline();
   });
   return esc.separator().feed(3).cut().build();
 }
@@ -233,15 +234,15 @@ export function buildBillReceipt(params: {
     .newline()
     .separator()
     .bold(true)
-    .text('ITEM                QTY   AMT')
+    .text('ITEM                 QTY  AMOUNT')
     .newline()
     .bold(false)
     .separator();
 
   params.items.forEach(item => {
-    const name = item.name.substring(0, 18).padEnd(18);
+    const name = item.name.substring(0, 21).padEnd(21);
     const qty = String(item.qty).padStart(3);
-    const amt = `${(item.qty * item.price).toFixed(0)}`.padStart(6);
+    const amt = `${(item.qty * item.price).toFixed(0)}`.padStart(8);
     esc.text(`${name}${qty}${amt}`).newline();
   });
 

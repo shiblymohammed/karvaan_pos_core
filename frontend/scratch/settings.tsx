@@ -22,59 +22,50 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAddonStore } from '../../store/useAddonStore';
 import { getServerUrl, setServerUrl, probeServer } from '../../services/serverConfig';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PrinterSettings } from '../../components/PrinterSettings';
-import { Printer } from 'lucide-react';
 
 // --- REUSABLE COMPONENTS ---
 const SettingsHeader: React.FC<{ title: string; description: string }> = ({ title, description }) => (
-  <div className="mb-8 border-b border-white/20 pb-6">
-    <h1 className="text-[24px] font-bold text-slate-900 tracking-tight">{title}</h1>
+  <div className="mb-8 border-b border-slate-200 pb-6">
+    <h1 className="text-[22px] font-semibold text-slate-900 tracking-tight">{title}</h1>
     <p className="text-[14px] text-slate-500 mt-1">{description}</p>
   </div>
 );
 
 const SettingsSection: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="border border-white/40 rounded-[24px] overflow-hidden bg-white/60 backdrop-blur-xl mb-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+  <div className="border border-slate-200 rounded-[8px] overflow-hidden bg-white mb-8 shadow-sm">
     {children}
   </div>
 );
 
-const SettingsRow: React.FC<{ label: string; description?: string; control: React.ReactNode; border?: boolean; stackOnMobile?: boolean }> = ({ label, description, control, border = true, stackOnMobile = false }) => (
-  <div className={`p-4 sm:p-5 flex ${stackOnMobile ? 'flex-col sm:flex-row sm:items-center items-start' : 'flex-row items-center'} justify-between gap-4 sm:gap-6 ${border ? 'border-b border-white/40 last:border-b-0' : ''}`}>
-    <div className="flex-1 pr-2 sm:pr-4">
-      <h3 className="text-[14px] font-bold text-slate-800">{label}</h3>
-      {description && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed hidden sm:block">{description}</p>}
-      {description && stackOnMobile && <p className="text-[12px] text-slate-500 mt-1 leading-relaxed sm:hidden block">{description}</p>}
-      {description && !stackOnMobile && <p className="text-[12px] text-slate-500 mt-0.5 leading-tight sm:hidden block">{description}</p>}
+const SettingsRow: React.FC<{ label: string; description?: string; control: React.ReactNode; border?: boolean }> = ({ label, description, control, border = true }) => (
+  <div className={`p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-6 ${border ? 'border-b border-slate-200 last:border-b-0' : ''}`}>
+    <div className="flex-1 pr-4">
+      <h3 className="text-[14px] font-medium text-slate-900">{label}</h3>
+      {description && <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">{description}</p>}
     </div>
-    <div className={`shrink-0 flex justify-end ${stackOnMobile ? 'w-full sm:w-auto sm:min-w-[200px]' : ''}`}>
+    <div className="shrink-0 flex flex-col sm:items-end justify-center min-w-[200px]">
       {control}
     </div>
   </div>
 );
 
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>((props, ref) => (
-  <input ref={ref} {...props} className={`w-full px-4 py-2.5 bg-white/50 backdrop-blur-md border border-white/40 rounded-xl text-slate-900 text-[14px] font-medium focus:outline-none focus:border-[#8cc63f] focus:ring-4 focus:ring-[#8cc63f]/20 shadow-sm transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${props.className || ''}`} />
+  <input ref={ref} {...props} className={`w-full px-3 py-2 bg-white border border-slate-300 rounded-[6px] text-slate-900 text-[14px] focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 shadow-sm transition-all ${props.className || ''}`} />
 ));
 
-const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(({ className, children, ...props }, ref) => (
-  <div className={`relative ${className || 'w-full'}`}>
-    <select ref={ref} {...props} className={`w-full appearance-none px-4 py-2.5 bg-white/50 backdrop-blur-md border border-white/40 rounded-xl text-slate-900 text-[14px] font-bold focus:outline-none focus:border-[#8cc63f] focus:ring-4 focus:ring-[#8cc63f]/20 shadow-sm transition-all pr-10 cursor-pointer`}>
-      {children}
-    </select>
-    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-    </div>
-  </div>
+const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>((props, ref) => (
+  <select ref={ref} {...props} className={`w-full px-3 py-2 bg-white border border-slate-300 rounded-[6px] text-slate-900 text-[14px] focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 shadow-sm transition-all ${props.className || ''}`}>
+    {props.children}
+  </select>
 ));
 
 const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }> = ({ children, variant = 'primary', className = '', ...props }) => {
-  const base = "inline-flex items-center justify-center gap-2 px-5 py-2.5 text-[14px] font-bold rounded-xl transition-all focus:outline-none active:scale-95";
+  const base = "inline-flex items-center justify-center gap-2 px-4 py-2 text-[13px] font-medium rounded-[6px] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1";
   const variants = {
-    primary: "bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] text-[#0f172a] shadow-[0_4px_12px_rgba(140,198,63,0.3)] hover:shadow-[0_6px_16px_rgba(140,198,63,0.4)]",
-    secondary: "bg-white/60 backdrop-blur-md text-slate-700 border border-white/60 hover:bg-white/80 shadow-sm",
-    danger: "bg-gradient-to-r from-rose-500 to-rose-400 text-white shadow-[0_4px_12px_rgba(244,63,94,0.3)] hover:shadow-[0_6px_16px_rgba(244,63,94,0.4)]",
-    ghost: "bg-transparent text-slate-500 hover:bg-white/40 hover:text-slate-900"
+    primary: "bg-slate-900 text-white hover:bg-slate-800 shadow-sm focus:ring-slate-900",
+    secondary: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm focus:ring-slate-200",
+    danger: "bg-rose-600 text-white hover:bg-rose-700 shadow-sm focus:ring-rose-500",
+    ghost: "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:ring-slate-200"
   };
   return <button className={`${base} ${variants[variant]} ${className}`} {...props}>{children}</button>;
 };
@@ -83,9 +74,9 @@ const Switch: React.FC<{ checked: boolean; onChange: () => void }> = ({ checked,
   <button
     type="button"
     onClick={onChange}
-    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full focus:outline-none focus:ring-4 focus:ring-[#8cc63f]/20 transition-colors duration-300 ease-in-out shadow-inner ${checked ? 'bg-[#8cc63f]' : 'bg-slate-200'}`}
+    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 transition-colors duration-200 ease-in-out ${checked ? 'bg-slate-900' : 'bg-slate-200'}`}
   >
-    <span aria-hidden="true" className={`pointer-events-none absolute left-0.5 inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition-transform duration-300 ease-in-out ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
+    <span aria-hidden="true" className={`pointer-events-none absolute left-0.5 inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform duration-200 ease-in-out ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
   </button>
 );
 
@@ -105,11 +96,6 @@ export const AdminSettingsManager: React.FC = () => {
   const [syncMessage, setSyncMessage] = useState('');
 
   const [localOrderPrefix, setLocalOrderPrefix] = useState(store.orderPrefix);
-  const [localParcelCharge, setLocalParcelCharge] = useState(store.parcelChargeAmount || 0);
-  const [localTimeFormat, setLocalTimeFormat] = useState<'12h' | '24h'>(store.timeFormat || '12h');
-  const [localDateFormat, setLocalDateFormat] = useState<'AUTO' | 'MANUAL'>(store.dateFormat || 'AUTO');
-  const [localOperatingMode, setLocalOperatingMode] = useState<'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN'>(store.operatingMode || 'FINE_DINING');
-
   const [localTvPopup, setLocalTvPopup] = useState(store.orderTvShowPopup);
   const [localTvAudio, setLocalTvAudio] = useState(store.orderTvPlayAudio);
   const [localTvAudioTone, setLocalTvAudioTone] = useState(store.orderTvAudioTone);
@@ -121,7 +107,6 @@ export const AdminSettingsManager: React.FC = () => {
   const [localTvReadyBadge, setLocalTvReadyBadge] = useState(store.orderTvReadyBadgeEnabled);
   const [localTvTimeWaiting, setLocalTvTimeWaiting] = useState(store.orderTvTimeWaitingEnabled);
   const [localTvChaos, setLocalTvChaos] = useState(store.orderTvChaosAnimationEnabled);
-  const [localTvShowDelivery, setLocalTvShowDelivery] = useState(store.orderTvShowDelivery);
 
   const [localTvLayoutMode, setLocalTvLayoutMode] = useState(store.orderTvLayoutMode);
   const [localTvOrientation, setLocalTvOrientation] = useState(store.orderTvOrientation);
@@ -140,10 +125,6 @@ export const AdminSettingsManager: React.FC = () => {
 
   useEffect(() => {
     setLocalOrderPrefix(store.orderPrefix);
-    setLocalParcelCharge(store.parcelChargeAmount || 0);
-    setLocalTimeFormat(store.timeFormat || '12h');
-    setLocalDateFormat(store.dateFormat || 'AUTO');
-    setLocalOperatingMode(store.operatingMode || 'FINE_DINING');
     setLocalTvPopup(store.orderTvShowPopup);
     setLocalTvAudio(store.orderTvPlayAudio);
     setLocalTvAudioTone(store.orderTvAudioTone);
@@ -155,7 +136,6 @@ export const AdminSettingsManager: React.FC = () => {
     setLocalTvReadyBadge(store.orderTvReadyBadgeEnabled);
     setLocalTvTimeWaiting(store.orderTvTimeWaitingEnabled);
     setLocalTvChaos(store.orderTvChaosAnimationEnabled);
-    setLocalTvShowDelivery(store.orderTvShowDelivery);
     setLocalTvLayoutMode(store.orderTvLayoutMode);
     setLocalTvOrientation(store.orderTvOrientation);
     setLocalTvTickerEnabled(store.orderTvTickerEnabled);
@@ -202,10 +182,6 @@ export const AdminSettingsManager: React.FC = () => {
 
   const applyGeneralSettings = () => {
     store.setOrderPrefix(localOrderPrefix);
-    store.setParcelChargeAmount(localParcelCharge);
-    store.setTimeFormat(localTimeFormat as '12h' | '24h');
-    store.setDateFormat(localDateFormat as 'AUTO' | 'MANUAL');
-    store.setOperatingMode(localOperatingMode as 'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN');
     if (localTvPopup !== store.orderTvShowPopup) store.toggleOrderTvPopup();
     store.setOrderTvAudio(localTvAudio, localTvAudioTone, store.orderTvCustomAudioData);
     store.setOrderTvTts(localTvTtsEnabled, localTvTtsVoiceName);
@@ -215,7 +191,6 @@ export const AdminSettingsManager: React.FC = () => {
     store.setOrderTvReadyBadge(localTvReadyBadge);
     store.setOrderTvTimeWaiting(localTvTimeWaiting);
     store.setOrderTvChaosAnimation(localTvChaos);
-    store.setOrderTvShowDelivery(localTvShowDelivery);
     store.setOrderTvLayoutMode(localTvLayoutMode);
     store.setOrderTvOrientation(localTvOrientation);
     store.setOrderTvTicker(localTvTickerEnabled, localTvTickerMessage);
@@ -269,13 +244,6 @@ export const AdminSettingsManager: React.FC = () => {
   };
 
   // --- RENDER SECTIONS ---
-  const renderHardware = () => (
-    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <SettingsHeader title="Printer & Hardware" description="Manage receipt printers, cash drawers, and label printing options." />
-      <PrinterSettings restaurantName="Karvaan POS" />
-    </div>
-  );
-
   const renderNetworkSync = () => (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <SettingsHeader title="Network & Sync" description="Configure server connections and cloud synchronization." />
@@ -283,7 +251,6 @@ export const AdminSettingsManager: React.FC = () => {
       <SettingsSection>
         <SettingsRow 
           label="Server Connection" 
-          stackOnMobile
           description="The local network address of the master server." 
           control={
             <div className="flex gap-2 w-full max-w-sm">
@@ -295,7 +262,6 @@ export const AdminSettingsManager: React.FC = () => {
         {(networkStatus === 'ok' || networkStatus === 'fail') && (
           <SettingsRow 
             label="Connection Status" 
-            stackOnMobile
             control={
               <div className="flex items-center gap-3 w-full justify-end">
                 {networkStatus === 'ok' && <span className="text-[13px] font-medium text-emerald-600">Connected ({networkLatency}ms)</span>}
@@ -310,7 +276,6 @@ export const AdminSettingsManager: React.FC = () => {
       <SettingsSection>
         <SettingsRow 
           label="Cloud Sync" 
-          stackOnMobile
           description="Manually trigger a sync with the cloud database. Sync happens automatically in the background."
           control={
             <div className="flex items-center gap-4 w-full justify-end">
@@ -330,50 +295,9 @@ export const AdminSettingsManager: React.FC = () => {
       <SettingsHeader title="Workspace" description="General configuration for the point of sale." />
       <SettingsSection>
         <SettingsRow 
-          label="Operating Model (Pipeline)" 
-          stackOnMobile
-          description="Changes POS workflows. Fine Dining (Tables), QSR (Counter/Tokens), Cloud Kitchen (Delivery/Dispatch)."
-          control={
-            <Select value={localOperatingMode} onChange={e => setLocalOperatingMode(e.target.value as 'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN')} className="w-full sm:max-w-[200px]">
-              <option value="FINE_DINING">Full Service (Tables)</option>
-              <option value="QSR">QSR / Fast Food</option>
-              <option value="CLOUD_KITCHEN">Cloud Kitchen (Delivery)</option>
-            </Select>
-          } 
-        />
-        <SettingsRow 
           label="Order Number Prefix" 
-          stackOnMobile
           description="A short prefix prepended to every new order (e.g. KOT-1234)."
-          control={<Input type="text" value={localOrderPrefix} onChange={e => setLocalOrderPrefix(e.target.value.toUpperCase())} placeholder="KOT" className="w-full sm:max-w-[150px]" />} 
-        />
-        <SettingsRow 
-          label="Parcel/Packaging Charge (₹)" 
-          stackOnMobile
-          description="Auto-applied fixed charge for takeaway/parcel orders."
-          control={<Input type="number" min="0" value={localParcelCharge} onChange={e => setLocalParcelCharge(Number(e.target.value))} className="w-full sm:max-w-[150px]" />} 
-        />
-        <SettingsRow 
-          label="Time Format" 
-          stackOnMobile
-          description="Display time in 12-hour (AM/PM) or 24-hour military format."
-          control={
-            <Select value={localTimeFormat} onChange={e => setLocalTimeFormat(e.target.value as '12h' | '24h')} className="w-full sm:max-w-[150px]">
-              <option value="12h">12-Hour (AM/PM)</option>
-              <option value="24h">24-Hour</option>
-            </Select>
-          } 
-        />
-        <SettingsRow 
-          label="Date Format Settings" 
-          stackOnMobile
-          description="Auto shows relative dates (e.g. 'Today'). Manual shows exact dates."
-          control={
-            <Select value={localDateFormat} onChange={e => setLocalDateFormat(e.target.value as 'AUTO' | 'MANUAL')} className="w-full sm:max-w-[150px]">
-              <option value="AUTO">Auto (Relative)</option>
-              <option value="MANUAL">Manual (Exact)</option>
-            </Select>
-          } 
+          control={<Input type="text" value={localOrderPrefix} onChange={e => setLocalOrderPrefix(e.target.value.toUpperCase())} placeholder="KOT" className="w-full max-w-[150px]" />} 
         />
       </SettingsSection>
       <div className="flex justify-end mt-6">
@@ -399,31 +323,16 @@ export const AdminSettingsManager: React.FC = () => {
         {localTvAudio && (
           <SettingsRow 
             label="Chime Tone" 
-            stackOnMobile
             control={
-              <div className="flex flex-col gap-3 w-full sm:max-w-[400px]">
-                <div className="grid grid-cols-2 gap-1 p-1 bg-white/50 backdrop-blur-md border border-white/40 rounded-xl">
-                  {[
-                    { id: 'bell', label: 'Classic Bell' },
-                    { id: 'chime', label: 'Soft Chime' },
-                    { id: 'digital', label: 'Digital Beep' },
-                    { id: 'custom', label: 'Custom File' }
-                  ].map(tone => (
-                    <button
-                      key={tone.id}
-                      onClick={() => setLocalTvAudioTone(tone.id)}
-                      className={`relative flex items-center justify-center py-2 px-3 rounded-lg text-[13px] font-bold transition-all active:scale-95 ${localTvAudioTone === tone.id ? 'text-[#0f172a]' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      {localTvAudioTone === tone.id && (
-                        <motion.div layoutId="chimeTonePill" className="absolute inset-0 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] rounded-lg shadow-sm z-0" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                      )}
-                      <span className="relative z-10">{tone.label}</span>
-                    </button>
-                  ))}
+              <div className="flex flex-col gap-2 w-full max-w-sm">
+                <div className="flex gap-2">
+                  <Select value={localTvAudioTone} onChange={e => setLocalTvAudioTone(e.target.value)} className="flex-1">
+                    <option value="bell">Classic Bell</option><option value="chime">Soft Chime</option><option value="digital">Digital Beep</option><option value="custom">Custom File</option>
+                  </Select>
+                  <Button variant="secondary" onClick={playTestAudio}><Play className="w-4 h-4" /> Test</Button>
                 </div>
-                <Button variant="secondary" onClick={playTestAudio} className="w-full flex justify-center items-center gap-2"><Play className="w-4 h-4" /> Test Sound</Button>
                 {localTvAudioTone === 'custom' && (
-                  <input type="file" accept="audio/*" onChange={handleAudioUpload} className="text-[13px] text-slate-500 w-full px-3 py-2 bg-white/50 border border-white/40 rounded-xl file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[13px] file:font-bold file:bg-gradient-to-r file:from-[#8cc63f] file:to-[#b5ef85] file:text-[#0f172a] hover:file:opacity-90 transition-all cursor-pointer file:cursor-pointer file:shadow-sm" />
+                  <input type="file" accept="audio/*" onChange={handleAudioUpload} className="text-[13px] text-slate-500 w-full" />
                 )}
               </div>
             }
@@ -437,9 +346,8 @@ export const AdminSettingsManager: React.FC = () => {
         {localTvTtsEnabled && (
           <SettingsRow 
             label="TTS Voice" 
-            stackOnMobile
             control={
-              <Select value={localTvTtsVoiceName} onChange={e => setLocalTvTtsVoiceName(e.target.value)} className="w-full sm:max-w-sm">
+              <Select value={localTvTtsVoiceName} onChange={e => setLocalTvTtsVoiceName(e.target.value)} className="w-full max-w-sm">
                 <option value="">Default System Voice</option>
                 {typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.getVoices().map(v => <option key={v.name} value={v.name}>{v.name}</option>)}
               </Select>
@@ -459,7 +367,7 @@ export const AdminSettingsManager: React.FC = () => {
         {localTvWaterFill && (
           <SettingsRow 
             label="Liquid Color" 
-            control={<input type="color" value={localTvWaterColor || '#fbbf24'} onChange={e => setLocalTvWaterColor(e.target.value)} className="w-10 h-10 rounded-xl cursor-pointer border border-white/40 p-1 bg-white/50 shadow-sm" />} 
+            control={<input type="color" value={localTvWaterColor || '#fbbf24'} onChange={e => setLocalTvWaterColor(e.target.value)} className="w-10 h-10 rounded-[6px] cursor-pointer border border-slate-300 p-1 bg-white" />} 
           />
         )}
         <SettingsRow 
@@ -476,11 +384,6 @@ export const AdminSettingsManager: React.FC = () => {
           label="Chaos Animation" 
           description="Tickets jump and shake intensely when ready."
           control={<Switch checked={localTvChaos} onChange={() => setLocalTvChaos(!localTvChaos)} />} 
-        />
-        <SettingsRow 
-          label="Show Delivery Orders" 
-          description="Display delivery orders on the Order TV screen."
-          control={<Switch checked={localTvShowDelivery} onChange={() => setLocalTvShowDelivery(!localTvShowDelivery)} />} 
           border={false}
         />
       </SettingsSection>
@@ -496,42 +399,28 @@ export const AdminSettingsManager: React.FC = () => {
       <SettingsSection>
         <SettingsRow 
           label="Layout Mode" 
-          stackOnMobile
           description="Choose between a full queue or a split view with promotions."
           control={
-            <div className="flex bg-white/50 backdrop-blur-md border border-white/40 p-1 rounded-xl w-full sm:max-w-[300px]">
-              <button onClick={() => setLocalTvLayoutMode('FULL_QUEUE')} className={`relative flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-[13px] font-bold transition-all active:scale-95 ${localTvLayoutMode === 'FULL_QUEUE' ? 'text-[#0f172a]' : 'text-slate-500 hover:text-slate-700'}`}>
-                {localTvLayoutMode === 'FULL_QUEUE' && (
-                  <motion.div layoutId="tvLayoutPill" className="absolute inset-0 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] rounded-lg shadow-sm z-0" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                )}
-                <LayoutDashboard className="w-4 h-4 relative z-10" /> <span className="relative z-10">Full Queue</span>
+            <div className="flex bg-slate-100 p-1 rounded-[8px] w-full max-w-[300px]">
+              <button onClick={() => setLocalTvLayoutMode('FULL_QUEUE')} className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-[6px] text-[13px] font-medium transition-all ${localTvLayoutMode === 'FULL_QUEUE' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                <LayoutDashboard className="w-4 h-4" /> Full Queue
               </button>
-              <button onClick={() => setLocalTvLayoutMode('SPLIT_PROMO')} className={`relative flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-[13px] font-bold transition-all active:scale-95 ${localTvLayoutMode === 'SPLIT_PROMO' ? 'text-[#0f172a]' : 'text-slate-500 hover:text-slate-700'}`}>
-                {localTvLayoutMode === 'SPLIT_PROMO' && (
-                  <motion.div layoutId="tvLayoutPill" className="absolute inset-0 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] rounded-lg shadow-sm z-0" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                )}
-                <LayoutTemplate className="w-4 h-4 relative z-10" /> <span className="relative z-10">Split Promo</span>
+              <button onClick={() => setLocalTvLayoutMode('SPLIT_PROMO')} className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-[6px] text-[13px] font-medium transition-all ${localTvLayoutMode === 'SPLIT_PROMO' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                <LayoutTemplate className="w-4 h-4" /> Split Promo
               </button>
             </div>
           }
         />
         <SettingsRow 
           label="Orientation" 
-          stackOnMobile
           description="Optimize the layout for landscape or portrait displays."
           control={
-            <div className="flex bg-white/50 backdrop-blur-md border border-white/40 p-1 rounded-xl w-full sm:max-w-[300px]">
-              <button onClick={() => setLocalTvOrientation('HORIZONTAL')} className={`relative flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-[13px] font-bold transition-all active:scale-95 ${localTvOrientation === 'HORIZONTAL' ? 'text-[#0f172a]' : 'text-slate-500 hover:text-slate-700'}`}>
-                {localTvOrientation === 'HORIZONTAL' && (
-                  <motion.div layoutId="tvOrientationPill" className="absolute inset-0 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] rounded-lg shadow-sm z-0" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                )}
-                <Monitor className="w-4 h-4 relative z-10" /> <span className="relative z-10">Landscape</span>
+            <div className="flex bg-slate-100 p-1 rounded-[8px] w-full max-w-[300px]">
+              <button onClick={() => setLocalTvOrientation('HORIZONTAL')} className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-[6px] text-[13px] font-medium transition-all ${localTvOrientation === 'HORIZONTAL' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Monitor className="w-4 h-4" /> Landscape
               </button>
-              <button onClick={() => setLocalTvOrientation('VERTICAL')} className={`relative flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-[13px] font-bold transition-all active:scale-95 ${localTvOrientation === 'VERTICAL' ? 'text-[#0f172a]' : 'text-slate-500 hover:text-slate-700'}`}>
-                {localTvOrientation === 'VERTICAL' && (
-                  <motion.div layoutId="tvOrientationPill" className="absolute inset-0 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] rounded-lg shadow-sm z-0" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                )}
-                <Smartphone className="w-4 h-4 relative z-10" /> <span className="relative z-10">Portrait</span>
+              <button onClick={() => setLocalTvOrientation('VERTICAL')} className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-[6px] text-[13px] font-medium transition-all ${localTvOrientation === 'VERTICAL' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Smartphone className="w-4 h-4" /> Portrait
               </button>
             </div>
           }
@@ -544,8 +433,7 @@ export const AdminSettingsManager: React.FC = () => {
         {localTvTickerEnabled && (
           <SettingsRow 
             label="Ticker Message" 
-            stackOnMobile
-            control={<Input type="text" value={localTvTickerMessage} onChange={e => setLocalTvTickerMessage(e.target.value)} placeholder="Ticker Message..." className="w-full sm:max-w-sm" />} 
+            control={<Input type="text" value={localTvTickerMessage} onChange={e => setLocalTvTickerMessage(e.target.value)} placeholder="Ticker Message..." className="w-full max-w-sm" />} 
             border={false}
           />
         )}
@@ -562,29 +450,25 @@ export const AdminSettingsManager: React.FC = () => {
       <SettingsSection>
         <SettingsRow 
           label="Overlay Message" 
-          stackOnMobile
           description="Promotional text shown over the media."
-          control={<Input type="text" value={localTvPromoText} onChange={e => setLocalTvPromoText(e.target.value)} placeholder="e.g. Happy Hour Starts at 5 PM!" className="w-full sm:max-w-sm" />} 
+          control={<Input type="text" value={localTvPromoText} onChange={e => setLocalTvPromoText(e.target.value)} placeholder="e.g. Happy Hour Starts at 5 PM!" className="w-full max-w-sm" />} 
         />
         <SettingsRow 
           label="QR Code URL" 
-          stackOnMobile
           description="URL embedded in the on-screen QR code."
-          control={<Input type="url" value={localTvPromoQrUrl} onChange={e => setLocalTvPromoQrUrl(e.target.value)} placeholder="https://karvaan.app/menu" className="w-full sm:max-w-sm" />} 
+          control={<Input type="url" value={localTvPromoQrUrl} onChange={e => setLocalTvPromoQrUrl(e.target.value)} placeholder="https://karvaan.app/menu" className="w-full max-w-sm" />} 
         />
         <SettingsRow 
           label="Background Fallback" 
-          control={<input type="color" value={localTvPromoBgColor || '#000000'} onChange={e => setLocalTvPromoBgColor(e.target.value)} className="w-10 h-10 rounded-xl cursor-pointer border border-white/40 p-1 bg-white/50 shadow-sm" />} 
+          control={<input type="color" value={localTvPromoBgColor || '#000000'} onChange={e => setLocalTvPromoBgColor(e.target.value)} className="w-10 h-10 rounded-[6px] cursor-pointer border border-slate-300 p-1 bg-white" />} 
         />
         <SettingsRow 
           label="Playlist Delay (Seconds)" 
-          stackOnMobile
           description="How long each media item shows before rotating."
-          control={<Input type="number" min="2" max="60" value={localTvPromoInterval === 0 ? '' : localTvPromoInterval} onChange={e => setLocalTvPromoInterval(e.target.value === '' ? 0 : parseInt(e.target.value))} className="w-full sm:w-24 sm:text-center" />} 
+          control={<Input type="number" min="2" max="60" value={localTvPromoInterval} onChange={e => setLocalTvPromoInterval(parseInt(e.target.value))} className="w-24 text-center" />} 
         />
         <SettingsRow 
           label="Media Playlist" 
-          stackOnMobile
           description="Images and videos shown in the promo section."
           control={
             <div className="w-full flex flex-col gap-4">
@@ -621,80 +505,80 @@ export const AdminSettingsManager: React.FC = () => {
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <SettingsHeader title="POS Configuration" description="Manage quick notes, discounts, and paid add-ons." />
       
-      <h2 className="text-[16px] font-bold text-slate-900 mb-4 px-1">Quick Notes</h2>
+      <h2 className="text-[15px] font-semibold text-slate-900 mb-4">Quick Notes</h2>
       <SettingsSection>
-        <div className="p-4 border-b border-white/40 bg-white/40 flex gap-3">
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex gap-3">
           <Input type="text" placeholder="Icon (e.g. 🌶️)" value={newNote.icon} onChange={e => setNewNote({ ...newNote, icon: e.target.value })} className="w-24 text-center" />
           <Input type="text" placeholder="Label (e.g. Extra Spicy)" value={newNote.label} onChange={e => setNewNote({ ...newNote, label: e.target.value })} className="flex-1" />
           <Button onClick={() => { if (newNote.label) { store.addNote(newNote); setNewNote({label:'', icon:''}); } }}>Add Note</Button>
         </div>
-        <div className="divide-y divide-white/40 max-h-[300px] overflow-y-auto">
+        <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
           {store.notes.length === 0 ? (
-             <div className="p-8 text-center text-[14px] text-slate-500 font-medium">No quick notes added.</div>
+             <div className="p-8 text-center text-[13px] text-slate-500">No quick notes added.</div>
           ) : (
             store.notes.map(n => (
-              <div key={n.id} className="flex items-center justify-between p-4 hover:bg-white/40 transition-colors">
+              <div key={n.id} className="flex items-center justify-between p-4 hover:bg-slate-50">
                 <div className="flex items-center gap-3">
-                  <span className="text-[22px] w-8 text-center">{n.icon}</span>
-                  <span className="text-[14px] font-bold text-slate-900">{n.label}</span>
+                  <span className="text-lg w-8 text-center">{n.icon}</span>
+                  <span className="text-[14px] font-medium text-slate-900">{n.label}</span>
                 </div>
-                <Button variant="ghost" className="!p-2 text-slate-400 hover:text-rose-500" onClick={() => store.deleteNote(n.id)}><Trash2 className="w-4 h-4" /></Button>
+                <Button variant="ghost" className="!p-2 text-slate-400 hover:text-rose-600" onClick={() => store.deleteNote(n.id)}><Trash2 className="w-4 h-4" /></Button>
               </div>
             ))
           )}
         </div>
       </SettingsSection>
 
-      <h2 className="text-[16px] font-bold text-slate-900 mb-4 px-1">Predefined Discounts</h2>
+      <h2 className="text-[15px] font-semibold text-slate-900 mb-4">Predefined Discounts</h2>
       <SettingsSection>
-        <div className="p-4 border-b border-white/40 bg-white/40 flex gap-3">
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex gap-3">
           <Select value={newDiscount.type} onChange={e => setNewDiscount({ ...newDiscount, type: e.target.value as any })} className="w-32">
             <option value="PERCENTAGE">% Off</option><option value="FLAT">Flat ₹</option>
           </Select>
           <Input type="number" placeholder="Amt" value={newDiscount.amount} onChange={e => setNewDiscount({ ...newDiscount, amount: e.target.value })} className="w-24" />
           <Input type="text" placeholder="Label" value={newDiscount.label} onChange={e => setNewDiscount({ ...newDiscount, label: e.target.value })} className="flex-1" />
-          <Button onClick={() => { if (newDiscount.label && newDiscount.amount) { store.addDiscount({ label: newDiscount.label, amount: Number(newDiscount.amount), type: newDiscount.type }); setNewDiscount({label:'', amount:'', type:'PERCENTAGE'}); } }}>Add</Button>
+          <Button onClick={() => { if (newDiscount.label && newDiscount.amount) { store.addDiscount({ label: newDiscount.label, amount: Number(newDiscount.amount), type: newDiscount.type }); setNewDiscount({label:'', amount:'', type:'PERCENTAGE'}); } }}>Add Discount</Button>
         </div>
-        <div className="divide-y divide-white/40 max-h-[300px] overflow-y-auto">
+        <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
           {store.discounts.length === 0 ? (
-             <div className="p-8 text-center text-[14px] text-slate-500 font-medium">No discounts added.</div>
+             <div className="p-8 text-center text-[13px] text-slate-500">No discounts added.</div>
           ) : (
             store.discounts.map(d => (
-              <div key={d.id} className="flex items-center justify-between p-4 hover:bg-white/40 transition-colors">
+              <div key={d.id} className="flex items-center justify-between p-4 hover:bg-slate-50">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-white/50 border border-white/60 flex items-center justify-center font-bold text-[15px] text-[#8cc63f] shadow-sm">
+                  <div className="w-10 h-10 rounded-[6px] bg-slate-100 border border-slate-200 flex items-center justify-center font-medium text-[14px] text-slate-700">
                     {d.type === 'PERCENTAGE' ? '%' : '₹'}
                   </div>
                   <div>
-                    <h4 className="font-bold text-[14px] text-slate-900">{d.label}</h4>
+                    <h4 className="font-medium text-[14px] text-slate-900">{d.label}</h4>
                     <p className="text-[13px] text-slate-500">{d.type === 'PERCENTAGE' ? `${d.amount}%` : `₹${d.amount}`} Off</p>
                   </div>
                 </div>
-                <Button variant="ghost" className="!p-2 text-slate-400 hover:text-rose-500" onClick={() => store.deleteDiscount(d.id)}><Trash2 className="w-4 h-4" /></Button>
+                <Button variant="ghost" className="!p-2 text-slate-400 hover:text-rose-600" onClick={() => store.deleteDiscount(d.id)}><Trash2 className="w-4 h-4" /></Button>
               </div>
             ))
           )}
         </div>
       </SettingsSection>
 
-      <h2 className="text-[16px] font-bold text-slate-900 mb-4 px-1">Paid Add-ons</h2>
+      <h2 className="text-[15px] font-semibold text-slate-900 mb-4">Paid Add-ons</h2>
       <SettingsSection>
-        <div className="p-4 border-b border-white/40 bg-white/40 flex gap-3">
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex gap-3">
           <Input type="text" placeholder="Add-on Name" value={newAddon.name} onChange={e => setNewAddon({ ...newAddon, name: e.target.value })} className="flex-1" />
           <Input type="number" placeholder="₹ Price" value={newAddon.price} onChange={e => setNewAddon({ ...newAddon, price: e.target.value })} className="w-32" />
           <Button onClick={() => { if (newAddon.name && newAddon.price) { addAddon({ name: newAddon.name, price: Number(newAddon.price), isActive: true }); setNewAddon({name:'', price:''}); } }}>Add Item</Button>
         </div>
-        <div className="divide-y divide-white/40 max-h-[300px] overflow-y-auto">
+        <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
           {addons.length === 0 ? (
-             <div className="p-8 text-center text-[14px] text-slate-500 font-medium">No add-ons added.</div>
+             <div className="p-8 text-center text-[13px] text-slate-500">No add-ons added.</div>
           ) : (
             addons.map(a => (
-              <div key={a.id} className="flex items-center justify-between p-4 hover:bg-white/40 transition-colors">
+              <div key={a.id} className="flex items-center justify-between p-4 hover:bg-slate-50">
                 <div>
-                  <h4 className="font-bold text-[14px] text-slate-900">{a.name}</h4>
-                  <p className="text-[13px] text-[#8cc63f] font-bold">+₹{a.price}</p>
+                  <h4 className="font-medium text-[14px] text-slate-900">{a.name}</h4>
+                  <p className="text-[13px] text-emerald-600 font-medium">+₹{a.price}</p>
                 </div>
-                <Button variant="ghost" className="!p-2 text-slate-400 hover:text-rose-500" onClick={() => deleteAddon(a.id)}><Trash2 className="w-4 h-4" /></Button>
+                <Button variant="ghost" className="!p-2 text-slate-400 hover:text-rose-600" onClick={() => deleteAddon(a.id)}><Trash2 className="w-4 h-4" /></Button>
               </div>
             ))
           )}
@@ -703,109 +587,76 @@ export const AdminSettingsManager: React.FC = () => {
     </div>
   );
 
-  const renderNavButton = (id: string, label: string, Icon: any) => (
+  const NavButton = ({ id, label, icon: Icon }: { id: string, label: string, icon: any }) => (
     <button
-      key={id}
       onClick={() => setActiveTab(id)}
-      className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[14px] font-bold transition-all active:scale-95 ${
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-[6px] text-[14px] font-medium transition-colors ${
         activeTab === id 
-          ? 'text-[#0f172a]' 
-          : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
+          ? 'bg-slate-200/60 text-slate-900' 
+          : 'text-slate-600 hover:bg-slate-200/40 hover:text-slate-900'
       }`}
     >
-      {activeTab === id && (
-        <motion.div
-          layoutId="sidebarActiveTab"
-          className="absolute inset-0 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] rounded-xl shadow-[0_4px_12px_rgba(140,198,63,0.3)] z-0"
-          initial={false}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-        />
-      )}
-      <Icon className={`w-4 h-4 relative z-10 ${activeTab === id ? 'text-[#0f172a]' : 'text-slate-400'}`} />
-      <span className="relative z-10">{label}</span>
+      <Icon className={`w-4 h-4 ${activeTab === id ? 'text-slate-900' : 'text-slate-400'}`} />
+      {label}
     </button>
   );
 
   return (
-    <div className="flex flex-col md:flex-row h-full bg-transparent overflow-hidden text-slate-900 font-sans">
+    <div className="flex flex-col md:flex-row h-full bg-[#fafafa] overflow-hidden text-slate-900 font-sans">
       
-      {/* Mobile Nav Bar */}
-      <div className="md:hidden bg-white/60 backdrop-blur-xl border-b border-white/40 shrink-0 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-2 p-3 min-w-max">
-          {[
-            { id: 'general-network', label: 'Network', icon: Wifi },
-            { id: 'general-workspace', label: 'Workspace', icon: LayoutDashboard },
-            { id: 'hardware', label: 'Hardware', icon: Printer },
-            { id: 'tv-behaviors', label: 'TV Behaviors', icon: MonitorSpeaker },
-            { id: 'tv-layout', label: 'TV Layout', icon: LayoutTemplate },
-            { id: 'tv-media', label: 'Promo Media', icon: Play },
-            { id: 'pos-config', label: 'POS Config', icon: MessageSquare }
-          ].map(tab => {
-            const isActive = activeTab === tab.id;
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`relative flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-bold transition-all active:scale-95 ${
-                  isActive 
-                    ? 'text-[#0f172a]' 
-                    : 'bg-white/40 text-slate-600 border border-white/40'
-                }`}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="mobileActiveTab"
-                    className="absolute inset-0 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] rounded-full shadow-md z-0"
-                    initial={false}
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  />
-                )}
-                <Icon className={`w-3.5 h-3.5 relative z-10 ${isActive ? 'text-[#0f172a]' : 'text-slate-400'}`} />
-                <span className="relative z-10 whitespace-nowrap">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
+      {/* Mobile Nav Select */}
+      <div className="md:hidden bg-white border-b border-slate-200 p-4 shrink-0">
+        <Select value={activeTab} onChange={(e) => setActiveTab(e.target.value)} className="w-full font-medium">
+          <optgroup label="System">
+            <option value="general-network">Network & Sync</option>
+            <option value="general-workspace">Workspace</option>
+          </optgroup>
+          <optgroup label="Order TV">
+            <option value="tv-behaviors">Behaviors</option>
+            <option value="tv-layout">Layout</option>
+            <option value="tv-media">Promo Media</option>
+          </optgroup>
+          <optgroup label="POS">
+            <option value="pos-config">POS Configuration</option>
+          </optgroup>
+        </Select>
       </div>
 
       {/* Desktop Sidebar */}
-      <aside className="w-64 bg-white/40 backdrop-blur-xl border-r border-white/20 flex-col shrink-0 overflow-y-auto hidden md:flex">
+      <aside className="w-64 bg-slate-50 border-r border-slate-200 flex-col shrink-0 overflow-y-auto hidden md:flex">
         <div className="p-5 pb-3">
-          <h2 className="text-[22px] font-bold text-slate-900 tracking-tight">Settings</h2>
+          <h2 className="text-[20px] font-semibold text-slate-900 tracking-tight">Settings</h2>
         </div>
         <nav className="flex-1 px-3 space-y-6 pb-6">
           <div>
             <h3 className="px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">System</h3>
             <div className="space-y-0.5">
-              {renderNavButton('general-network', 'Network & Sync', Wifi)}
-              {renderNavButton('general-workspace', 'Workspace', LayoutDashboard)}
-              {renderNavButton('hardware', 'Hardware & Printers', Printer)}
+              <NavButton id="general-network" label="Network & Sync" icon={Wifi} />
+              <NavButton id="general-workspace" label="Workspace" icon={LayoutDashboard} />
             </div>
           </div>
           <div>
             <h3 className="px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Order TV</h3>
             <div className="space-y-0.5">
-              {renderNavButton('tv-behaviors', 'Behaviors', MonitorSpeaker)}
-              {renderNavButton('tv-layout', 'Layout', LayoutTemplate)}
-              {renderNavButton('tv-media', 'Promo Media', Play)}
+              <NavButton id="tv-behaviors" label="Behaviors" icon={MonitorSpeaker} />
+              <NavButton id="tv-layout" label="Layout" icon={LayoutTemplate} />
+              <NavButton id="tv-media" label="Promo Media" icon={Play} />
             </div>
           </div>
           <div>
             <h3 className="px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">POS Config</h3>
             <div className="space-y-0.5">
-              {renderNavButton('pos-config', 'Quick Notes & Discounts', MessageSquare)}
+              <NavButton id="pos-config" label="Quick Notes & Discounts" icon={MessageSquare} />
             </div>
           </div>
         </nav>
       </aside>
 
       {/* Content Area */}
-      <main className="flex-1 bg-transparent overflow-y-auto w-full pb-20 md:pb-0">
-        <div className="max-w-3xl mx-auto p-4 md:p-12 pb-32">
+      <main className="flex-1 bg-white overflow-y-auto w-full">
+        <div className="max-w-3xl mx-auto p-6 md:p-12 pb-32">
           {activeTab === 'general-network' && renderNetworkSync()}
           {activeTab === 'general-workspace' && renderWorkspace()}
-          {activeTab === 'hardware' && renderHardware()}
           {activeTab === 'tv-behaviors' && renderTvBehaviors()}
           {activeTab === 'tv-layout' && renderTvLayout()}
           {activeTab === 'tv-media' && renderTvMedia()}

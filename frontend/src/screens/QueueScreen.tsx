@@ -63,7 +63,7 @@ export const QueueScreen: React.FC = () => {
     orderTvShowPopup, orderTvPlayAudio, orderTvAudioTone, orderTvCustomAudioData, setOrderTvAudio,
     orderTvTickerEnabled, orderTvTickerMessage, orderTvConfettiEnabled, orderTvTtsEnabled, orderTvTtsVoiceName,
     orderTvWaterColor, orderTvWaterFillEnabled, orderTvReadyBadgeEnabled, orderTvTimeWaitingEnabled,
-    orderTvChaosAnimationEnabled, orderTvLayoutMode, orderTvOrientation, orderTvPromoInterval, orderTvPromoMedia,
+    orderTvChaosAnimationEnabled, orderTvShowDelivery, orderTvLayoutMode, orderTvOrientation, orderTvPromoInterval, orderTvPromoMedia,
     orderTvSplitRatio, setOrderTvSplitRatio, orderTvPromoText, orderTvPromoQrUrl, orderTvPromoBgColor
   } = useSettingsStore();
   const [lastReadyTicket, setLastReadyTicket] = useState<string | null>(null);
@@ -127,7 +127,7 @@ export const QueueScreen: React.FC = () => {
   }, []);
 
   // Filter and split tickets
-  const activeTickets = tickets.filter(t => t.status !== 'SERVED');
+  const activeTickets = tickets.filter(t => t.status !== 'SERVED' && (orderTvShowDelivery || t.orderType !== 'DELIVERY'));
   
   const preparingTickets = activeTickets
     .filter(t => t.status === 'RECEIVED' || t.status === 'COOKING')

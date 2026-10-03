@@ -41,6 +41,7 @@ async function _request(method: string, endpoint: string, body?: any) {
     method,
     headers: {
       'Content-Type': 'application/json',
+      'Bypass-Tunnel-Reminder': 'true'
     },
   };
 

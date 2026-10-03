@@ -78,135 +78,170 @@ const TableCard: React.FC<{
   waiterName?: string;
   onSelect: () => void;
   onManage: (e: React.MouseEvent) => void;
-}> = React.memo(({ table, waiterName, onSelect, onManage }) => {
+  tables: DiningTable[];
+}> = React.memo(({ table, waiterName, onSelect, onManage, tables }) => {
   const cfg = STATUS_CONFIG[table.status];
+  const isAvailable = table.status === 'AVAILABLE';
 
   return (
     <button
       onClick={onSelect}
       className={`
-        group relative w-full text-left rounded-2xl sm:rounded-[20px]
-        bg-white border-2 transition-all duration-200
-        active:scale-[0.97] cursor-pointer select-none touch-manipulation
-        hover:shadow-lg hover:-translate-y-0.5
-        ${cfg.border}
-        ${table.status !== 'AVAILABLE' ? 'shadow-md' : 'shadow-sm'}
+        relative w-full text-left rounded-[24px] sm:rounded-[32px] overflow-hidden
+        transition-all duration-300 active:scale-95 cursor-pointer select-none touch-manipulation
+        shadow-sm hover:shadow-2xl hover:-translate-y-1.5 group
+        flex flex-col border
+        ${isAvailable 
+          ? 'bg-white/70 backdrop-blur-2xl border-white/80 text-slate-800' 
+          : `bg-gradient-to-br ${cfg.gradient} border-white/20 text-white shadow-xl shadow-${cfg.color}-500/20`}
       `}
     >
-      {/* Status accent bar */}
-      <div className={`absolute top-0 left-3 right-3 h-1 rounded-b-full bg-gradient-to-r ${cfg.gradient}`} />
+      {/* Glossy Top Glare (3D effect) */}
+      {!isAvailable && (
+        <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent opacity-60 pointer-events-none" />
+      )}
 
-      <div className="p-3 sm:p-4">
-        {/* Row 1: Table number + capacity */}
-        <div className="flex items-start justify-between mb-2 sm:mb-3">
-          <div className="flex items-center gap-2">
-            <div className={`
-              w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center font-black text-white text-sm sm:text-base
-              bg-gradient-to-br ${cfg.gradient} shadow-sm
-            `}>
-              {table.number}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <span className={`
-              flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-1 rounded-lg
-              ${cfg.bg} ${cfg.text}
-            `}>
-              <Users className="h-3 w-3" />
-              {table.capacity}
-            </span>
-
-            <button
-              onClick={onManage}
-              className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-              title="Manage Table"
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </button>
-          </div>
+      <div className="relative z-10 p-3 sm:p-4 flex flex-col h-full justify-between min-h-[110px] sm:min-h-[130px] w-full">
+        {/* Header: Table No, Capacity, Settings */}
+        <div className="flex justify-between items-start w-full">
+           <div className="flex items-center gap-1 sm:gap-1.5">
+             <div className={`text-2xl sm:text-3xl font-black tracking-tight leading-none drop-shadow-sm ${isAvailable ? 'text-slate-800' : 'text-white'}`}>
+               T{table.number}
+             </div>
+             {cfg.pulse && (
+               <div className="relative w-2 h-2 sm:w-2.5 sm:h-2.5 mb-2 shrink-0">
+                 <span className="absolute inset-0 rounded-full bg-white animate-ping opacity-60" />
+                 <span className="absolute inset-0 rounded-full bg-white shadow-sm" />
+               </div>
+             )}
+           </div>
+           
+           <div className="flex items-center gap-1.5 shrink-0">
+             <div className={`flex items-center justify-center gap-1 text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-1 rounded-full border ${isAvailable ? 'bg-white/80 border-slate-200 shadow-sm text-slate-600' : 'bg-black/10 border-white/20 text-white backdrop-blur-md'}`}>
+               <Users className="h-3 w-3 shrink-0" />
+               {table.capacity}
+             </div>
+             <button 
+               onClick={(e) => { e.stopPropagation(); onManage(e); }}
+               className={`p-1 rounded-full transition-colors flex-shrink-0 border ${
+                 isAvailable ? 'bg-white hover:bg-slate-100 text-slate-400 shadow-sm border-transparent' : 'bg-black/10 border-white/20 hover:bg-white/30 text-white backdrop-blur-md'
+               }`}
+             >
+               <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+             </button>
+           </div>
         </div>
-
-        {/* Row 2: Status-specific content */}
-        <div className="min-h-[40px] sm:min-h-[48px] flex flex-col justify-center">
-          {table.status === 'AVAILABLE' ? (
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs sm:text-sm font-bold text-emerald-600">Ready for guests</span>
-            </div>
+        
+        {/* Middle: Data & Status */}
+        <div className="flex flex-col justify-end mt-1 mb-auto">
+          {isAvailable ? (
+             <div className="flex items-center gap-1.5">
+               <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-sm shrink-0" />
+               <span className="text-xs sm:text-sm font-black text-emerald-600 tracking-wide uppercase truncate">Open</span>
+             </div>
           ) : table.status === 'RESERVED' ? (
-            <div className="flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-amber-500" />
-              <span className="text-xs sm:text-sm font-bold text-amber-600">Reserved</span>
-            </div>
+             <div className="flex items-center gap-1.5">
+               <Clock className="h-3.5 w-3.5 shrink-0" />
+               <span className="text-xs sm:text-sm font-black tracking-wide uppercase truncate">Reserved</span>
+             </div>
+          ) : table.mergedInto ? (
+             <div className="flex flex-col w-full">
+               <div className="flex items-center gap-1.5 mb-1 text-amber-500">
+                 <ArrowRightLeft className="h-4 w-4 shrink-0" />
+                 <span className="text-sm font-black tracking-wide truncate">Merged</span>
+               </div>
+               <span className="text-[10px] font-bold text-white/80 bg-black/20 px-2 py-1 rounded-lg w-fit">
+                 Part of T{tables.find(t => t.id === table.mergedInto)?.number || '??'}
+               </span>
+             </div>
           ) : (
-            <div className="space-y-0.5">
-              <div className={`text-lg sm:text-xl font-black ${table.status === 'OCCUPIED' ? 'text-rose-600' : 'text-blue-600'}`}>
-                ₹{(table.currentBill || 0).toLocaleString()}
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {table.seatedTime && (
-                  <span className="flex items-center gap-1 text-[10px] sm:text-[11px] text-slate-500 font-semibold">
-                    <Clock className="h-3 w-3" />
-                    {table.seatedTime}
-                  </span>
+             <div className="flex flex-col w-full">
+               <span className="text-xl sm:text-2xl font-black leading-none mb-1 shadow-black/10 drop-shadow-sm truncate tracking-tight">
+                 ₹{(table.currentBill || 0).toLocaleString()}
+               </span>
+               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 w-full">
+                 {table.seatedTime && (
+                   <span className={`flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-lg border ${isAvailable ? 'bg-white/50 border-slate-200/50 text-slate-500' : 'bg-black/10 backdrop-blur-md border-white/10 text-white'}`}>
+                     <Clock className="h-2.5 w-2.5 shrink-0 opacity-80" />
+                     <span className="text-[9px] sm:text-[10px] font-black">
+                       {(() => {
+                         if (table.seatedTime === 'Just now') return 'Just now';
+                         try {
+                           const seated = new Date(table.seatedTime).getTime();
+                           if (isNaN(seated)) return table.seatedTime;
+                           const diffMinutes = Math.floor((Date.now() - seated) / 60000);
+                           if (diffMinutes < 1) return 'Just now';
+                           if (diffMinutes < 60) return `${diffMinutes}m`;
+                           const hours = Math.floor(diffMinutes / 60);
+                           const mins = diffMinutes % 60;
+                           return `${hours}h ${mins}m`;
+                         } catch (e) {
+                           return table.seatedTime;
+                         }
+                       })()}
+                     </span>
+                   </span>
+                 )}
+                 {waiterName && (
+                   <span className={`flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-lg border max-w-full ${isAvailable ? 'bg-white/50 border-slate-200/50 text-slate-500' : 'bg-black/10 backdrop-blur-md border-white/10 text-white'}`}>
+                     <User className="h-2.5 w-2.5 shrink-0 opacity-80" />
+                     <span className="text-[9px] sm:text-[10px] font-black truncate max-w-[60px] sm:max-w-[80px]">{waiterName}</span>
+                   </span>
+                 )}
+               </div>
+                {table.mergedWith && table.mergedWith.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {table.mergedWith.map(mId => (
+                      <span key={mId} className="text-[9px] font-black bg-amber-500/90 border border-amber-400 text-white px-1.5 py-0.5 rounded shadow-sm">
+                        + Merged
+                      </span>
+                    ))}
+                  </div>
                 )}
-                {waiterName && (
-                  <span className="flex items-center gap-1 text-[10px] sm:text-[11px] text-slate-500 font-semibold">
-                    <User className="h-3 w-3" />
-                    {waiterName}
-                  </span>
-                )}
-              </div>
-            </div>
+             </div>
           )}
         </div>
 
-        {/* Row 3: Action strip */}
-        <div className={`
-          mt-2 sm:mt-3 pt-2 sm:pt-2.5 border-t border-slate-100
-          flex items-center justify-between
-        `}>
-          <span className={`
-            text-[10px] sm:text-[11px] font-black uppercase tracking-wider
-            px-2 py-0.5 rounded-md
-            ${cfg.bg} ${cfg.text}
-          `}>
+        {/* Action Strip */}
+        <div className={`mt-2 pt-2 border-t flex flex-wrap items-center justify-between gap-1 w-full ${isAvailable ? 'border-slate-200/60 text-slate-500' : 'border-white/20 text-white/90'}`}>
+          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider truncate min-w-[40px]">
             {cfg.label}
           </span>
-
-          <span className={`
-            flex items-center gap-1 text-[11px] sm:text-xs font-bold
-            ${cfg.text} group-hover:gap-2 transition-all
-          `}>
-            {cfg.actionLabel}
-            <ChevronRight className="h-3 w-3" />
+          <span className="flex items-center gap-0.5 text-[9px] sm:text-[10px] font-black group-hover:translate-x-1 transition-transform shrink-0">
+            <span className="truncate max-w-[70px] sm:max-w-none">{cfg.actionLabel}</span>
+            <ChevronRight className="h-2.5 w-2.5 shrink-0" />
           </span>
         </div>
       </div>
-
-      {/* Occupied pulse ring effect */}
-      {cfg.pulse && (
-        <div className="absolute -top-1 -right-1 w-3 h-3">
-          <span className="absolute inset-0 rounded-full bg-rose-400 animate-ping opacity-30" />
-          <span className="absolute inset-0 rounded-full bg-rose-500" />
-        </div>
-      )}
     </button>
   );
 });
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNavigateToPOS }) => {
-  const { tables, floors, setTableStatus, transferTable } = useTableStore();
+  const { tables, floors, setTableStatus, transferTable, mergeTable, unmergeTable } = useTableStore();
   const [selectedTable, setSelectedTable] = useState<DiningTable | null>(null);
   const [transferTarget, setTransferTarget] = useState<string>('');
+  const [mergeTarget, setMergeTarget] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [floorFilter, setFloorFilter] = useState<string>('ALL');
-  const { setTable: setPosTable, heldOrders } = useCartStore();
+  const { setTable: setPosTable, heldOrders, resumeOrder } = useCartStore();
+
+  const [, setTick] = useState(0);
+  React.useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 30000); // 30s update for time relative formatting
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSelectForBilling = (table: DiningTable) => {
-    setPosTable(table.id, table.number);
+    // If merged into another table, route to the primary table
+    const targetTable = table.mergedInto ? tables.find(t => t.id === table.mergedInto) || table : table;
+    const existingOrder = heldOrders.find((o) => o.tableId === targetTable.id);
+    if (existingOrder) {
+      resumeOrder(existingOrder.id);
+    } else {
+      setPosTable(targetTable.id, targetTable.number);
+    }
     onNavigateToPOS();
   };
 
@@ -220,6 +255,22 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
     transferTable(selectedTable.id, transferTarget);
     setSelectedTable(null);
     setTransferTarget('');
+  };
+
+  const handleMergeTable = () => {
+    if (!selectedTable || !mergeTarget) return;
+    const targetTable = tables.find(t => t.number === mergeTarget);
+    if (targetTable) {
+      mergeTable(selectedTable.id, targetTable.id);
+    }
+    setMergeTarget('');
+    setSelectedTable(null); // Close modal
+  };
+
+  const handleUnmergeTable = () => {
+    if (!selectedTable) return;
+    unmergeTable(selectedTable.id);
+    setSelectedTable(null);
   };
 
   // ─── Computed data ────────────────────────────────────────────────────────
@@ -270,9 +321,9 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
   ];
 
   return (
-    <div className="h-full overflow-y-auto bg-[#f5f3ee]">
+    <div className="h-full overflow-y-auto overflow-x-hidden bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] pb-20 lg:pb-0">
       {/* ─── Sticky Header ─────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-20 bg-[#f5f3ee]/95 backdrop-blur-md border-b border-slate-200/60">
+      <div className="sticky top-0 z-20 bg-white/60 backdrop-blur-2xl border-b border-white/50 shadow-sm">
         {/* Title row */}
         <div className="px-3 sm:px-5 pt-3 sm:pt-4 pb-2 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
@@ -286,13 +337,13 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
           </div>
 
           {/* Quick stats — desktop */}
-          <div className="hidden sm:flex items-center gap-2">
-            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
-              <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="text-xs font-black text-slate-700">₹{stats.totalRevenue.toLocaleString()}</span>
+          <div className="hidden sm:flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-white/70 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/60 shadow-sm">
+              <DollarSign className="h-4 w-4 text-emerald-600" />
+              <span className="text-sm font-black text-slate-800">₹{stats.totalRevenue.toLocaleString()}</span>
             </div>
-            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
-              <PieChart className="h-3.5 w-3.5 text-teal-500" />
+            <div className="flex items-center gap-2 bg-white/70 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/60 shadow-sm">
+              <PieChart className="h-4 w-4 text-teal-600" />
               <span className="text-xs font-black text-slate-700">{stats.rate}%</span>
               <span className="text-[10px] text-slate-400 font-medium">full</span>
             </div>
@@ -300,32 +351,32 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
         </div>
 
         {/* Mobile quick stats bar */}
-        <div className="sm:hidden px-3 pb-2 flex gap-2">
-          <div className="flex-1 flex items-center justify-center gap-1 bg-white rounded-lg py-1.5 border border-slate-200 shadow-sm">
-            <DollarSign className="h-3 w-3 text-emerald-500" />
-            <span className="text-[11px] font-black text-slate-700">₹{stats.totalRevenue.toLocaleString()}</span>
+        <div className="sm:hidden px-3 pb-3 flex gap-2">
+          <div className="flex-1 flex items-center justify-center gap-1.5 bg-white/70 backdrop-blur-md rounded-xl py-2 border border-white/50 shadow-sm">
+            <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="text-xs font-black text-slate-800">₹{stats.totalRevenue.toLocaleString()}</span>
           </div>
-          <div className="flex-1 flex items-center justify-center gap-1 bg-white rounded-lg py-1.5 border border-slate-200 shadow-sm">
-            <PieChart className="h-3 w-3 text-teal-500" />
-            <span className="text-[11px] font-black text-slate-700">{stats.rate}% Seated</span>
+          <div className="flex-1 flex items-center justify-center gap-1.5 bg-white/70 backdrop-blur-md rounded-xl py-2 border border-white/50 shadow-sm">
+            <PieChart className="h-3.5 w-3.5 text-teal-600" />
+            <span className="text-xs font-black text-slate-800">{stats.rate}% Seated</span>
           </div>
-          <div className="flex-1 flex items-center justify-center gap-1 bg-white rounded-lg py-1.5 border border-slate-200 shadow-sm">
-            <Armchair className="h-3 w-3 text-slate-400" />
-            <span className="text-[11px] font-black text-slate-700">{stats.available} open</span>
+          <div className="flex-1 flex items-center justify-center gap-1.5 bg-white/70 backdrop-blur-md rounded-xl py-2 border border-white/50 shadow-sm">
+            <Armchair className="h-3.5 w-3.5 text-slate-500" />
+            <span className="text-xs font-black text-slate-800">{stats.available} open</span>
           </div>
         </div>
 
         {/* Floor tabs + Status filter */}
-        <div className="px-3 sm:px-5 pb-2 sm:pb-3 flex flex-col gap-2">
+        <div className="px-3 sm:px-5 pb-3 flex flex-col gap-3">
           {/* Floor tabs — horizontal scroll */}
           {sortedFloors.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-2 px-2 pb-1">
               <button
                 onClick={() => setFloorFilter('ALL')}
-                className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`shrink-0 px-4 py-2 rounded-2xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
                   floorFilter === 'ALL'
-                    ? 'bg-[#8cc63f] text-white shadow-sm'
-                    : 'bg-white text-slate-500 border border-slate-200 hover:border-[#8cc63f]/50 hover:text-slate-700'
+                    ? 'bg-slate-800 text-white shadow-md scale-105'
+                    : 'bg-white/60 backdrop-blur-md text-slate-600 border border-white/50 hover:bg-white/90 hover:text-slate-800'
                 }`}
               >
                 All Floors
@@ -334,10 +385,10 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
                 <button
                   key={floor.id}
                   onClick={() => setFloorFilter(floor.id)}
-                  className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`shrink-0 px-4 py-2 rounded-2xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
                     floorFilter === floor.id
-                      ? 'bg-[#8cc63f] text-white shadow-sm'
-                      : 'bg-white text-slate-500 border border-slate-200 hover:border-[#8cc63f]/50 hover:text-slate-700'
+                      ? 'bg-slate-800 text-white shadow-md scale-105'
+                      : 'bg-white/60 backdrop-blur-md text-slate-600 border border-white/50 hover:bg-white/90 hover:text-slate-800'
                   }`}
                 >
                   {ZONE_ICON[floor.zone] || null}
@@ -348,22 +399,22 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
           )}
 
           {/* Status filter pills */}
-          <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-2 px-2 pb-1">
             {filterPills.map((pill) => (
               <button
                 key={pill.key}
                 onClick={() => setStatusFilter(pill.key)}
-                className={`shrink-0 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`shrink-0 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer border ${
                   statusFilter === pill.key
-                    ? 'bg-slate-800 text-white shadow-sm'
-                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                    ? 'bg-white border-white shadow-md text-slate-800'
+                    : 'bg-white/40 border-white/30 text-slate-600 hover:bg-white/60'
                 }`}
               >
                 {pill.key !== 'ALL' && (
-                  <span className={`w-2 h-2 rounded-full bg-${pill.color}-500`} />
+                  <span className={`w-2.5 h-2.5 rounded-full shadow-sm bg-${pill.color}-500`} />
                 )}
                 {pill.label}
-                <span className={`text-[10px] font-medium ${statusFilter === pill.key ? 'text-white/70' : 'text-slate-400'}`}>
+                <span className={`text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded-md ${statusFilter === pill.key ? 'bg-slate-100 text-slate-600' : 'bg-white/50 text-slate-500'}`}>
                   {pill.count}
                 </span>
               </button>
@@ -400,7 +451,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
                 )}
 
                 {/* Table cards grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-4">
+                <div className="grid grid-cols-2 min-[400px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2.5 sm:gap-4 lg:gap-5">
                   {floorTables.map((table) => {
                     const activeOrder = heldOrders.find((o) => o.tableName === table.number);
                     return (
@@ -408,6 +459,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
                         key={table.id}
                         table={table}
                         waiterName={activeOrder?.waiterName}
+                        tables={tables}
                         onSelect={() => handleSelectForBilling(table)}
                         onManage={(e) => {
                           e.stopPropagation();
@@ -468,7 +520,11 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
                 </div>
               </div>
               <button
-                onClick={() => setSelectedTable(null)}
+                onClick={() => {
+                  setSelectedTable(null);
+                  setTransferTarget('');
+                  setMergeTarget('');
+                }}
                 className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
@@ -505,35 +561,119 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
               </div>
 
               {/* Table Transfer */}
-              {selectedTable.status !== 'AVAILABLE' && (
-                <div className="pt-3 border-t border-slate-100 space-y-2">
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <ArrowRightLeft className="h-3.5 w-3.5 text-[#8cc63f]" />
-                    Transfer Order
-                  </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={transferTarget}
-                      onChange={(e) => setTransferTarget(e.target.value)}
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-xs p-2.5 focus:outline-none focus:border-[#8cc63f] font-medium"
-                    >
-                      <option value="">Select target table...</option>
+              {selectedTable.status !== 'AVAILABLE' && !selectedTable.mergedInto && (
+                <div className="pt-3 border-t border-slate-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <ArrowRightLeft className="h-3.5 w-3.5 text-blue-500" />
+                      Transfer Order To
+                    </label>
+                    {transferTarget && (
+                      <button
+                        onClick={handleTransferTable}
+                        className="px-3 py-1 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white font-black text-[10px] rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                      >
+                        Transfer to T{transferTarget}
+                        <Check className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  {tables.filter((t) => t.status === 'AVAILABLE' && t.id !== selectedTable.id).length > 0 ? (
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-[140px] overflow-y-auto pr-1">
                       {tables
                         .filter((t) => t.status === 'AVAILABLE' && t.id !== selectedTable.id)
-                        .map((t) => (
-                          <option key={t.id} value={t.number}>
-                            Table {t.number} ({t.capacity} seats)
-                          </option>
-                        ))}
-                    </select>
+                        .map((t) => {
+                          const isSelected = transferTarget === t.number;
+                          return (
+                            <button
+                              key={t.id}
+                              onClick={() => setTransferTarget(t.number)}
+                              className={`
+                                py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer border-2 flex flex-col items-center justify-center gap-0.5
+                                ${isSelected 
+                                  ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-sm scale-[1.02]' 
+                                  : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100 hover:border-slate-200'
+                                }
+                              `}
+                            >
+                              <span>T{t.number}</span>
+                              <span className={`text-[9px] font-bold ${isSelected ? 'text-blue-500' : 'text-slate-400'}`}>
+                                {t.capacity} <Users className="inline h-2 w-2" />
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-slate-50 rounded-xl text-center border border-slate-100">
+                      <p className="text-[11px] font-bold text-slate-400">No available tables to transfer to.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Table Merging */}
+              {(selectedTable.mergedInto || (selectedTable.mergedWith && selectedTable.mergedWith.length > 0)) ? (
+                <div className="pt-3 border-t border-slate-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      {selectedTable.mergedInto ? 'Merged Table' : 'Primary Merged Table'}
+                    </label>
                     <button
-                      onClick={handleTransferTable}
-                      disabled={!transferTarget}
-                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white font-bold text-xs rounded-xl transition-all active:scale-95 cursor-pointer"
+                      onClick={handleUnmergeTable}
+                      className="px-3 py-1 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 font-black text-[10px] rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer"
                     >
-                      Transfer
+                      Unmerge {selectedTable.mergedInto ? 'from Primary' : 'All Secondary Tables'}
                     </button>
                   </div>
+                </div>
+              ) : (
+                <div className="pt-3 border-t border-slate-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5 text-amber-500" />
+                      Merge with Table
+                    </label>
+                    {mergeTarget && (
+                      <button
+                        onClick={handleMergeTable}
+                        className="px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black text-[10px] rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                      >
+                        Merge T{mergeTarget}
+                        <Check className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  {tables.filter((t) => t.status === 'AVAILABLE' && t.id !== selectedTable.id && !t.mergedInto).length > 0 ? (
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-[100px] overflow-y-auto pr-1">
+                      {tables
+                        .filter((t) => t.status === 'AVAILABLE' && t.id !== selectedTable.id && !t.mergedInto)
+                        .map((t) => {
+                          const isSelected = mergeTarget === t.number;
+                          return (
+                            <button
+                              key={t.id}
+                              onClick={() => setMergeTarget(t.number)}
+                              className={`
+                                py-2 rounded-xl text-xs font-black transition-all cursor-pointer border-2 flex flex-col items-center justify-center gap-0.5
+                                ${isSelected 
+                                  ? 'bg-amber-50 border-amber-400 text-amber-700 shadow-sm scale-[1.02]' 
+                                  : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100 hover:border-slate-200'
+                                }
+                              `}
+                            >
+                              <span>T{t.number}</span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-50 rounded-xl text-center border border-slate-100">
+                      <p className="text-[10px] font-bold text-slate-400">No available tables to merge.</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Menu as MenuIcon, Users, Settings, LogOut, Keyboard, BookOpen, Package, CloudOff, LayoutGrid } from 'lucide-react';
 import { getQueueCount, getPendingActions, clearAction } from '../services/offlineQueue';
 import { socket, emitAction } from '../services/socket';
-
+import { motion } from 'framer-motion';
 
 import { AdminMenuManager } from './Admin/AdminMenuManager';
 import { AdminStaffManager } from './Admin/AdminStaffManager';
@@ -49,99 +49,49 @@ export const AdminPortalScreen: React.FC = () => {
 
   return (
 
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-pos-bg overflow-hidden transition-colors duration-250 text-pos-text">
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] overflow-hidden text-slate-800">
       {/* Admin Sidebar */}
-      <aside className="w-full lg:w-64 bg-pos-sidebar border-b lg:border-b-0 lg:border-r border-pos-border shadow-glass flex flex-col p-3 lg:p-4 z-10 transition-colors duration-250 shrink-0">
-        <div className="hidden lg:block mb-8 px-2">
-          <h2 className="text-xl font-black text-pos-text">Admin Portal</h2>
-          <p className="text-xs font-bold text-pos-text-muted mt-1">Management & Analytics</p>
+      <aside className="w-full lg:w-64 bg-white/70 backdrop-blur-xl border-b lg:border-b-0 lg:border-r border-white/60 shadow-lg flex flex-col p-3 lg:p-4 z-10 shrink-0">
+        <div className="hidden lg:block mb-6 px-2">
+          <h2 className="text-xl font-black text-slate-800">Admin Portal</h2>
+          <p className="text-xs font-bold text-slate-400 mt-1">Management & Analytics</p>
         </div>
 
         {/* Navigation - Horizontal on mobile, vertical on desktop */}
         <nav className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0 scrollbar-none lg:flex-1 w-full">
           
-          <button
-            onClick={() => setActiveTab('MENU')}
-            className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
-              activeTab === 'MENU'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-glow-accent scale-[1.02]'
-                : 'text-pos-text-muted hover:bg-pos-card hover:text-emerald-500'
-            }`}
-          >
-            <MenuIcon className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
-            Menu Manager
-          </button>
-
-          <button
-            onClick={() => setActiveTab('TABLES')}
-            className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
-              activeTab === 'TABLES'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-glow-accent scale-[1.02]'
-                : 'text-pos-text hover:bg-pos-card hover:text-emerald-500'
-            }`}
-          >
-            <LayoutGrid className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
-            <span className="hidden lg:inline">Tables & Floors</span>
-            <span className="lg:hidden">Tables</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('STAFF')}
-            className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
-              activeTab === 'STAFF'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-glow-accent scale-[1.02]'
-                : 'text-pos-text-muted hover:bg-pos-card hover:text-emerald-500'
-            }`}
-          >
-            <Users className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
-            Staff & Waiters
-          </button>
-
-          <button
-            onClick={() => setActiveTab('QUICK_KEYS')}
-            className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
-              activeTab === 'QUICK_KEYS'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-glow-accent scale-[1.02]'
-                : 'text-pos-text-muted hover:bg-pos-card hover:text-emerald-500'
-            }`}
-          >
-            <Keyboard className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
-            POS Quick-Keys
-          </button>
-
-          <button
-            onClick={() => setActiveTab('SETTINGS')}
-            className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
-              activeTab === 'SETTINGS'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-glow-accent scale-[1.02]'
-                : 'text-pos-text-muted hover:bg-pos-card hover:text-emerald-500'
-            }`}
-          >
-            <Settings className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
-            System Config
-          </button>
-          <button
-            onClick={() => setActiveTab('INVENTORY')}
-            className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
-              activeTab === 'INVENTORY'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-glow-accent scale-[1.02]'
-                : 'text-pos-text-muted hover:bg-pos-card hover:text-emerald-500'
-            }`}
-          >
-            <Package className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
-            Inventory & Recipes
-          </button>
-          <button
-            onClick={() => setActiveTab('LEDGER')}
-            className={`shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-4 py-2.5 lg:py-3 rounded-xl font-bold text-sm transition-all cursor-pointer ${
-              activeTab === 'LEDGER'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-glow-accent scale-[1.02]'
-                : 'text-pos-text-muted hover:bg-pos-card hover:text-emerald-500'
-            }`}
-          >
-            <BookOpen className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
-            Customer Ledger
-          </button>
+          {[
+            { id: 'MENU', label: 'Menu Manager', icon: MenuIcon },
+            { id: 'TABLES', label: 'Tables & Floors', icon: LayoutGrid },
+            { id: 'STAFF', label: 'Staff & Waiters', icon: Users },
+            { id: 'INVENTORY', label: 'Inventory & Recipes', icon: Package },
+            { id: 'LEDGER', label: 'Customer Ledger', icon: BookOpen },
+            { id: 'SETTINGS', label: 'Settings', icon: Settings },
+          ].map(({ id, label, icon: Icon }) => {
+            const isActive = activeTab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id as any)}
+                className={`relative shrink-0 lg:w-full flex items-center gap-2 lg:gap-3 px-3.5 py-2.5 rounded-2xl font-bold text-sm transition-all cursor-pointer active:scale-95 ${
+                  isActive
+                    ? 'text-[#0f172a]'
+                    : 'text-slate-500 hover:bg-white/60 hover:text-slate-800'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="adminPortalTab"
+                    className="absolute inset-0 bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl shadow-md z-0"
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                )}
+                <Icon className={`h-4 w-4 lg:h-5 lg:w-5 shrink-0 relative z-10 ${isActive ? 'text-[#0f172a]' : ''}`} />
+                <span className="hidden lg:inline relative z-10">{label}</span>
+                <span className="lg:hidden text-xs relative z-10">{label.split(' ')[0]}</span>
+              </button>
+            );
+          })}
 
           {/* Offline Sync Warning - Inline on mobile, stacked on desktop */}
           {offlineCount > 0 && (
@@ -174,12 +124,11 @@ export const AdminPortalScreen: React.FC = () => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-hidden relative bg-pos-bg">
+      <main className="flex-1 overflow-hidden relative bg-transparent flex flex-col">
         {activeTab === 'MENU' && <AdminMenuManager />}
         {activeTab === 'TABLES' && <AdminTableManager />}
         {activeTab === 'STAFF' && <AdminStaffManager />}
-        {activeTab === 'QUICK_KEYS' && <AdminSettingsManager type="quick" />}
-        {activeTab === 'SETTINGS' && <AdminSettingsManager type="system" />}
+        {activeTab === 'SETTINGS' && <AdminSettingsManager />}
         {activeTab === 'LEDGER' && <AdminCustomerLedger />}
         {activeTab === 'INVENTORY' && <AdminInventoryScreen />}
       </main>

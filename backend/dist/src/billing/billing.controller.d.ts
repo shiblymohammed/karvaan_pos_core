@@ -15,11 +15,11 @@ export declare class BillingController {
         items: ({
             product: {
                 id: string;
-                createdAt: Date;
                 name: string;
+                createdAt: Date;
                 updatedAt: Date;
-                price: number;
                 description: string | null;
+                price: number;
                 gstRate: number;
                 categoryId: string;
                 isAvailable: boolean;
@@ -28,28 +28,29 @@ export declare class BillingController {
             };
         } & {
             id: string;
-            status: string;
-            createdAt: Date;
-            notes: string | null;
-            updatedAt: Date;
             orderId: string;
+            status: string;
+            notes: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            price: number;
             productId: string;
             quantity: number;
-            price: number;
             addons: string | null;
         })[];
     } & {
         id: string;
-        status: string;
-        createdAt: Date;
-        orderNumber: string;
         orderType: string;
+        discount: number;
+        syncedAt: Date | null;
+        orderNumber: string;
         tableId: string | null;
         waiterId: string | null;
         customerId: string | null;
+        status: string;
         totalAmount: number;
-        discount: number;
         notes: string | null;
+        createdAt: Date;
         updatedAt: Date;
     }>;
     getBillPreview(orderId: string, discount?: number): Promise<{
@@ -68,21 +69,22 @@ export declare class BillingController {
     }): Promise<{
         bill: {
             id: string;
-            orderType: string;
-            discount: number;
-            orderId: string;
-            customerName: string | null;
-            customerPhone: string | null;
-            paymentMethod: string;
-            grandTotal: number;
-            deliveryFee: number;
             billNumber: string;
+            orderId: string;
+            orderType: string;
             subtotal: number;
             cgst: number;
             sgst: number;
+            discount: number;
+            deliveryFee: number;
+            grandTotal: number;
+            paymentMethod: string;
             cashierId: string | null;
+            customerName: string | null;
+            customerPhone: string | null;
             waiterName: string | null;
             settledAt: Date;
+            syncedAt: Date | null;
         };
         order: {
             table: {
@@ -97,11 +99,11 @@ export declare class BillingController {
             items: ({
                 product: {
                     id: string;
-                    createdAt: Date;
                     name: string;
+                    createdAt: Date;
                     updatedAt: Date;
-                    price: number;
                     description: string | null;
+                    price: number;
                     gstRate: number;
                     categoryId: string;
                     isAvailable: boolean;
@@ -110,28 +112,29 @@ export declare class BillingController {
                 };
             } & {
                 id: string;
-                status: string;
-                createdAt: Date;
-                notes: string | null;
-                updatedAt: Date;
                 orderId: string;
+                status: string;
+                notes: string | null;
+                createdAt: Date;
+                updatedAt: Date;
+                price: number;
                 productId: string;
                 quantity: number;
-                price: number;
                 addons: string | null;
             })[];
         } & {
             id: string;
-            status: string;
-            createdAt: Date;
-            orderNumber: string;
             orderType: string;
+            discount: number;
+            syncedAt: Date | null;
+            orderNumber: string;
             tableId: string | null;
             waiterId: string | null;
             customerId: string | null;
+            status: string;
             totalAmount: number;
-            discount: number;
             notes: string | null;
+            createdAt: Date;
             updatedAt: Date;
         };
     }>;

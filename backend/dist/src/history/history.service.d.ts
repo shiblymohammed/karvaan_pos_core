@@ -12,16 +12,16 @@ export declare class HistoryService {
     }): Promise<{
         data: ({
             order: {
-                orderNumber: string;
                 orderType: string;
+                orderNumber: string;
                 notes: string;
                 items: {
+                    notes: string;
                     product: {
                         name: string;
                     };
-                    notes: string;
-                    quantity: number;
                     price: number;
+                    quantity: number;
                 }[];
             };
             cashier: {
@@ -30,21 +30,22 @@ export declare class HistoryService {
             };
         } & {
             id: string;
-            orderType: string;
-            discount: number;
-            orderId: string;
-            customerName: string | null;
-            customerPhone: string | null;
-            paymentMethod: string;
-            grandTotal: number;
-            deliveryFee: number;
             billNumber: string;
+            orderId: string;
+            orderType: string;
             subtotal: number;
             cgst: number;
             sgst: number;
+            discount: number;
+            deliveryFee: number;
+            grandTotal: number;
+            paymentMethod: string;
             cashierId: string | null;
+            customerName: string | null;
+            customerPhone: string | null;
             waiterName: string | null;
             settledAt: Date;
+            syncedAt: Date | null;
         })[];
         pagination: {
             total: number;
@@ -90,23 +91,24 @@ export declare class HistoryService {
             };
         } & {
             id: string;
-            status: string;
-            createdAt: Date;
-            orderNumber: string;
-            notes: string | null;
-            updatedAt: Date;
-            items: string;
+            deliveryFee: number;
+            grandTotal: number;
+            paymentMethod: string;
             customerName: string;
             customerPhone: string | null;
+            syncedAt: Date | null;
+            orderNumber: string;
+            status: string;
+            notes: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            items: string;
             deliveryAddress: string | null;
             deliveryLat: number | null;
             deliveryLng: number | null;
             riderId: string | null;
             riderName: string | null;
-            paymentMethod: string;
             paymentStatus: string;
-            grandTotal: number;
-            deliveryFee: number;
             collectedAmount: number | null;
             dispatchedAt: Date | null;
             deliveredAt: Date | null;
@@ -120,22 +122,22 @@ export declare class HistoryService {
     }>;
     getWasteLogs(startDate?: string, endDate?: string): Promise<{
         id: string;
-        createdAt: Date;
+        billNumber: string | null;
         orderId: string | null;
+        createdAt: Date;
+        reason: string;
         quantity: number;
         unit: string;
         itemName: string;
-        reason: string;
-        billNumber: string | null;
         loggedBy: string | null;
     }[]>;
     getReturnRecords(startDate?: string, endDate?: string): Promise<{
         id: string;
-        createdAt: Date;
+        billNumber: string;
         orderType: string;
+        createdAt: Date;
         items: string;
         reason: string;
-        billNumber: string;
         action: string;
         refundDest: string;
         totalRefund: number;

@@ -1,8 +1,14 @@
-import { Controller, Post, UseInterceptors, UploadedFile, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, HttpException, HttpStatus, Query } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
+import { v2 as cloudinary } from 'cloudinary';
+
+// Configure Cloudinary (requires CLOUDINARY_URL in .env)
+cloudinary.config({
+  secure: true
+});
 
 const UPLOAD_DIR = './uploads';
 
@@ -26,10 +32,37 @@ export class UploadController {
       }
     })
   }))
-  uploadFile(@UploadedFile() file: Express.Multer.File) {
+  async uploadFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('type') type: string
+  ) {
     if (!file) {
       throw new HttpException('File required', HttpStatus.BAD_REQUEST);
     }
+
+    // If type is menu, upload to Cloudinary and delete local file
+    if (type === 'menu') {
+      try {
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: 'karvaan_pos',
+          use_filename: true,
+          unique_filename: true,
+        });
+        
+        // Delete the temporary local file asynchronously
+        fs.promises.unlink(file.path).catch(err => console.error('Failed to delete temp file:', err));
+
+        return {
+          url: result.secure_url,
+          filename: file.filename,
+          mimetype: file.mimetype
+        };
+      } catch (error) {
+        throw new HttpException(`Cloudinary upload failed: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
+      }
+    }
+
+    // Default: Return local URL for promo media
     return {
       url: `/uploads/${file.filename}`,
       filename: file.filename,

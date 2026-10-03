@@ -10,7 +10,7 @@ export interface KdsTicket {
   customerName?: string;
   items: Array<{ name: string; quantity: number; notes?: string; status: string }>;
   firedAt: string;
-  status: 'COOKING' | 'READY' | 'SERVED';
+  status: 'RECEIVED' | 'COOKING' | 'READY' | 'SERVED';
   elapsedMinutes: number;
   readyAt?: string;
 }
@@ -49,11 +49,12 @@ interface KdsState {
   updateTicketStatus: (id: string, status: 'COOKING' | 'READY' | 'SERVED') => void;
   updateElapsedTimes: () => void;
   clearTableTickets: (tableName: string) => void;
+  transferKdsTable: (fromTableName: string, toTableName: string) => void;
 }
 
 export const useKdsStore = create<KdsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       tickets: MOCK_INITIAL_TICKETS,
 
   addTicket: (ticket) => {
@@ -75,6 +76,19 @@ export const useKdsStore = create<KdsState>()(
     set((state) => ({
       tickets: state.tickets.map((t) => (t.id === id ? { ...t, status, readyAt: status === 'READY' ? new Date().toISOString() : t.readyAt } : t)),
     }));
+    // Sync to DeliveryStore if it's a delivery order
+    const ticket = get().tickets.find(t => t.id === id);
+    if (ticket && (ticket.orderType === 'DELIVERY' || ticket.orderType === 'PARCEL') && status === 'READY') {
+      import('./useDeliveryStore').then(({ useDeliveryStore }) => {
+        // We match by orderNumber. We need to find the delivery order id.
+        const dOrders = useDeliveryStore.getState().orders;
+        const matched = dOrders.find(o => o.orderNumber === ticket.orderNumber);
+        if (matched) {
+          useDeliveryStore.getState().updateOrderStatus(matched.id, 'READY');
+        }
+      });
+    }
+
     // Broadcast to all other devices
     emitAction('update_kds_status', { orderId: id, status });
   },
@@ -104,6 +118,15 @@ export const useKdsStore = create<KdsState>()(
     }));
     // Broadcast to all other devices
     emitAction('clear_table_tickets', { tableName });
+  },
+
+  transferKdsTable: (fromTableName, toTableName) => {
+    set((state) => ({
+      tickets: state.tickets.map((t) => 
+        t.tableNumber === fromTableName ? { ...t, tableNumber: toTableName } : t
+      )
+    }));
+    emitAction('transfer_kds_table', { fromTableName, toTableName });
   },
 }), { name: 'pos-kds-storage' }));
 

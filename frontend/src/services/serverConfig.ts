@@ -72,6 +72,9 @@ export async function probeServer(url: string): Promise<{ ok: boolean; latencyMs
     }
     const res = await fetch(`${cleanUrl}/health`, {
       signal: AbortSignal.timeout(3000),
+      headers: {
+        'Bypass-Tunnel-Reminder': 'true'
+      }
     });
     return { ok: res.ok, latencyMs: Date.now() - start };
   } catch (e) {

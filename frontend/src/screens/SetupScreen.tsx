@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Wifi, WifiOff, Check, X, Loader2, Smartphone,
-  AlertCircle, Server, QrCode, Copy, RefreshCw, ArrowRight
+  AlertCircle, Server, QrCode, Copy, RefreshCw, ArrowRight, Monitor, ChevronRight
 } from 'lucide-react';
 import { getServerUrl, setServerUrl, probeServer, getOperatingMode, setOperatingMode, OperatingMode } from '../services/serverConfig';
 import { getMasterServerUrl } from '../services/localServer';
@@ -88,21 +88,32 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
     }
   };
 
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+
   const handleSave = () => {
-    setOperatingMode(opMode);
-    if (opMode !== 'ANDROID_MASTER') {
-      let finalUrl = url.trim().replace(/\/$/, '');
-      if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-        finalUrl = `http://${finalUrl}`;
+    setIsConnecting(true);
+    setTimeout(() => {
+      setOperatingMode(opMode);
+      if (opMode !== 'ANDROID_MASTER') {
+        let finalUrl = url.trim().replace(/\/$/, '');
+        if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+          finalUrl = `http://${finalUrl}`;
+        }
+        setServerUrl(finalUrl);
       }
-      setServerUrl(finalUrl);
-    }
-    window.location.reload();
+      setIsConnecting(false);
+      setShowWelcome(true);
+    }, 800);
   };
 
   const handleSkip = () => {
-    setOperatingMode('NODE_SERVER');
-    onComplete();
+    setIsConnecting(true);
+    setTimeout(() => {
+      setOperatingMode('NODE_SERVER');
+      setIsConnecting(false);
+      setShowWelcome(true);
+    }, 800);
   };
 
   const handleCopy = (text: string) => {
@@ -113,243 +124,244 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
   };
 
   const presets = [
-    { label: 'This PC (Default)', value: 'http://localhost:3001' },
-    { label: 'Common Home Router IP', value: 'http://192.168.1.100:3001' },
-    { label: 'Common Alt Router IP', value: 'http://192.168.0.100:3001' },
+    { label: 'This PC', value: 'http://localhost:3001' },
+    { label: 'Home Router', value: 'http://192.168.1.100:3001' },
+    { label: 'Alt Router', value: 'http://192.168.0.100:3001' },
   ];
 
   return (
-    <div className="min-h-screen bg-pos-bg flex items-start justify-center overflow-y-auto p-4 sm:p-6 pb-safe">
-      <div className="w-full max-w-2xl my-auto py-6 sm:py-10">
-
-        {/* Header */}
-        <div className="text-center mb-5 sm:mb-8">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-2xl bg-gradient-to-br from-pos-accent to-teal-600 flex items-center justify-center font-black text-white text-2xl sm:text-3xl shadow-glow-accent mb-3 sm:mb-4">
-            K
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-pos-text">Network Setup</h1>
-          <p className="text-pos-text-muted font-bold mt-1.5 sm:mt-2 text-sm sm:text-base">
-            Configure how this device connects to the POS network.
-          </p>
-        </div>
-
-        {/* Mode Selection */}
-        <div className="bg-pos-card p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-pos-border shadow-sm mb-4 sm:mb-6">
-          <label className="block text-xs sm:text-sm font-black text-pos-text uppercase tracking-wider mb-2 sm:mb-3">
-            Operating Mode
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 mb-3 sm:mb-4">
-            <button
-              onClick={() => setOpMode('NODE_SERVER')}
-              className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl border text-left transition-all ${
-                opMode === 'NODE_SERVER' || opMode === 'WAITER_CLIENT'
-                  ? 'border-emerald-500 bg-emerald-50/10 shadow-glow-accent'
-                  : 'border-pos-border bg-pos-bg hover:border-pos-accent/50'
-              }`}
+    <div className="absolute inset-0 w-full h-[100dvh] flex items-center justify-center p-3 sm:p-6 bg-slate-900/40 backdrop-blur-sm selection:bg-emerald-500 selection:text-white font-sans z-50">
+      
+      {/* Main Setup Card (Light Glassmorphic Modal) */}
+      <div className="relative w-full max-w-[540px] max-h-[95dvh] flex flex-col bg-white/95 backdrop-blur-3xl border border-white/50 rounded-[24px] sm:rounded-[32px] shadow-[0_32px_64px_rgba(0,0,0,0.15)] z-10 transition-all duration-700 overflow-hidden">
+        
+        {showWelcome ? (
+          <div className="flex flex-col items-center justify-center text-center p-10 sm:p-14 animate-in zoom-in-95 duration-500 flex-1 bg-white">
+            <div className="w-20 h-20 bg-emerald-100 rounded-[24px] flex items-center justify-center mb-6 shadow-inner border border-emerald-200">
+              <Check className="h-10 w-10 text-emerald-600" />
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-800 mb-2 tracking-tight">You're all set!</h2>
+            <p className="text-slate-500 font-bold mb-10 max-w-xs text-sm">
+              Your terminal is successfully connected and ready to use in the Karvaan ecosystem.
+            </p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="w-full py-4 bg-gradient-to-br from-emerald-400 to-emerald-600 border border-emerald-400/30 border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:shadow-[0_8px_20px_rgba(16,185,129,0.3)] focus-visible:ring-emerald-500/50 hover:-translate-y-0.5 active:scale-[0.96] text-white rounded-[16px] font-black text-sm sm:text-base flex items-center justify-center shadow-md transition-all duration-300 relative group overflow-hidden"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <Server className={`h-4 w-4 sm:h-5 sm:w-5 ${opMode === 'NODE_SERVER' ? 'text-emerald-500' : 'text-pos-text-muted'}`} />
-                <span className="font-bold text-pos-text text-sm sm:text-base">Standard (Node Server)</span>
-              </div>
-              <p className="text-xs text-pos-text-muted font-semibold">Connect to a Windows PC or Waiter Client</p>
-            </button>
-            
-            <button
-              onClick={() => setOpMode('ANDROID_MASTER')}
-              className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl border text-left transition-all ${
-                opMode === 'ANDROID_MASTER'
-                  ? 'border-blue-500 bg-blue-50/10 shadow-[0_0_15px_rgba(59,130,246,0.15)]'
-                  : 'border-pos-border bg-pos-bg hover:border-blue-500/50'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <Smartphone className={`h-4 w-4 sm:h-5 sm:w-5 ${opMode === 'ANDROID_MASTER' ? 'text-blue-500' : 'text-pos-text-muted'}`} />
-                <span className="font-bold text-pos-text text-sm sm:text-base">Android Master</span>
-              </div>
-              <p className="text-xs text-pos-text-muted font-semibold">This tablet hosts the local network</p>
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/20 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+              <span className="drop-shadow-sm z-10">Get Started</span>
+              <ArrowRight className="h-5 w-5 z-10 ml-2 transition-transform group-hover:translate-x-1" />
             </button>
           </div>
-        </div>
-
-        {opMode !== 'ANDROID_MASTER' ? (
-        <div className="bg-pos-card rounded-xl sm:rounded-2xl border border-pos-border shadow-lg p-4 sm:p-6 space-y-4 sm:space-y-6">
-
-          {/* Server URL Input */}
-          <div>
-            <label className="block text-xs font-black text-pos-text-muted uppercase tracking-wider mb-2">
-              Backend Server URL
-            </label>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <div className="relative flex-1">
-                <Server className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-pos-text-muted" />
-                <input
-                  type="url"
-                  value={url}
-                  onChange={e => { setUrl(e.target.value); setStatus('idle'); }}
-                  placeholder="http://192.168.1.100:3001"
-                  className="w-full pl-9 pr-3 py-2.5 sm:py-3 bg-pos-input border border-pos-border rounded-xl text-pos-text font-bold focus:outline-none focus:border-pos-accent text-sm shadow-inner"
-                />
-              </div>
-              <button onClick={handleProbe} disabled={status === 'probing' || !url.trim()}
-                className="px-4 py-2.5 sm:py-3 bg-pos-accent hover:opacity-90 text-white font-black rounded-xl transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
-                {status === 'probing'
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <Wifi className="h-4 w-4" />}
-                Test Connection
-              </button>
+        ) : (
+          <>
+            {/* Branding Header */}
+            <div className="px-5 sm:px-8 pt-6 sm:pt-8 pb-4 flex flex-col items-center text-center border-b border-slate-100 bg-white/50 relative shrink-0">
+              <img src="/logo/karvaan_logo_dark.png" alt="Karvaan POS" className="h-10 sm:h-12 object-contain mb-3 drop-shadow-sm" />
+              <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-none">Network Setup</h1>
+              <p className="text-slate-500 font-bold mt-1.5 text-xs max-w-[280px]">
+                Connect to the local Karvaan ecosystem.
+              </p>
             </div>
 
-            {/* Status */}
-            {status === 'ok' && (
-              <div className="flex items-center gap-2 mt-2 text-emerald-600">
-                <Check className="h-4 w-4" />
-                <span className="text-sm font-bold">Connected! Latency: {latency}ms</span>
-              </div>
-            )}
-            {status === 'fail' && (
-              <div className="flex items-start gap-2 mt-2 text-rose-500">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span className="text-sm font-bold">{errorMsg}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Presets */}
-          <div>
-            <p className="text-xs font-black text-pos-text-muted uppercase tracking-wider mb-2">Quick Presets</p>
-            <div className="flex flex-wrap gap-2">
-              {presets.map(p => (
-                <button key={p.value}
-                  onClick={() => { setUrl(p.value); setStatus('idle'); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black border transition-all cursor-pointer ${
-                    url === p.value
-                      ? 'bg-pos-accent text-white border-pos-accent'
-                      : 'bg-pos-sidebar border-pos-border text-pos-text-muted hover:border-pos-accent hover:text-pos-text'
-                  }`}>
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* QR Code section — for Cashier PC to show so tablets can scan */}
-          <div className="border border-pos-border rounded-xl overflow-hidden">
-            <button
-              onClick={() => setShowQR(!showQR)}
-              className="w-full flex items-center justify-between px-4 py-3 hover:bg-pos-bg transition-colors cursor-pointer">
-              <div className="flex items-center gap-2 text-sm font-black text-pos-text">
-                <QrCode className="h-4 w-4 text-purple-500" />
-                Show QR Code for Tablet / Phone Setup
-              </div>
-              <ArrowRight className={`h-4 w-4 text-pos-text-muted transition-transform ${showQR ? 'rotate-90' : ''}`} />
-            </button>
-
-            {showQR && (
-              <div className="border-t border-pos-border px-4 py-5 bg-pos-sidebar">
-                <p className="text-xs font-bold text-pos-text-muted mb-4 text-center">
-                  Scan this QR code on a tablet or phone to auto-configure it.
-                </p>
-                <div className="flex flex-col items-center gap-4">
-                  <div className="bg-white p-3 rounded-2xl shadow-lg">
-                    <QRCanvas value={url} />
+            {/* Scrollable Content Area */}
+            <div className="p-5 sm:p-8 flex flex-col bg-slate-50/50 overflow-y-auto no-scrollbar flex-1">
+              
+              {/* Mode Selection */}
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5 px-1">Setup Mode</h3>
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3 mb-5">
+                {/* Standard PC Button */}
+                <button 
+                  onClick={() => setOpMode('NODE_SERVER')}
+                  className={`group relative p-3 rounded-2xl border-2 transition-all duration-300 active:scale-[0.96] flex flex-col items-start gap-2 overflow-hidden focus-visible:outline-none focus-visible:ring-4 ${
+                    opMode === 'NODE_SERVER' || opMode === 'WAITER_CLIENT'
+                      ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-400/30 border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 shadow-[0_8px_24px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/30 text-white' 
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-200 hover:-translate-y-0.5 shadow-sm'
+                  }`}
+                >
+                  <div className={`p-2 rounded-xl shrink-0 transition-colors ${opMode === 'NODE_SERVER' ? 'bg-white/20 text-white shadow-inner' : 'bg-slate-100 text-slate-500 group-hover:bg-emerald-100 group-hover:text-emerald-600'}`}>
+                    <Monitor className="h-5 w-5" />
                   </div>
-                  <div className="text-center">
-                    <p className="text-sm font-black text-pos-text mb-1">{url}</p>
-                    <button onClick={() => handleCopy(url)}
-                      className="flex items-center gap-1.5 text-xs font-bold text-pos-text-muted hover:text-pos-text mx-auto cursor-pointer">
-                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                      {copied ? 'Copied!' : 'Copy URL'}
+                  <div className="text-left z-10">
+                    <p className={`font-black text-sm ${opMode === 'NODE_SERVER' ? 'text-white' : 'text-slate-800'}`}>Standard PC</p>
+                    <p className={`text-[9px] font-bold mt-0.5 ${opMode === 'NODE_SERVER' ? 'text-emerald-100' : 'text-slate-500'}`}>Connect to backend</p>
+                  </div>
+                  {opMode === 'NODE_SERVER' && <Check className="h-4 w-4 absolute top-3 right-3 text-white drop-shadow-md" />}
+                </button>
+
+                {/* Android Master Mode Button */}
+                <button 
+                  onClick={() => setOpMode('ANDROID_MASTER')}
+                  className={`group relative p-3 rounded-2xl border-2 transition-all duration-300 active:scale-[0.96] flex flex-col items-start gap-2 overflow-hidden focus-visible:outline-none focus-visible:ring-4 ${
+                    opMode === 'ANDROID_MASTER'
+                      ? 'bg-gradient-to-br from-blue-500 to-indigo-600 border-transparent shadow-[0_8px_16px_rgba(59,130,246,0.3)] ring-2 ring-blue-500/30' 
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-200 hover:-translate-y-0.5 shadow-sm'
+                  }`}
+                >
+                  <div className={`p-2 rounded-xl shrink-0 transition-colors ${opMode === 'ANDROID_MASTER' ? 'bg-white/20 text-white shadow-inner' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600'}`}>
+                    <Smartphone className="h-5 w-5" />
+                  </div>
+                  <div className="text-left z-10">
+                    <p className={`font-black text-sm ${opMode === 'ANDROID_MASTER' ? 'text-white' : 'text-slate-800'}`}>Tablet Master</p>
+                    <p className={`text-[9px] font-bold mt-0.5 ${opMode === 'ANDROID_MASTER' ? 'text-blue-100' : 'text-slate-500'}`}>Host the network</p>
+                  </div>
+                  {opMode === 'ANDROID_MASTER' && <Check className="h-4 w-4 absolute top-3 right-3 text-white drop-shadow-md" />}
+                </button>
+              </div>
+
+              {/* Dynamic Content: Standard Mode */}
+              {opMode !== 'ANDROID_MASTER' ? (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col gap-4">
+                  
+                  {/* Modern Input */}
+                  <div className="relative group">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 p-1.5 bg-slate-100 rounded-lg text-slate-400 group-focus-within:text-emerald-500 group-focus-within:bg-emerald-50 transition-colors">
+                      <Server className="h-4 w-4" />
+                    </div>
+                    <input
+                      type="url"
+                      value={url}
+                      onChange={e => { setUrl(e.target.value); setStatus('idle'); }}
+                      onKeyDown={e => e.key === 'Enter' && handleProbe()}
+                      placeholder="http://192.168.1.100:3001"
+                      className="w-full pl-[3.5rem] pr-[100px] py-3.5 bg-white border-2 border-slate-200 rounded-[16px] text-slate-800 font-black text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-sm"
+                    />
+                    <button 
+                      onClick={handleProbe} 
+                      disabled={status === 'probing' || !url.trim()} 
+                      className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-slate-100 hover:bg-emerald-500 text-slate-500 hover:text-white font-black text-[11px] rounded-[10px] transition-all active:scale-[0.96] disabled:opacity-50 flex items-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                    >
+                      {status === 'probing' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wifi className="h-3 w-3" />}
+                      <span className="hidden sm:inline">Test</span>
                     </button>
                   </div>
-                </div>
 
-                {/* How to use on phone */}
-                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                  <div className="flex items-start gap-2">
-                    <Smartphone className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-xs font-black text-amber-700 mb-1">How to configure a tablet or phone:</p>
-                      <ol className="text-xs font-bold text-amber-700 space-y-0.5 list-decimal list-inside">
-                        <li>Open the POS app on the tablet</li>
-                        <li>It will show this Setup Screen automatically</li>
-                        <li>Scan the QR code or enter the URL manually</li>
-                        <li>Tap "Test" → then "Save & Connect"</li>
-                      </ol>
+                  {/* Status Indicator */}
+                  <div className="h-8 flex items-center">
+                    {status === 'ok' && (
+                      <div className="flex items-center gap-2 text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm animate-in zoom-in duration-300">
+                        <Check className="h-4 w-4" />
+                        <span className="text-[11px] font-black tracking-wide">Connected ({latency}ms)</span>
+                      </div>
+                    )}
+                    {status === 'fail' && (
+                      <div className="flex items-center gap-2 text-rose-600 bg-rose-100 px-3 py-1.5 rounded-lg border border-rose-200 shadow-sm animate-in zoom-in duration-300">
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                        <span className="text-[11px] font-black tracking-wide truncate">{errorMsg || "Connection Failed"}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Presets Grid */}
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Quick Presets</p>
+                    <div className="flex flex-wrap gap-2">
+                      {presets.map(p => (
+                        <button key={p.value}
+                          onClick={() => { setUrl(p.value); setStatus('idle'); }}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all active:scale-[0.96] border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/50 ${
+                            url === p.value
+                              ? 'bg-slate-800 text-white border-slate-800 shadow-sm'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:bg-slate-50'
+                          }`}>
+                          {p.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
-          </div>
 
-          {/* What this device will be used as */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 sm:p-4">
-            <div className="flex items-start gap-2 sm:gap-3">
-              <Server className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs sm:text-sm font-black text-blue-700 mb-1">
-                  {url === 'http://localhost:3001' || url.includes('localhost')
-                    ? '🖥️ Single PC Mode — Backend runs on this machine'
-                    : '📡 Multi-Terminal Mode — Connecting to remote server'}
-                </p>
-                <p className="text-xs font-bold text-blue-600">
-                  {url === 'http://localhost:3001' || url.includes('localhost')
-                    ? 'All data stays on this PC. Best for single billing counter setup.'
-                    : 'This device will sync orders and KDS in real-time with the cashier PC.'}
-                </p>
-              </div>
-            </div>
-          </div>
+                  {/* QR Code Toggle */}
+                  <div className="mt-2 border-2 border-slate-100 rounded-2xl overflow-hidden bg-white shadow-sm transition-all duration-500 group">
+                    <button
+                      onClick={() => setShowQR(!showQR)}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:bg-slate-100"
+                    >
+                      <div className="flex items-center gap-3 text-xs sm:text-sm font-black text-slate-700">
+                        <div className="bg-purple-100 p-2 rounded-lg text-purple-600 group-hover:scale-110 transition-transform"><QrCode className="h-4 w-4" /></div>
+                        Configure Waiter Tablet
+                      </div>
+                      <ChevronRight className={`h-5 w-5 text-slate-400 transition-transform duration-300 ${showQR ? 'rotate-90' : ''}`} />
+                    </button>
 
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
-            <button onClick={handleSkip}
-              className="flex-1 py-2.5 sm:py-3 bg-pos-bg hover:bg-pos-sidebar text-pos-text font-bold rounded-xl border border-pos-border transition-colors cursor-pointer text-sm">
-              Skip (Use Localhost)
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={status !== 'ok' && url !== 'http://localhost:3001' && !url.includes('localhost')}
-              className="flex-[2] px-6 sm:px-8 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2 text-sm">
-              <Check className="h-4 w-4" /> Save & Connect
-            </button>
-          </div>
-        </div>
-        ) : (
-          <div className="bg-pos-card p-6 rounded-3xl border border-pos-border shadow-sm">
-            <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
-              <div className="h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
-                <Smartphone className="h-8 w-8" />
-              </div>
-              <div>
-                <h3 className="text-xl font-black text-pos-text">Android Master Mode</h3>
-                <p className="text-sm font-semibold text-pos-text-muted mt-2 max-w-md mx-auto">
-                  This tablet is acting as the server.
-                  <br/><br/>
-                  <span className="text-amber-500 font-bold">Important: The app must stay open and the screen must stay on for waiters to send orders.</span>
-                </p>
-                <div className="mt-6 p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
-                   <p className="text-xs font-bold text-emerald-700 mb-1 uppercase tracking-wider">Waiter Phone Connection URL</p>
-                   <p className="text-2xl font-black text-emerald-800">
-                      {/* We could poll getMasterServerUrl() here, but for now we'll just display a dynamic prompt since the user already knows how to find it or we can just fetch it in useEffect */}
-                      <IPDisplay />
-                   </p>
+                    {showQR && (
+                      <div className="border-t-2 border-slate-100 px-4 py-5 bg-slate-50 flex flex-col items-center animate-in slide-in-from-top-2 duration-300">
+                        <p className="text-[10px] font-bold text-slate-500 mb-3 text-center max-w-[200px]">
+                          Scan to set up connection automatically.
+                        </p>
+                        <div className="bg-white p-3 rounded-[16px] shadow-xl border border-slate-200 mb-4 scale-90 sm:scale-100 transform origin-center">
+                          <QRCanvas value={url} />
+                        </div>
+                        <button onClick={() => handleCopy(url)} className="px-4 py-2 bg-white border-2 border-slate-200 rounded-lg text-[10px] sm:text-xs font-black text-slate-600 hover:text-slate-900 hover:border-slate-300 shadow-sm active:scale-[0.96] flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
+                          {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+                          {copied ? 'Copied' : 'Copy Link'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                 </div>
-              </div>
-              <button
-                onClick={handleSave}
-                className="w-full mt-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-glow-accent cursor-pointer"
-              >
-                Restart / Refresh Server <ArrowRight className="h-5 w-5" />
-              </button>
+              ) : (
+                /* Dynamic Content: Android Master Mode */
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white border-2 border-blue-100 p-6 rounded-[24px] text-center shadow-sm relative overflow-hidden flex-1 flex flex-col justify-center">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-indigo-500" />
+                  
+                  <div className="w-16 h-16 bg-blue-50 rounded-[16px] mx-auto flex items-center justify-center text-blue-500 mb-4 border border-blue-100 shadow-inner">
+                    <Smartphone className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-xl font-black text-slate-800 mb-2">Tablet Host Active</h3>
+                  <p className="text-xs font-bold text-slate-500 mb-6 max-w-xs mx-auto">
+                    This device is acting as the central server for all Waiter apps and KDS displays. Keep the app open.
+                  </p>
+                  
+                  <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                     <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Your Network IP</p>
+                     <p className="text-2xl font-black text-blue-600 tracking-tight drop-shadow-sm">
+                        <IPDisplay />
+                     </p>
+                  </div>
+                </div>
+              )}
+              
             </div>
-          </div>
+              
+            {/* Bottom Actions */}
+            <div className="p-5 sm:p-8 pt-4 bg-white/50 border-t border-slate-100 shrink-0">
+              <div className="flex flex-row gap-3">
+                <button 
+                  onClick={handleSkip} 
+                  disabled={isConnecting}
+                  className="px-5 py-3.5 bg-white border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-600 rounded-[16px] font-black text-xs flex items-center justify-center transition-all active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 shadow-sm disabled:opacity-50 disabled:active:scale-100 w-24"
+                >
+                  Localhost
+                </button>
+                <button 
+                  onClick={handleSave} 
+                  disabled={(status !== 'ok' && url !== 'http://localhost:3001' && !url.includes('localhost')) || isConnecting}
+                  className={`flex-1 py-3.5 text-white rounded-[16px] font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all duration-300 tracking-wide focus-visible:outline-none focus-visible:ring-2 relative overflow-hidden shadow-md group ${
+                    opMode === 'ANDROID_MASTER' 
+                      ? 'bg-gradient-to-br from-blue-500 to-blue-600 border border-blue-400/30 border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:shadow-[0_8px_20px_rgba(59,130,246,0.3)] focus-visible:ring-blue-500/50' 
+                      : 'bg-gradient-to-br from-emerald-400 to-emerald-600 border border-emerald-400/30 border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:shadow-[0_8px_20px_rgba(16,185,129,0.3)] focus-visible:ring-emerald-500/50'
+                  } hover:-translate-y-0.5 active:scale-[0.96] disabled:hover:translate-y-0 disabled:opacity-50 disabled:grayscale-[50%] disabled:active:scale-100 disabled:shadow-none`}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/20 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                  {isConnecting ? (
+                    <Loader2 className="h-5 w-5 animate-spin z-10" />
+                  ) : (
+                    <>
+                      <span className="drop-shadow-sm z-10">{opMode === 'ANDROID_MASTER' ? 'Start Host' : 'Connect'}</span> 
+                      <ArrowRight className="h-4 w-4 z-10 transition-transform group-hover:translate-x-1" />
+                    </>
+                  )}
+                </button>
+              </div>
+              
+              <p className="text-center text-[10px] font-bold text-slate-400 mt-4">
+                Press <kbd className="px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono text-slate-500">Enter</kbd> to quickly connect
+              </p>
+            </div>
+          </>
         )}
 
-        {/* Footer note */}
-        <p className="text-center text-xs font-bold text-pos-text-muted mt-4">
-          You can change this anytime from Admin → Network Setup
-        </p>
       </div>
     </div>
   );

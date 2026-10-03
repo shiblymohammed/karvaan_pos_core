@@ -11,6 +11,9 @@ export const socket = io(getServerUrl(), {
   reconnectionAttempts: Infinity, // Reconnect indefinitely for long-running restaurant shifts
   reconnectionDelay: 2000,
   reconnectionDelayMax: 10000,
+  extraHeaders: {
+    'Bypass-Tunnel-Reminder': 'true'
+  }
 });
 
 /**
@@ -29,6 +32,7 @@ export function emitSettleBill(billData: {
   grandTotal: number;
   method?: string;
   paymentMethod?: string;
+  tenders?: Record<string, number>;
   waiter?: string;
   customerName?: string;
   customerPhone?: string;
@@ -209,12 +213,18 @@ export function initSocketListeners() {
         });
 
         // --- Table status updated on another terminal ---
-        socket.on('table_updated', (payload: { tableId: string; status: string; subtotal?: number }) => {
+        socket.on('table_updated', (payload: { tableId: string; status: string; subtotal?: number; mergedWith?: string[]; mergedInto?: string | null }) => {
           const currentTables = useTableStore.getState().tables;
           console.log('🪑 [POS] Table status updated from another terminal:', payload.tableId, payload.status);
           useTableStore.setState({
             tables: currentTables.map(t => t.id === payload.tableId
-              ? { ...t, status: payload.status as any, currentBill: payload.subtotal || t.currentBill }
+              ? { 
+                  ...t, 
+                  status: payload.status as any, 
+                  currentBill: payload.subtotal || t.currentBill,
+                  mergedWith: payload.mergedWith !== undefined ? payload.mergedWith : t.mergedWith,
+                  mergedInto: payload.mergedInto !== undefined ? (payload.mergedInto === null ? undefined : payload.mergedInto) : t.mergedInto
+                }
               : t
             )
           });

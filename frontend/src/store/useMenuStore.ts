@@ -10,7 +10,8 @@ export interface Product {
   isAvailable: boolean;
   description?: string;
   imageEmoji?: string; // Quick emoji icon for visual menu
-  imageUrl?: string;   // Base64 data URL for product photo
+  iconName?: string;   // Lucide icon name
+  imageUrl?: string;   // Base64 or Cloudinary URL for product photo
   gstRate?: number;    // GST percentage e.g. 5.0
   isTopSelling?: boolean; // Flag for top selling items
 }
@@ -19,9 +20,10 @@ export interface Category {
   id: string;
   name: string;
   sortOrder: number;
-  emoji?: string;      // e.g. "☕", "🍕", "🍔"
+  emoji?: string;      // Legacy emoji field
+  iconName?: string;   // Lucide icon name (e.g. 'Coffee', 'Pizza')
   color?: string;      // Optional category color
-  imageUrl?: string;   // Base64 data URL for category photo
+  imageUrl?: string;   // Base64 or Cloudinary URL for category photo
 }
 
 interface MenuState {

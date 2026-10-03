@@ -15,6 +15,9 @@ const billing_service_1 = require("./billing/billing.service");
 const billing_controller_1 = require("./billing/billing.controller");
 const backup_module_1 = require("./backup/backup.module");
 const history_module_1 = require("./history/history.module");
+const sync_module_1 = require("./sync/sync.module");
+const upload_module_1 = require("./upload/upload.module");
+const settings_module_1 = require("./settings/settings.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -24,6 +27,9 @@ exports.AppModule = AppModule = __decorate([
             schedule_1.ScheduleModule.forRoot(),
             backup_module_1.BackupModule,
             history_module_1.HistoryModule,
+            sync_module_1.SyncModule,
+            upload_module_1.UploadModule,
+            settings_module_1.SettingsModule,
         ],
         controllers: [billing_controller_1.BillingController],
         providers: [prisma_service_1.PrismaService, kds_gateway_1.KdsGateway, billing_service_1.BillingService],

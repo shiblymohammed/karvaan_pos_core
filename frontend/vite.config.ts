@@ -43,6 +43,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    allowedHosts: true,
     // Don't auto-open browser when running under Tauri
     open: !IS_TAURI,
     strictPort: true, // Tauri requires a fixed port

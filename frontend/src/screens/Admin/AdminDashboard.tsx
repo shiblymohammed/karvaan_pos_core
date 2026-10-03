@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -7,8 +8,9 @@ import {
 import {
   TrendingUp, Users, Receipt, CreditCard, Download, RefreshCw,
   Calendar, Package, Bike, DollarSign, ArrowUpRight, Clock,
-  ChevronLeft, ChevronRight, BarChart2, Loader2
+  ChevronLeft, ChevronRight, BarChart2, Loader2, RotateCcw
 } from 'lucide-react';
+import { DatePickerPopover } from '../../components/DatePickerPopover';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface DailySummary {
@@ -44,6 +46,7 @@ interface TopItem {
 }
 
 import { getServerUrl } from '../../services/serverConfig';
+import { ReturnOrderModal, ReturnOrderData } from '../../components/ReturnOrderModal';
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 const BACKEND = getServerUrl();
@@ -73,13 +76,13 @@ const KpiCard: React.FC<{
   label: string; value: string; sub?: string;
   icon: React.ReactNode; color: string;
 }> = ({ label, value, sub, icon, color }) => (
-  <div className="bg-pos-card p-5 rounded-2xl border border-pos-border shadow-sm flex items-center justify-between">
+  <div className="bg-white/70 backdrop-blur-xl p-5 rounded-3xl border border-white/60 shadow-sm hover:shadow-lg hover:border-white transition-all flex items-center justify-between">
     <div>
-      <p className="text-xs font-bold text-pos-text-muted uppercase tracking-wider mb-1">{label}</p>
+      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{label}</p>
       <h3 className={`text-2xl font-black ${color}`}>{value}</h3>
-      {sub && <p className="text-xs font-bold text-pos-text-muted mt-0.5">{sub}</p>}
+      {sub && <p className="text-xs font-bold text-slate-500 mt-0.5">{sub}</p>}
     </div>
-    <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${color.replace('text-', 'bg-').replace('-600', '-50').replace('-400', '-950/40')} border-current/20`}>
+    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${color.replace('text-', 'bg-').replace('-600', '-50/80').replace('-400', '-950/40')} border-current/20`}>
       {icon}
     </div>
   </div>
@@ -93,6 +96,7 @@ export const AdminDashboard: React.FC = () => {
   const [bills, setBills] = useState<BillRecord[]>([]);
   const [topItems, setTopItems] = useState<TopItem[]>([]);
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'BILLS' | 'ITEMS'>('OVERVIEW');
+  const [returnModalData, setReturnModalData] = useState<ReturnOrderData | null>(null);
 
   const load = useCallback(async (date: string) => {
     setLoading(true);
@@ -164,48 +168,49 @@ export const AdminDashboard: React.FC = () => {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-6 space-y-6 bg-pos-bg">
+    <div className="h-[calc(100vh-64px)] overflow-y-auto overflow-x-hidden p-3 xl:px-4 xl:pt-4 xl:pb-6 pb-28 space-y-4 bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 text-slate-800">
 
       {/* ─── Header ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
         <div>
-          <h2 className="text-2xl font-black text-pos-text">Sales Dashboard</h2>
-          <p className="text-sm font-bold text-pos-text-muted mt-0.5">
-            {isToday ? "Today's live performance" : `Report for ${new Date(viewDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`}
+          <h2 className="text-lg sm:text-xl font-black text-slate-800">Sales Dashboard</h2>
+          <p className="text-[10px] sm:text-xs font-bold text-slate-500 mt-0.5">
+            {isToday ? "Today's live performance" : `Report for ${new Date(viewDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto pb-1 -mx-1 px-1">
           {/* Date Navigation */}
-          <div className="flex items-center gap-1 bg-pos-card border border-pos-border rounded-xl p-1">
+          <div className="flex items-center gap-1 bg-white/70 backdrop-blur-xl border border-white/60 rounded-xl p-1 shadow-sm shrink-0">
             <button onClick={() => shiftDate(-1)}
-              className="p-2 rounded-lg hover:bg-pos-bg transition-colors cursor-pointer text-pos-text-muted hover:text-pos-text">
-              <ChevronLeft className="h-4 w-4" />
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-white/50 transition-colors cursor-pointer text-slate-500 hover:text-slate-800">
+              <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
             </button>
-            <div className="flex items-center gap-2 px-3">
-              <Calendar className="h-4 w-4 text-pos-text-muted" />
-              <input type="date" value={viewDate} max={dateStr(new Date())}
-                onChange={e => setViewDate(e.target.value)}
-                className="bg-transparent text-sm font-bold text-pos-text focus:outline-none cursor-pointer" />
+            <div className="flex items-center px-1">
+              <DatePickerPopover 
+                date={viewDate} 
+                onChange={setViewDate} 
+                maxDate={dateStr(new Date())} 
+              />
             </div>
             <button onClick={() => shiftDate(1)} disabled={isToday}
-              className="p-2 rounded-lg hover:bg-pos-bg transition-colors cursor-pointer text-pos-text-muted hover:text-pos-text disabled:opacity-30">
-              <ChevronRight className="h-4 w-4" />
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-white/50 transition-colors cursor-pointer text-slate-500 hover:text-slate-800 disabled:opacity-30">
+              <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
             </button>
           </div>
           <button onClick={() => load(viewDate)}
-            className="p-2.5 bg-pos-card border border-pos-border rounded-xl hover:bg-pos-bg transition-colors cursor-pointer text-pos-text-muted">
+            className="p-2 sm:p-2.5 bg-white/70 backdrop-blur-xl border border-white/60 rounded-xl hover:bg-white transition-colors cursor-pointer text-slate-500 shadow-sm shrink-0">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold rounded-xl shadow-md transition-transform active:scale-95 cursor-pointer text-sm">
-            <Download className="h-4 w-4 shrink-0" /> Export CSV
+            className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 bg-[#b5ef85] hover:bg-[#a2db74] text-[#0d212b] font-extrabold rounded-xl shadow-sm transition-transform active:scale-95 cursor-pointer text-xs sm:text-sm border border-[#b5ef85]/50 shrink-0">
+            <Download className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> <span className="hidden sm:inline">Export</span> CSV
           </button>
         </div>
       </div>
 
       {/* ─── Loading Overlay ──────────────────────────────────────── */}
       {loading && (
-        <div className="flex items-center justify-center py-8 gap-3 text-pos-text-muted">
+        <div className="flex items-center justify-center py-8 gap-3 text-slate-500">
           <Loader2 className="h-5 w-5 animate-spin" />
           <span className="font-bold text-sm">Loading report data…</span>
         </div>
@@ -214,12 +219,19 @@ export const AdminDashboard: React.FC = () => {
       {/* ─── Tabs ─────────────────────────────────────────────────── */}
       {!loading && (
         <>
-          <div className="flex gap-1 bg-pos-card rounded-xl p-1 border border-pos-border w-fit">
+          <div className="flex bg-white/70 backdrop-blur-xl rounded-xl p-1 border border-white/60 w-full sm:w-fit shadow-sm overflow-x-auto no-scrollbar shrink-0 relative">
             {(['OVERVIEW', 'BILLS', 'ITEMS'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-5 py-2 rounded-lg text-sm font-black transition-all cursor-pointer ${
-                  activeTab === tab ? 'bg-pos-accent text-white shadow-sm' : 'text-pos-text-muted hover:text-pos-text'
+                className={`relative flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs sm:text-sm font-black transition-colors cursor-pointer whitespace-nowrap z-10 ${
+                  activeTab === tab ? 'text-white' : 'text-slate-500 hover:text-slate-800'
                 }`}>
+                {activeTab === tab && (
+                  <motion.div
+                    layoutId="adminTabsPill"
+                    className="absolute inset-0 bg-slate-800 rounded-lg shadow-sm -z-10"
+                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
                 {tab === 'OVERVIEW' ? '📊 Overview' : tab === 'BILLS' ? '🧾 Bills' : '🍽️ Top Items'}
               </button>
             ))}
@@ -247,19 +259,19 @@ export const AdminDashboard: React.FC = () => {
 
               {/* GST Summary */}
               {summary && summary.totalGst > 0 && (
-                <div className="bg-pos-card rounded-2xl border border-pos-border p-5">
-                  <h3 className="text-sm font-black text-pos-text uppercase tracking-wider mb-3">GST Summary</h3>
-                  <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="bg-white/70 backdrop-blur-xl rounded-3xl border border-white/60 p-5 shadow-sm">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider mb-3">GST Summary</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
                     <div>
-                      <p className="text-xs font-bold text-pos-text-muted mb-1">Total GST Collected</p>
-                      <p className="text-xl font-black text-pos-text">{fmt(summary.totalGst)}</p>
+                      <p className="text-xs font-bold text-slate-500 mb-1">Total GST Collected</p>
+                      <p className="text-xl font-black text-slate-800">{fmt(summary.totalGst)}</p>
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-pos-text-muted mb-1">CGST (2.5%)</p>
+                      <p className="text-xs font-bold text-slate-500 mb-1">CGST (2.5%)</p>
                       <p className="text-xl font-black text-blue-600">{fmt(summary.totalGst / 2)}</p>
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-pos-text-muted mb-1">SGST (2.5%)</p>
+                      <p className="text-xs font-bold text-slate-500 mb-1">SGST (2.5%)</p>
                       <p className="text-xl font-black text-indigo-600">{fmt(summary.totalGst / 2)}</p>
                     </div>
                   </div>
@@ -269,8 +281,8 @@ export const AdminDashboard: React.FC = () => {
               {/* Charts */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Hourly Sales */}
-                <div className="lg:col-span-2 bg-pos-card p-5 rounded-2xl border border-pos-border shadow-sm">
-                  <h3 className="text-base font-black text-pos-text mb-4">Hourly Sales Velocity</h3>
+                <div className="lg:col-span-2 bg-white/70 backdrop-blur-xl p-5 rounded-3xl border border-white/60 shadow-sm hover:shadow-lg transition-all">
+                  <h3 className="text-base font-black text-slate-800 mb-4">Hourly Sales Velocity</h3>
                   <div className="h-64 w-full">
                     {bills.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
@@ -281,18 +293,18 @@ export const AdminDashboard: React.FC = () => {
                               <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-pos-border opacity-50" />
-                          <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700 }} />
-                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700 }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" className="opacity-50" />
+                          <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
                           <RechartsTooltip
-                            contentStyle={{ backgroundColor: 'var(--pos-card)', borderColor: 'var(--pos-border)', borderRadius: '12px', fontWeight: 'bold' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#cbd5e1', borderRadius: '16px', fontWeight: 'bold', backdropFilter: 'blur(10px)' }}
                             formatter={(v: number) => [fmt(v), 'Revenue']}
                           />
                           <Area type="monotone" dataKey="sales" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorSales2)" />
                         </AreaChart>
                       </ResponsiveContainer>
                     ) : (
-                      <div className="h-full flex items-center justify-center text-pos-text-muted">
+                      <div className="h-full flex items-center justify-center text-slate-500">
                         <div className="text-center">
                           <BarChart2 className="h-10 w-10 mx-auto mb-2 opacity-20" />
                           <p className="font-bold text-sm">No sales data for this date</p>
@@ -303,8 +315,8 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 {/* Payment Breakdown Pie */}
-                <div className="bg-pos-card p-5 rounded-2xl border border-pos-border shadow-sm">
-                  <h3 className="text-base font-black text-pos-text mb-4">Payment Methods</h3>
+                <div className="bg-white/70 backdrop-blur-xl p-5 rounded-3xl border border-white/60 shadow-sm hover:shadow-lg transition-all">
+                  <h3 className="text-base font-black text-slate-800 mb-4">Payment Methods</h3>
                   <div className="h-64 w-full">
                     {paymentData.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
@@ -316,14 +328,14 @@ export const AdminDashboard: React.FC = () => {
                             ))}
                           </Pie>
                           <RechartsTooltip
-                            contentStyle={{ backgroundColor: 'var(--pos-card)', borderColor: 'var(--pos-border)', borderRadius: '12px', fontWeight: 'bold' }}
+                            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#cbd5e1', borderRadius: '16px', fontWeight: 'bold', backdropFilter: 'blur(10px)' }}
                             formatter={(v: number) => [fmt(v), '']}
                           />
-                          <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontWeight: 700, fontSize: 12 }} />
+                          <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontWeight: 700, fontSize: 12, color: '#475569' }} />
                         </PieChart>
                       </ResponsiveContainer>
                     ) : (
-                      <div className="h-full flex items-center justify-center text-pos-text-muted">
+                      <div className="h-full flex items-center justify-center text-slate-500">
                         <p className="font-bold text-sm">No payment data</p>
                       </div>
                     )}
@@ -333,16 +345,16 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Order Type Breakdown */}
               {orderTypeData.length > 0 && (
-                <div className="bg-pos-card p-5 rounded-2xl border border-pos-border shadow-sm">
-                  <h3 className="text-base font-black text-pos-text mb-4">Revenue by Order Type</h3>
+                <div className="bg-white/70 backdrop-blur-xl p-5 rounded-3xl border border-white/60 shadow-sm hover:shadow-lg transition-all">
+                  <h3 className="text-base font-black text-slate-800 mb-4">Revenue by Order Type</h3>
                   <div className="h-48 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={orderTypeData} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="currentColor" className="text-pos-border opacity-50" />
-                        <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700 }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
-                        <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700 }} width={70} />
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#cbd5e1" className="opacity-50" />
+                        <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+                        <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} width={70} />
                         <RechartsTooltip
-                          contentStyle={{ backgroundColor: 'var(--pos-card)', borderColor: 'var(--pos-border)', borderRadius: '12px', fontWeight: 'bold' }}
+                          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#cbd5e1', borderRadius: '16px', fontWeight: 'bold', backdropFilter: 'blur(10px)' }}
                           formatter={(v: number) => [fmt(v), 'Revenue']}
                         />
                         <Bar dataKey="value" radius={[0, 6, 6, 0]}>
@@ -360,16 +372,17 @@ export const AdminDashboard: React.FC = () => {
 
           {/* ─── BILLS TAB ────────────────────────────────────────── */}
           {activeTab === 'BILLS' && (
-            <div className="bg-pos-card rounded-2xl border border-pos-border overflow-hidden shadow-sm">
+            <div className="bg-white/70 backdrop-blur-xl rounded-3xl border border-white/60 overflow-hidden shadow-sm">
               {bills.length === 0 ? (
-                <div className="py-16 text-center text-pos-text-muted">
+                <div className="py-16 text-center text-slate-500">
                   <Receipt className="h-12 w-12 mx-auto mb-3 opacity-20" />
                   <p className="font-black text-lg">No bills for this date</p>
                 </div>
               ) : (
-                <table className="w-full text-left border-collapse">
+                <div className="overflow-x-auto no-scrollbar">
+                  <table className="w-full text-left border-collapse whitespace-nowrap">
                   <thead>
-                    <tr className="bg-pos-sidebar border-b border-pos-border text-[11px] uppercase tracking-wider text-pos-text-muted">
+                    <tr className="bg-white/40 border-b border-white/60 text-[11px] uppercase tracking-wider text-slate-500">
                       <th className="py-3 px-4 font-black">Bill #</th>
                       <th className="py-3 px-4 font-black">Type</th>
                       <th className="py-3 px-4 font-black">Customer</th>
@@ -377,12 +390,13 @@ export const AdminDashboard: React.FC = () => {
                       <th className="py-3 px-4 font-black">Discount</th>
                       <th className="py-3 px-4 font-black text-right">Total</th>
                       <th className="py-3 px-4 font-black text-right">Time</th>
+                      <th className="py-3 px-4 font-black text-right">Return</th>
                     </tr>
                   </thead>
                   <tbody>
                     {bills.map(b => (
-                      <tr key={b.id} className="border-b border-pos-border/50 hover:bg-pos-card-hover transition-colors">
-                        <td className="py-2.5 px-4 font-bold text-sm text-pos-text">{b.billNumber}</td>
+                      <tr key={b.id} className="border-b border-white/40 hover:bg-white/50 transition-colors">
+                        <td className="py-2.5 px-4 font-bold text-sm text-slate-800">{b.billNumber}</td>
                         <td className="py-2.5 px-4">
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${
                             b.orderType === 'DINE_IN' ? 'bg-emerald-100 text-emerald-700' :
@@ -392,9 +406,9 @@ export const AdminDashboard: React.FC = () => {
                             {b.orderType?.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="py-2.5 px-4 text-sm font-bold text-pos-text-muted">{b.customerName || '—'}</td>
+                        <td className="py-2.5 px-4 text-sm font-bold text-slate-500">{b.customerName || '—'}</td>
                         <td className="py-2.5 px-4">
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-pos-sidebar border border-pos-border text-pos-text-muted">
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-white/60 border border-slate-200 text-slate-600">
                             {b.paymentMethod}
                           </span>
                         </td>
@@ -404,22 +418,40 @@ export const AdminDashboard: React.FC = () => {
                         <td className="py-2.5 px-4 font-black text-emerald-600 text-right">
                           {fmt(b.grandTotal)}
                         </td>
-                        <td className="py-2.5 px-4 text-xs font-bold text-pos-text-muted text-right">
+                        <td className="py-2.5 px-4 text-xs font-bold text-slate-500 text-right">
                           {new Date(b.settledAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="py-2.5 px-4 text-right">
+                          <button
+                            onClick={() => setReturnModalData({
+                              billNumber: b.billNumber,
+                              orderType: b.orderType,
+                              customerName: b.customerName || undefined,
+                              items: b.order?.items?.map((i: any) => ({ name: i.product?.name || i.name || 'Item', quantity: i.quantity, price: i.price })) || [],
+                              grandTotal: b.grandTotal,
+                              paymentMethod: b.paymentMethod,
+                            })}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 text-[10px] font-black transition-colors cursor-pointer active:scale-95"
+                            title="Process Return / Refund"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            Return
+                          </button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t-2 border-pos-border bg-pos-sidebar">
-                      <td colSpan={5} className="py-3 px-4 font-black text-sm text-pos-text">Total ({bills.length} bills)</td>
+                    <tr className="border-t border-white/60 bg-white/40">
+                      <td colSpan={5} className="py-3 px-4 font-black text-sm text-slate-800">Total ({bills.length} bills)</td>
                       <td className="py-3 px-4 font-black text-emerald-600 text-right text-base">
                         {fmt(bills.reduce((s, b) => s + b.grandTotal, 0))}
                       </td>
-                      <td />
+                      <td /><td />
                     </tr>
                   </tfoot>
-                </table>
+                  </table>
+                </div>
               )}
             </div>
           )}
@@ -428,7 +460,7 @@ export const AdminDashboard: React.FC = () => {
           {activeTab === 'ITEMS' && (
             <div className="space-y-4">
               {topItems.length === 0 ? (
-                <div className="py-16 text-center text-pos-text-muted bg-pos-card rounded-2xl border border-pos-border">
+                <div className="py-16 text-center text-slate-500 bg-white/70 backdrop-blur-xl rounded-3xl border border-white/60">
                   <Package className="h-12 w-12 mx-auto mb-3 opacity-20" />
                   <p className="font-black text-lg">No item data for this date</p>
                 </div>
@@ -436,13 +468,13 @@ export const AdminDashboard: React.FC = () => {
                 topItems.map((item, idx) => {
                   const maxSold = topItems[0]?.totalSold || 1;
                   return (
-                    <div key={item.productId} className="bg-pos-card rounded-2xl border border-pos-border p-4 flex items-center gap-4">
-                      <div className="w-8 h-8 rounded-xl bg-pos-sidebar flex items-center justify-center font-black text-sm text-pos-text-muted border border-pos-border">
+                    <div key={item.productId} className="bg-white/70 backdrop-blur-xl rounded-3xl border border-white/60 p-4 flex items-center gap-4 hover:shadow-md transition-all">
+                      <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center font-black text-sm text-slate-500 border border-slate-200">
                         {idx + 1}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-black text-sm text-pos-text truncate">{item.productName}</p>
-                        <div className="mt-1.5 h-2 bg-pos-sidebar rounded-full overflow-hidden">
+                        <p className="font-black text-sm text-slate-800 truncate">{item.productName}</p>
+                        <div className="mt-1.5 h-2 bg-slate-200/50 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all"
                             style={{ width: `${pct(item.totalSold, maxSold)}%` }}
@@ -450,8 +482,8 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-black text-lg text-pos-text">{item.totalSold}</p>
-                        <p className="text-[10px] font-bold text-pos-text-muted">sold</p>
+                        <p className="font-black text-lg text-slate-800">{item.totalSold}</p>
+                        <p className="text-[10px] font-bold text-slate-500">sold</p>
                       </div>
                     </div>
                   );
@@ -461,6 +493,13 @@ export const AdminDashboard: React.FC = () => {
           )}
         </>
       )}
+
+      {/* Return Order Modal */}
+      <ReturnOrderModal
+        isOpen={!!returnModalData}
+        onClose={() => setReturnModalData(null)}
+        orderData={returnModalData}
+      />
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { POSScreen } from './screens/POSScreen';
 import { TableMapScreen } from './screens/TableMapScreen';
 import { KDSScreen } from './screens/KDSScreen';
@@ -6,7 +7,9 @@ import { QueueScreen } from './screens/QueueScreen';
 import { InventoryScreen } from './screens/InventoryScreen';
 import { QROrderScreen } from './screens/QROrderScreen';
 import { useFullscreen } from './hooks/useFullscreen';
+import { useModalOpen } from './hooks/useModalOpen';
 import { AdminPortalScreen } from './screens/AdminPortalScreen';
+import { AdminDashboard } from './screens/Admin/AdminDashboard';
 import { FullLoginScreen } from './screens/FullLoginScreen';
 import { LockScreen } from './screens/LockScreen';
 import { ParcelBoardScreen } from './screens/ParcelBoardScreen';
@@ -49,14 +52,27 @@ export const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileNavMoreOpen, setIsMobileNavMoreOpen] = useState(false);
   
-  const { isOffline, toggleOffline, items, selectedTableName } = useCartStore();
+  const { isOffline, toggleOffline, items, selectedTableName, isMobileCartOpen } = useCartStore();
   const { currentUser, isLocked, lockTerminal, logout } = useAuthStore();
+  const operatingMode = useSettingsStore(s => s.operatingMode) || 'FINE_DINING';
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showSetup, setShowSetup] = useState(!isServerConfigured());
+  const isModalOpen = useModalOpen();
 
   // Dynamic theme-color: green for main app, dark for login/lock/setup
   const themeContext = showSetup ? 'setup' : (!currentUser || isLocked) ? 'login' : 'app';
   const { requestFullscreen } = useFullscreen(themeContext);
+
+  // Set Default Screen on Boot based on Operating Mode
+  useEffect(() => {
+    if (!localStorage.getItem('karvaanActiveScreen')) {
+      if (operatingMode === 'CLOUD_KITCHEN') {
+        setActiveScreen('DELIVERY');
+      } else {
+        setActiveScreen('POS');
+      }
+    }
+  }, [operatingMode]);
 
   useEffect(() => {
     localStorage.setItem('karvaanActiveScreen', activeScreen);
@@ -98,12 +114,28 @@ export const App: React.FC = () => {
     };
   }, [showSetup]);
 
-  if (showSetup) {
-    return <SetupScreen onComplete={() => setShowSetup(false)} />;
-  }
 
   if (!currentUser) {
-    return <FullLoginScreen />;
+    return (
+      <div className="relative h-[100dvh] w-full overflow-hidden">
+        <FullLoginScreen />
+        {showSetup && <SetupScreen onComplete={() => setShowSetup(false)} />}
+      </div>
+    );
+  }
+
+  // If user is logged in but showSetup is true (e.g. they forced setup mode), 
+  // we still overlay it on the main app
+  if (currentUser && showSetup) {
+    return (
+      <div className="relative h-[100dvh] w-full overflow-hidden">
+        <div className="absolute inset-0 z-0">
+          {/* We render a skeleton of the app in the background so it looks like it's over the app */}
+          <div className="flex h-full bg-slate-900 opacity-50"></div>
+        </div>
+        <SetupScreen onComplete={() => setShowSetup(false)} />
+      </div>
+    );
   }
 
   if (currentUser && isLocked) {
@@ -136,7 +168,7 @@ export const App: React.FC = () => {
 
 
       {/* Sidebar Navigation (Desktop/Tablet) */}
-      <aside className={`${isSidebarOpen ? 'w-20 md:w-[220px]' : 'w-16 md:w-[64px]'} hidden md:flex bg-transparent flex-col shrink-0 transition-all duration-300 z-30 relative`}>
+      <aside className={`${isMobileCartOpen ? 'w-0 md:w-0 -translate-x-full opacity-0 overflow-hidden' : isSidebarOpen ? 'w-20 md:w-[220px] translate-x-0 opacity-100' : 'w-16 md:w-[64px] translate-x-0 opacity-100'} hidden md:flex bg-transparent flex-col shrink-0 transition-all duration-300 z-30 relative`}>
         {/* Edge Collapse Trigger */}
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -170,8 +202,13 @@ export const App: React.FC = () => {
           ) : (
             <>
               {navItems.map((item, index) => {
+                // Role-based filtering
                 if (item.role === 'NON_WAITER' && currentUser.role === 'WAITER') return null;
                 if (item.role === 'ADMIN_MANAGER' && currentUser.role !== 'ADMIN' && currentUser.role !== 'MANAGER') return null;
+                
+                // Pipeline (Operating Mode) filtering
+                if (operatingMode === 'QSR' && item.id === 'TABLES') return null; // Hide Tables in QSR
+                if (operatingMode === 'CLOUD_KITCHEN' && (item.id === 'TABLES' || item.id === 'POS' || item.id === 'QR')) return null; // Hide POS, QR, Tables in Cloud Kitchen
                 
                 const isActive = activeScreen === item.id;
                 
@@ -305,13 +342,14 @@ export const App: React.FC = () => {
           {activeScreen === 'INVENTORY' && <InventoryScreen />}
           {activeScreen === 'QR' && <QROrderScreen />}
           {activeScreen === 'ADMIN' && <AdminPortalScreen />}
+          {activeScreen === 'DASHBOARD' && <AdminDashboard />}
           {activeScreen === 'PARCEL' && <ParcelBoardScreen />}
           {activeScreen === 'DELIVERY' && <DeliveryDispatchScreen />}
         </div>
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 z-30 pointer-events-none">
+      <div className={`md:hidden fixed bottom-0 left-0 right-0 p-3 z-30 pointer-events-none transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${isMobileCartOpen || isModalOpen ? 'translate-y-[120%] opacity-0' : 'translate-y-0 opacity-100'}`}>
         <nav className="flex items-center justify-around bg-[#0d212b]/80 backdrop-blur-2xl pb-safe pt-2 pb-2 px-2 rounded-[28px] border border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.4)] pointer-events-auto">
         {currentUser.role === 'DELIVERY' ? (
           <div className="w-full text-center text-purple-400 font-bold text-sm py-2">Delivery Rider Mode</div>

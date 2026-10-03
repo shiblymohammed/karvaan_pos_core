@@ -15,9 +15,9 @@ export declare class BackupController {
     getBackupLogs(): Promise<{
         error: string | null;
         id: string;
-        filename: string;
-        sizeBytes: number | null;
         status: string;
         createdAt: Date;
+        filename: string;
+        sizeBytes: number | null;
     }[]>;
 }

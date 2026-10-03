@@ -21,6 +21,8 @@ export interface DiningTable {
   floorId: string;
   currentBill?: number;
   seatedTime?: string;
+  mergedWith?: string[]; // Array of table IDs merged into this one
+  mergedInto?: string;   // The primary table ID this table is merged into
 }
 
 const INITIAL_FLOORS: Floor[] = [
@@ -31,16 +33,39 @@ const INITIAL_FLOORS: Floor[] = [
 ];
 
 const INITIAL_TABLES: DiningTable[] = [
+  // Ground Floor (NON_AC) - Mix of regular and larger tables
   { id: 't1', number: 'T1', capacity: 4, status: 'AVAILABLE', floorId: 'f-1' },
   { id: 't2', number: 'T2', capacity: 4, status: 'AVAILABLE', floorId: 'f-1' },
-  { id: 't3', number: 'T3', capacity: 4, status: 'AVAILABLE', floorId: 'f-1' },
+  { id: 't3', number: 'T3', capacity: 6, status: 'AVAILABLE', floorId: 'f-1' }, // Slightly bigger
   { id: 't4', number: 'T4', capacity: 4, status: 'AVAILABLE', floorId: 'f-1' },
-  { id: 't5', number: 'T5', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
-  { id: 't6', number: 'T6', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
-  { id: 't7', number: 'T7', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
-  { id: 't8', number: 'T8', capacity: 4, status: 'AVAILABLE', floorId: 'f-3' },
-  { id: 'vip1', number: 'VIP-1', capacity: 6, status: 'AVAILABLE', floorId: 'f-4' },
-  { id: 'vip2', number: 'VIP-2', capacity: 6, status: 'AVAILABLE', floorId: 'f-4' },
+  { id: 't5', number: 'T5', capacity: 4, status: 'AVAILABLE', floorId: 'f-1' },
+  { id: 't6', number: 'T6', capacity: 6, status: 'AVAILABLE', floorId: 'f-1' }, // Slightly bigger
+  { id: 't7', number: 'T7', capacity: 4, status: 'AVAILABLE', floorId: 'f-1' },
+  { id: 't8', number: 'T8', capacity: 4, status: 'AVAILABLE', floorId: 'f-1' },
+  
+  // 1st Floor AC - More tables with varied capacities
+  { id: 't9', number: 'T9', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
+  { id: 't10', number: 'T10', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
+  { id: 't11', number: 'T11', capacity: 6, status: 'AVAILABLE', floorId: 'f-2' }, // Slightly bigger
+  { id: 't12', number: 'T12', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
+  { id: 't13', number: 'T13', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
+  { id: 't14', number: 'T14', capacity: 6, status: 'AVAILABLE', floorId: 'f-2' }, // Slightly bigger
+  { id: 't15', number: 'T15', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
+  { id: 't16', number: 'T16', capacity: 4, status: 'AVAILABLE', floorId: 'f-2' },
+  
+  // Rooftop - More outdoor seating
+  { id: 't17', number: 'T17', capacity: 4, status: 'AVAILABLE', floorId: 'f-3' },
+  { id: 't18', number: 'T18', capacity: 4, status: 'AVAILABLE', floorId: 'f-3' },
+  { id: 't19', number: 'T19', capacity: 6, status: 'AVAILABLE', floorId: 'f-3' }, // Slightly bigger
+  { id: 't20', number: 'T20', capacity: 4, status: 'AVAILABLE', floorId: 'f-3' },
+  { id: 't21', number: 'T21', capacity: 4, status: 'AVAILABLE', floorId: 'f-3' },
+  { id: 't22', number: 'T22', capacity: 6, status: 'AVAILABLE', floorId: 'f-3' }, // Slightly bigger
+  
+  // VIP Lounge - Premium larger tables
+  { id: 'vip1', number: 'VIP-1', capacity: 8, status: 'AVAILABLE', floorId: 'f-4' }, // Larger VIP table
+  { id: 'vip2', number: 'VIP-2', capacity: 8, status: 'AVAILABLE', floorId: 'f-4' }, // Larger VIP table
+  { id: 'vip3', number: 'VIP-3', capacity: 6, status: 'AVAILABLE', floorId: 'f-4' },
+  { id: 'vip4', number: 'VIP-4', capacity: 10, status: 'AVAILABLE', floorId: 'f-4' }, // Extra large for parties
 ];
 
 interface TableState {
@@ -48,6 +73,8 @@ interface TableState {
   floors: Floor[];
   setTableStatus: (id: string, status: TableStatus, currentBill?: number) => void;
   transferTable: (fromId: string, toNumber: string) => void;
+  mergeTable: (primaryId: string, secondaryId: string) => void;
+  unmergeTable: (id: string) => void;
   updateTableBill: (id: string, amount: number) => void;
   
   // Table Management
@@ -70,51 +97,179 @@ export const useTableStore = create<TableState>()(
       floors: INITIAL_FLOORS,
 
   setTableStatus: (id, status, currentBill) => {
-    set((state) => ({
-      tables: state.tables.map((t) => {
+    set((state) => {
+      const table = state.tables.find(t => t.id === id);
+      if (!table) return state;
+
+      let newTables = [...state.tables];
+
+      if (status === 'AVAILABLE' && table.mergedWith && table.mergedWith.length > 0) {
+        // Unmerge secondary tables
+        newTables = newTables.map(t => {
+          if (table.mergedWith?.includes(t.id)) {
+            emitAction('table_status_change', { tableId: t.id, status: 'AVAILABLE', subtotal: undefined, mergedInto: null });
+            return { ...t, status: 'AVAILABLE', mergedInto: undefined };
+          }
+          return t;
+        });
+      }
+
+      newTables = newTables.map((t) => {
         if (t.id === id) {
           return {
             ...t,
             status,
             currentBill: status === 'AVAILABLE' ? undefined : (currentBill ?? t.currentBill),
-            seatedTime: status === 'AVAILABLE' ? undefined : (t.seatedTime || 'Just now'),
+            seatedTime: status === 'AVAILABLE' ? undefined : (t.seatedTime || new Date().toISOString()),
+            mergedWith: status === 'AVAILABLE' ? undefined : t.mergedWith,
           };
         }
         return t;
-      }),
-    }));
-    // Broadcast to all other devices
-    emitAction('table_status_change', { tableId: id, status, subtotal: currentBill });
+      });
+      return { tables: newTables };
+    });
+    const updatedTable = get().tables.find(t => t.id === id);
+    emitAction('table_status_change', { 
+      tableId: id, 
+      status, 
+      subtotal: currentBill,
+      mergedWith: updatedTable?.mergedWith,
+      mergedInto: updatedTable?.mergedInto
+    });
   },
 
   transferTable: (fromId, toNumber) => {
-    set((state) => {
-      const fromTable = state.tables.find((t) => t.id === fromId);
-      if (!fromTable) return state;
+    const state = get();
+    const fromTable = state.tables.find((t) => t.id === fromId);
+    const toTable = state.tables.find((t) => t.number === toNumber);
+    
+    if (!fromTable || !toTable) return;
 
-      return {
-        tables: state.tables.map((t) => {
-          if (t.number === toNumber) {
-            return {
-              ...t,
-              status: fromTable.status,
-              currentBill: fromTable.currentBill,
-              seatedTime: fromTable.seatedTime,
-            };
-          }
-          if (t.id === fromId) {
-            return { ...t, status: 'AVAILABLE', currentBill: undefined, seatedTime: undefined };
+    set((state) => {
+      let newTables = [...state.tables];
+      
+      // If the fromTable has secondary merged tables, update them
+      if (fromTable.mergedWith && fromTable.mergedWith.length > 0) {
+        newTables = newTables.map(t => {
+          if (fromTable.mergedWith?.includes(t.id)) {
+            return { ...t, mergedInto: toTable.id };
           }
           return t;
-        }),
+        });
+      }
+
+      newTables = newTables.map((t) => {
+        if (t.number === toNumber) {
+          return {
+            ...t,
+            status: fromTable.status,
+            currentBill: fromTable.currentBill,
+            seatedTime: fromTable.seatedTime,
+            mergedWith: fromTable.mergedWith,
+          };
+        }
+        if (t.id === fromId) {
+          return { ...t, status: 'AVAILABLE', currentBill: undefined, seatedTime: undefined, mergedWith: undefined };
+        }
+        return t;
+      });
+
+      return { tables: newTables };
+    });
+
+    // Broadcast transfer to all other terminals
+    const finalToTable = get().tables.find(t => t.id === toTable.id);
+    emitAction('table_status_change', { tableId: fromTable.id, status: 'AVAILABLE', subtotal: undefined, mergedWith: [], mergedInto: null });
+    emitAction('table_status_change', { 
+      tableId: toTable.id, 
+      status: fromTable.status, 
+      subtotal: fromTable.currentBill,
+      mergedWith: finalToTable?.mergedWith,
+      mergedInto: finalToTable?.mergedInto
+    });
+
+    // Sync Cart and KDS
+    import('./cartStore').then(({ useCartStore }) => {
+      useCartStore.getState().transferCartTable(fromTable.id, toTable.id, toTable.number);
+    });
+    import('./useKdsStore').then(({ useKdsStore }) => {
+      useKdsStore.getState().transferKdsTable(`T${fromTable.number.replace('T', '')}`, `T${toTable.number.replace('T', '')}`);
+    });
+  },
+
+  mergeTable: (primaryId, secondaryId) => {
+    set((state) => {
+      const primary = state.tables.find(t => t.id === primaryId);
+      const secondary = state.tables.find(t => t.id === secondaryId);
+      if (!primary || !secondary) return state;
+
+      return {
+        tables: state.tables.map(t => {
+          if (t.id === primaryId) {
+            return {
+              ...t,
+              status: t.status === 'AVAILABLE' ? 'OCCUPIED' : t.status,
+              mergedWith: [...(t.mergedWith || []), secondaryId]
+            };
+          }
+          if (t.id === secondaryId) {
+            return {
+              ...t,
+              status: 'OCCUPIED',
+              mergedInto: primaryId,
+              currentBill: undefined,
+              seatedTime: undefined,
+            };
+          }
+          return t;
+        })
       };
     });
-    // Broadcast transfer to all other terminals
-    const state = get();
-    const fromT = state.tables.find(t => t.id === fromId);
-    const toT = state.tables.find(t => t.number === toNumber);
-    if (fromT) emitAction('table_status_change', { tableId: fromT.id, status: 'AVAILABLE', subtotal: undefined });
-    if (toT) emitAction('table_status_change', { tableId: toT.id, status: toT.status, subtotal: toT.currentBill });
+    // Broadcast status change
+    const pTable = get().tables.find(t => t.id === primaryId);
+    const sTable = get().tables.find(t => t.id === secondaryId);
+    if (pTable) emitAction('table_status_change', { tableId: pTable.id, status: pTable.status, mergedWith: pTable.mergedWith });
+    if (sTable) emitAction('table_status_change', { tableId: sTable.id, status: 'OCCUPIED', subtotal: undefined, mergedInto: primaryId });
+  },
+
+  unmergeTable: (id) => {
+    set((state) => {
+      const table = state.tables.find(t => t.id === id);
+      if (!table) return state;
+      
+      let newTables = [...state.tables];
+      
+      if (table.mergedInto) {
+        // Unmerge secondary table
+        const primaryId = table.mergedInto;
+        newTables = newTables.map(t => {
+          if (t.id === id) {
+            return { ...t, status: 'AVAILABLE', mergedInto: undefined };
+          }
+          if (t.id === primaryId) {
+            return { ...t, mergedWith: (t.mergedWith || []).filter(mId => mId !== id) };
+          }
+          return t;
+        });
+        const updatedPrimary = get().tables.find(t => t.id === primaryId);
+        emitAction('table_status_change', { tableId: id, status: 'AVAILABLE', subtotal: undefined, mergedInto: null });
+        if (updatedPrimary) emitAction('table_status_change', { tableId: primaryId, status: updatedPrimary.status, mergedWith: updatedPrimary.mergedWith });
+      } else if (table.mergedWith && table.mergedWith.length > 0) {
+        // Unmerge all secondary tables from this primary table
+        newTables = newTables.map(t => {
+          if (t.id === id) {
+            return { ...t, mergedWith: [] };
+          }
+          if (table.mergedWith?.includes(t.id)) {
+            emitAction('table_status_change', { tableId: t.id, status: 'AVAILABLE', subtotal: undefined, mergedInto: null });
+            return { ...t, status: 'AVAILABLE', mergedInto: undefined };
+          }
+          return t;
+        });
+        emitAction('table_status_change', { tableId: id, status: table.status, mergedWith: [] });
+      }
+      return { tables: newTables };
+    });
   },
 
   updateTableBill: (id, amount) => {

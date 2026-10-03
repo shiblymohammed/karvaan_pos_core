@@ -29,7 +29,7 @@ export const MenuGrid: React.FC<MenuGridProps> = ({ activeCategory, searchQuery,
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden">
       {/* Product Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 md:gap-5 overflow-y-auto pb-24 pr-2 pt-2">
+      <div className="grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 md:gap-5 overflow-y-auto pb-[240px] lg:pb-24 pr-2 pt-2">
         {filteredProducts.map((product) => {
           const is86d = checkIs86d(product.name);
           const isInCart = items.some(item => item.productId === product.id);

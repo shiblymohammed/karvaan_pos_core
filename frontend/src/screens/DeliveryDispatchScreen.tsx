@@ -1,632 +1,920 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDeliveryStore, DeliveryOrder } from '../store/useDeliveryStore';
 import { useStaffStore } from '../store/useStaffStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useKdsStore } from '../store/useKdsStore';
 import { useLedgerStore } from '../store/useLedgerStore';
-import { socket, emitAction } from '../services/socket';
-import { 
-  Bike, MapPin, Phone, User, CheckCircle2, X, Search, 
-  Package, Navigation, ChevronRight, AlertCircle, Banknote, QrCode, CreditCard, Wallet, Clock, DollarSign, Check, RotateCcw
+import { emitAction } from '../services/socket';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Bike, MapPin, Phone, CheckCircle2, X, Search,
+  Package, Navigation, AlertCircle, Banknote, QrCode,
+  Wallet, Clock, Check, RotateCcw, RefreshCw, Filter,
+  SearchX, User, ChevronRight, Printer, Share2
 } from 'lucide-react';
 import { ReturnOrderModal } from '../components/ReturnOrderModal';
 
-const STATUS_STEPS = ['NEW / PREPARING', 'OUT FOR DELIVERY', 'DELIVERED'];
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  RECEIVED:         { label: 'Order Received',     color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200' },
-  PREPARING:        { label: 'Preparing',          color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-200' },
-  READY:            { label: 'Ready for Pickup',   color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  OUT_FOR_DELIVERY: { label: 'Out for Delivery',  color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
-  DELIVERED:        { label: 'Delivered',          color: 'text-gray-500',                       bg: 'bg-gray-50',                         border: 'border-gray-200' },
-  CANCELLED:        { label: 'Cancelled',          color: 'text-red-600',                        bg: 'bg-red-50',                          border: 'border-red-200' },
+// ─── Helpers ────────────────────────────────────────────────────────────────
+const statusConfig: Record<string, { label: string; bar: string; badge: string; text: string }> = {
+  RECEIVED:         { label: 'Received',      bar: 'bg-blue-500',    badge: 'bg-blue-100 border-blue-200 text-blue-700',    text: 'text-blue-700' },
+  PREPARING:        { label: 'Preparing',     bar: 'bg-amber-400',   badge: 'bg-amber-50 border-amber-200 text-amber-700',  text: 'text-amber-700' },
+  READY:            { label: 'Ready',         bar: 'bg-emerald-500', badge: 'bg-emerald-50 border-emerald-200 text-emerald-700', text: 'text-emerald-700' },
+  OUT_FOR_DELIVERY: { label: 'On Road',       bar: 'bg-orange-500',  badge: 'bg-orange-50 border-orange-200 text-orange-700', text: 'text-orange-700' },
+  DELIVERED:        { label: 'Delivered',     bar: 'bg-slate-300',   badge: 'bg-slate-100 border-slate-200 text-slate-500', text: 'text-slate-500' },
+  CANCELLED:        { label: 'Cancelled',     bar: 'bg-rose-400',    badge: 'bg-rose-50 border-rose-200 text-rose-600',    text: 'text-rose-600' },
 };
 
-const OrderCard: React.FC<{
-  order: DeliveryOrder;
-  kdsTicket?: any;
-  currentUser?: any;
-  onAssign: (riderId: string, riderName: string) => void;
-  onOpenPaymentModal: () => void;
-  onMarkDeliveredPrepaid: () => void;
-  onOpenReturnModal: () => void;
-  onRemove: () => void;
-  availableRiders: Array<{ id: string; name: string; phone?: string; activeCount: number }>;
-}> = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal, onMarkDeliveredPrepaid, onOpenReturnModal, onRemove, availableRiders }) => {
+// ─── OrderCard ───────────────────────────────────────────────────────────────
+const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal, onMarkDeliveredPrepaid, onOpenReturnModal, onRemove, onRiderUnassign, availableRiders }: any) => {
   const [showAssign, setShowAssign] = useState(false);
-  const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG['RECEIVED'];
-  
-  let stepIdx = 0;
-  if (order.status === 'OUT_FOR_DELIVERY') stepIdx = 1;
-  if (order.status === 'DELIVERED') stepIdx = 2;
-
+  const cfg = statusConfig[order.status] || statusConfig.RECEIVED;
   const isActive = order.status !== 'DELIVERED' && order.status !== 'CANCELLED';
   const isPrepaid = order.paymentStatus === 'COLLECTED';
+  const isAssigned = !!order.deliveryBoyId;
+  // Fix 3: food is ready only when KDS says READY/SERVED, OR no KDS ticket (pre-packed/parcel)
+  const isReady = !kdsTicket || kdsTicket?.status === 'READY' || kdsTicket?.status === 'SERVED' || order.status === 'READY';
+  const isRider = currentUser?.role === 'DELIVERY';
+  const isMyOrder = order.deliveryBoyId === currentUser?.id;
 
   const handleTakeOrder = () => {
-    // If the logged-in user is a delivery rider, assign directly to them!
-    if (currentUser?.role === 'DELIVERY') {
+    if (isRider) {
+      if (!isReady) return; // Fix 3: guard
       onAssign(currentUser.id, currentUser.name);
     } else {
-      setShowAssign(true);
+      setShowAssign(s => !s);
     }
   };
 
   return (
-    <div className={`rounded-2xl border ${cfg.border} shadow-sm overflow-hidden transition-all bg-pos-card`}>
-      {/* Color accent bar */}
-      <div className={`h-1.5 w-full ${
-        order.status === 'OUT_FOR_DELIVERY' ? 'bg-purple-500' :
-        order.status === 'READY' ? 'bg-emerald-500' :
-        order.status === 'PREPARING' ? 'bg-amber-500' :
-        order.status === 'DELIVERED' ? 'bg-gray-300' : 'bg-blue-400'
-      }`} />
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="relative flex flex-col bg-white/80 backdrop-blur-xl rounded-[22px] border border-white/80 shadow-sm hover:shadow-lg transition-shadow overflow-visible"
+    >
+      {/* Status bar */}
+      <div className={`h-1 w-full rounded-t-[22px] ${cfg.bar}`} />
 
-      <div className={`p-4 ${cfg.bg}`}>
-        {/* Header Row */}
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div>
-            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
+      <div className="p-4 flex flex-col gap-3">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-black text-slate-800 text-[15px] leading-tight">{order.customerName}</span>
+              <span className={`shrink-0 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${cfg.badge}`}>
                 {cfg.label}
               </span>
-              
-              {/* Live Kitchen Status from KDS */}
-              {kdsTicket ? (
-                kdsTicket.status === 'READY' || kdsTicket.status === 'SERVED' ? (
-                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-500 text-white shadow-2xs flex items-center gap-1">
-                    ✅ Kitchen: Food Ready
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-amber-500 text-white shadow-2xs flex items-center gap-1 animate-pulse">
-                    🍳 Kitchen: Preparing ({kdsTicket.elapsedMinutes}m)
-                  </span>
-                )
-              ) : (
-                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-500 text-white shadow-2xs">
-                  📦 Order Packed
-                </span>
-              )}
-
-              {/* COD / Pre-Paid payment badge */}
-              {order.orderType === 'DELIVERY' && (
-                isPrepaid ? (
-                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-300 flex items-center gap-1 shadow-2xs">
-                    <CheckCircle2 className="h-2.5 w-2.5 text-emerald-600" /> Pre-Paid ({order.paymentMethod || 'Online'})
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 animate-pulse">
-                    💵 COD Pending
-                  </span>
-                )
-              )}
             </div>
-            <h3 className="font-black text-pos-text text-lg leading-tight">{order.customerName}</h3>
+            <div className="flex items-center gap-1.5 mt-1 text-[11px] font-bold text-slate-500">
+              <span className="text-orange-600 font-black">#{order.orderNumber}</span>
+              <span>·</span>
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="truncate">{order.deliveryAddress || 'No Address'}</span>
+            </div>
+            {order.customerPhone && (
+              <div className="flex items-center gap-1 mt-0.5 text-[10px] font-bold text-slate-400">
+                <Phone className="h-3 w-3" /> {order.customerPhone}
+              </div>
+            )}
           </div>
-          <div className="text-right">
-            <p className="text-[10px] font-black text-pos-text-muted">{order.orderNumber}</p>
-            <p className="font-black text-emerald-600 text-base">₹{order.grandTotal.toFixed(0)}</p>
-            {order.deliveryFee ? <p className="text-[10px] text-purple-600 font-bold">+₹{order.deliveryFee} del. fee</p> : null}
+          <div className="text-right shrink-0">
+            <p className="text-lg font-black text-slate-800">₹{order.grandTotal.toFixed(0)}</p>
+            {order.deliveryFee ? <p className="text-[9px] font-bold text-slate-400">+₹{order.deliveryFee} fee</p> : null}
           </div>
         </div>
 
-        {/* Customer Details */}
-        <div className="grid grid-cols-1 gap-1.5 mb-3">
-          <div className="flex items-center gap-2 bg-white/60 rounded-xl px-3 py-2 border border-white/40">
-            <Phone className="h-4 w-4 text-blue-500 shrink-0" />
-            <span className="font-black text-pos-text text-sm">{order.customerPhone || '—'}</span>
-            <span className="ml-auto text-[10px] text-pos-text-muted">{order.placedAt}</span>
-          </div>
-
-          {order.deliveryAddress && (
-            <div className="flex items-start gap-2 bg-white/60 rounded-xl px-3 py-2 border border-white/40">
-              <MapPin className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-              <span className="font-bold text-pos-text text-sm leading-snug">{order.deliveryAddress}</span>
-            </div>
+        {/* Kitchen status */}
+        <div className="flex items-center justify-between bg-slate-50/80 rounded-xl px-3 py-2 border border-slate-100">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kitchen</span>
+          {kdsTicket ? (
+            isReady
+              ? <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Food Ready</span>
+              : <span className="text-[10px] font-black text-amber-600 flex items-center gap-1"><Clock className="h-3 w-3 animate-pulse" /> Preparing ({kdsTicket.elapsedMinutes}m)</span>
+          ) : (
+            <span className="text-[10px] font-black text-blue-600 flex items-center gap-1"><Package className="h-3 w-3" /> Packed</span>
           )}
         </div>
 
-        {/* Items Summary */}
-        <div className="bg-white/50 rounded-xl p-2.5 border border-white/40 mb-3">
-          <p className="text-[10px] font-black text-pos-text-muted uppercase mb-1.5">Order Items</p>
-          {order.items.map((item, i) => (
-            <div key={i} className="flex justify-between text-xs py-0.5">
-              <span className="font-bold text-pos-text">{item.quantity}× {item.name}</span>
-              <span className="text-pos-text-muted">₹{(item.price * item.quantity).toFixed(0)}</span>
+        {/* Items summary */}
+        <div className="border-t border-b border-slate-100 py-2.5 space-y-1">
+          {order.items.slice(0, 2).map((item: any, i: number) => (
+            <div key={i} className="flex justify-between text-[11px] font-bold text-slate-600">
+              <span className="truncate pr-2">{item.quantity}× {item.name}</span>
+              <span className="shrink-0 text-slate-400">₹{(item.price * item.quantity).toFixed(0)}</span>
             </div>
           ))}
+          {order.items.length > 2 && (
+            <div className="text-[10px] font-bold text-slate-400 italic">+ {order.items.length - 2} more items</div>
+          )}
         </div>
 
-        {/* Status Pipeline (Simplified for Rider) */}
-        <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
-          {STATUS_STEPS.map((step, i) => (
-            <React.Fragment key={step}>
-              <div className={`flex items-center gap-1 text-[9px] font-black uppercase px-2 py-1 rounded-lg shrink-0 transition-colors ${
-                i < stepIdx ? 'bg-emerald-100 text-emerald-700' :
-                i === stepIdx ? 'bg-pos-accent text-white shadow-sm' :
-                'bg-white/40 text-pos-text-muted'
-              }`}>
-                {i < stepIdx && <CheckCircle2 className="h-2.5 w-2.5" />}
-                {step}
-              </div>
-              {i < 2 && <ChevronRight className="h-3 w-3 text-pos-text-muted shrink-0" />}
-            </React.Fragment>
-          ))}
+        {/* Payment status */}
+        <div className="flex items-center justify-between">
+          {isPrepaid
+            ? <span className="text-[11px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Paid Online</span>
+            : <span className="text-[11px] font-black text-rose-500 flex items-center gap-1"><AlertCircle className="h-3.5 w-3.5" /> COD Pending</span>
+          }
         </div>
 
-        {/* Assigned Rider */}
-        {order.deliveryBoyName && (
-          <div className="flex items-center gap-2 bg-purple-100 border border-purple-200 rounded-xl px-3 py-2 mb-3">
-            <Bike className="h-4 w-4 text-purple-600" />
-            <span className="font-black text-sm text-purple-700">{order.deliveryBoyName}</span>
-            <span className="ml-auto text-[10px] font-bold text-purple-500">Assigned Rider</span>
-          </div>
-        )}
-
-        {/* Rider Assignment Dropdown (for Cashier / Admin - Supports Batched Deliveries) */}
-        {showAssign && (
-          <div className="mb-3 p-3 bg-white rounded-xl border border-pos-border shadow-sm">
-            <p className="text-[10px] font-black text-pos-text-muted uppercase mb-2">Select Available Rider (Batched OK):</p>
-            {availableRiders.length === 0 ? (
-              <div className="flex items-center gap-2 text-red-500 text-xs font-bold py-1">
-                <AlertCircle className="h-3.5 w-3.5" /> No riders in staff list
+        {/* Rider / Action section */}
+        <div className="relative">
+          {!isAssigned ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rider</span>
+                <span className="text-[11px] font-bold text-slate-400">Unassigned</span>
               </div>
-            ) : (
-              <div className="space-y-1.5">
-                {availableRiders.map(r => (
-                  <button key={r.id} onClick={() => { onAssign(r.id, r.name); setShowAssign(false); }}
-                    className="w-full flex items-center gap-2 p-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg cursor-pointer transition-colors text-left">
-                    <div className="w-7 h-7 rounded-full bg-purple-500 text-white flex items-center justify-center font-black text-xs shrink-0">{r.name.charAt(0)}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="font-black text-xs text-pos-text">{r.name}</p>
-                        {r.activeCount > 0 && (
-                          <span className="text-[9px] font-bold text-purple-700 bg-purple-200 px-1.5 py-0.2 rounded-full">🛵 {r.activeCount} on road</span>
-                        )}
-                      </div>
-                      {r.phone && <p className="text-[10px] text-pos-text-muted">{r.phone}</p>}
+              {isActive && (
+                <div className="space-y-1.5">
+                  {/* Fix 3: show warning if food not ready yet */}
+                  {isRider && !isReady && (
+                    <div className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+                      <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                      <span className="text-[10px] font-black text-amber-700">Kitchen still preparing — wait for READY</span>
                     </div>
+                  )}
+                  <button onClick={handleTakeOrder}
+                    disabled={isRider && !isReady}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-orange-200 transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Bike className="h-4 w-4" />
+                    {isRider ? (isReady ? 'Take This Order' : 'Not Ready Yet') : 'Assign Rider'}
                   </button>
-                ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between bg-orange-50 px-3 py-2 rounded-xl border border-orange-100">
+                <div>
+                  <span className="text-[9px] font-black text-orange-400 uppercase tracking-widest block">Rider</span>
+                  <span className="text-xs font-black text-orange-700 flex items-center gap-1.5">
+                    <Bike className="h-3.5 w-3.5" /> {order.deliveryBoyName}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* Fix 5: Rider self-unassign */}
+                  {isRider && isMyOrder && isActive && (
+                    <button onClick={() => onRiderUnassign(order.id)} className="text-[10px] font-black text-rose-500 hover:text-rose-700 underline cursor-pointer">
+                      Unassign
+                    </button>
+                  )}
+                  {isActive && !isRider && (
+                    <button onClick={() => setShowAssign(s => !s)} className="text-[10px] font-black text-orange-500 underline cursor-pointer">
+                      Change
+                    </button>
+                  )}
+                </div>
               </div>
+              {isActive && (
+                isPrepaid ? (
+                  <button onClick={onMarkDeliveredPrepaid}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-90 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-200 transition-all active:scale-95 cursor-pointer">
+                    <Check className="h-4 w-4" /> Mark Delivered
+                  </button>
+                ) : (
+                  <button onClick={onOpenPaymentModal}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-90 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-200 transition-all active:scale-95 cursor-pointer">
+                    <Wallet className="h-4 w-4" /> Collect ₹{order.grandTotal.toFixed(0)}
+                  </button>
+                )
+              )}
+            </div>
+          )}
+
+          {/* Assignment dropdown */}
+          <AnimatePresence>
+            {showAssign && isActive && !isRider && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="absolute bottom-full mb-2 left-0 w-full p-2 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50"
+              >
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Rider</span>
+                  <button onClick={() => setShowAssign(false)}><X className="h-3.5 w-3.5 text-slate-400 hover:text-slate-700 cursor-pointer" /></button>
+                </div>
+                {availableRiders.length === 0 ? (
+                  <p className="text-xs text-rose-500 font-bold p-2 text-center">No riders available.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {availableRiders.map((r: any) => (
+                      <button key={r.id} onClick={() => { onAssign(r.id, r.name); setShowAssign(false); }}
+                        className="flex items-center justify-between w-full px-3 py-2 bg-slate-50 hover:bg-orange-50 border border-slate-100 hover:border-orange-200 rounded-xl cursor-pointer transition-colors text-left group">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-orange-100 text-orange-600 font-black text-[11px] flex items-center justify-center">
+                            {r.name.charAt(0)}
+                          </div>
+                          <span className="font-black text-xs text-slate-700 group-hover:text-orange-700">{r.name}</span>
+                        </div>
+                        {r.activeCount > 0
+                          ? <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100 flex items-center gap-1"><Bike className="h-2.5 w-2.5" /> {r.activeCount} active</span>
+                          : <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100">Free</span>
+                        }
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
             )}
-            <button onClick={() => setShowAssign(false)} className="mt-2 w-full py-1.5 text-xs font-bold text-pos-text-muted bg-pos-bg rounded-lg border border-pos-border cursor-pointer">Cancel</button>
+          </AnimatePresence>
+        </div>
+
+        {/* Footer actions */}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+          <div className="flex gap-3">
+            {isActive && !isRider && (
+              <button onClick={onOpenReturnModal} className="text-[10px] font-black text-slate-400 hover:text-amber-600 flex items-center gap-1 cursor-pointer transition-colors">
+                <RotateCcw className="h-3 w-3" /> Return
+              </button>
+            )}
+            {!isRider && (
+              <button onClick={onRemove} className="text-[10px] font-black text-slate-400 hover:text-rose-600 flex items-center gap-1 cursor-pointer transition-colors">
+                <X className="h-3 w-3" /> Remove
+              </button>
+            )}
           </div>
-        )}
-
-        {/* Action Buttons (Context-Aware: COD demands cash modal, Pre-Paid marks delivered directly) */}
-        {isActive && (
-          <div className="flex gap-2">
-            {!order.deliveryBoyId ? (
-              <button onClick={handleTakeOrder} className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black rounded-xl cursor-pointer transition-all active:scale-95 shadow-md flex items-center justify-center gap-2 animate-pulse">
-                <Bike className="h-4 w-4" /> <span>{currentUser?.role === 'DELIVERY' ? '🛵 Take Order for Delivery' : '🛵 Assign Rider'}</span>
-              </button>
-            ) : isPrepaid ? (
-              <button onClick={onMarkDeliveredPrepaid} className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black rounded-xl cursor-pointer transition-all active:scale-95 shadow-md flex items-center justify-center gap-2">
-                <Check className="h-4 w-4" /> <span>📦 Mark Delivered (Pre-Paid)</span>
-              </button>
-            ) : (
-              <button onClick={onOpenPaymentModal} className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black rounded-xl cursor-pointer transition-all active:scale-95 shadow-md flex items-center justify-center gap-2">
-                <Wallet className="h-4 w-4" /> <span>💰 Collect Payment & Deliver</span>
-              </button>
-            )}
-
-            {currentUser?.role !== 'DELIVERY' && (
-              <button onClick={onOpenReturnModal} className="py-2 px-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-xs font-black rounded-xl cursor-pointer border border-amber-500/30 transition-colors active:scale-95 flex items-center gap-1" title="Return / Refund Order">
-                <RotateCcw className="h-3.5 w-3.5" /> Return
-              </button>
-            )}
-
-            {currentUser?.role !== 'DELIVERY' && (
-              <button onClick={onRemove} className="py-2 px-3 bg-white/60 hover:bg-red-50 text-red-400 text-xs font-black rounded-xl cursor-pointer border border-red-200 transition-colors active:scale-95" title="Remove Order">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        )}
-
-        {!isActive && (
-          <button onClick={onRemove} className="w-full py-1.5 text-xs font-bold text-pos-text-muted bg-white/40 hover:bg-red-50 rounded-xl border border-pos-border cursor-pointer transition-colors">
-            Remove from list
-          </button>
-        )}
+          <span className="text-[9px] font-bold text-slate-300">{order.placedAt}</span>
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
+// ─── Main Screen ─────────────────────────────────────────────────────────────
 export const DeliveryDispatchScreen: React.FC = () => {
-  const { orders, collectPayment, assignDeliveryBoy, removeOrder, updateDeliveryBoy } = useDeliveryStore();
+  const { orders, collectPayment, assignDeliveryBoy, removeOrder } = useDeliveryStore();
   const { getDeliveryRiders } = useStaffStore();
   const { currentUser } = useAuthStore();
   const { tickets: kdsTickets } = useKdsStore();
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ACTIVE' | 'ALL'>('ACTIVE');
-
-  // Payment Modal State (for COD orders)
   const [paymentModalOrder, setPaymentModalOrder] = useState<DeliveryOrder | null>(null);
   const [collectAmount, setCollectAmount] = useState<number>(0);
-
-  // Return Modal State
+  const [payMode, setPayMode] = useState<'CASH' | 'UPI' | 'SPLIT'>('CASH');
+  const [splitCash, setSplitCash] = useState<number>(0);
+  const [splitUpi, setSplitUpi] = useState<number>(0);
   const [returnModalOrder, setReturnModalOrder] = useState<DeliveryOrder | null>(null);
-
-  // Shift Remittance Modal State (Fix 3)
+  const [completedReceipt, setCompletedReceipt] = useState<{ order: DeliveryOrder; method: string; collected: number } | null>(null);
   const [selectedRiderSummary, setSelectedRiderSummary] = useState<any | null>(null);
+  const [showRidersMobile, setShowRidersMobile] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  // Merge staff-based riders with delivery store boys
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   const staffRiders = getDeliveryRiders();
+  const isRiderMode = currentUser?.role === 'DELIVERY';
 
-  // Riders available for assignment — Fix 2: Never filter out! Allow batched deliveries (2-3 per trip).
-  const availableRiders = staffRiders.map(r => {
-    const activeCount = orders.filter(o => o.deliveryBoyId === r.id && o.status === 'OUT_FOR_DELIVERY').length;
-    return {
-      id: r.id,
-      name: r.name,
-      phone: r.phone,
-      activeCount,
-    };
-  });
+  const availableRiders = useMemo(() => staffRiders.map(r => ({
+    id: r.id, name: r.name, phone: r.phone,
+    activeCount: orders.filter(o => o.deliveryBoyId === r.id && o.status === 'OUT_FOR_DELIVERY').length,
+  })), [staffRiders, orders]);
 
-  const deliveryOrders = orders
-    .filter(o => o.orderType === 'DELIVERY')
+  const deliveryOrders = useMemo(() => orders
+    .filter(o => o.orderType === 'DELIVERY' || o.orderType === 'PARCEL')  // Fix 4: include PARCEL
     .filter(o => filterStatus === 'ALL' || (o.status !== 'DELIVERED' && o.status !== 'CANCELLED'))
     .filter(o => !search ||
       o.customerName.toLowerCase().includes(search.toLowerCase()) ||
       o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
       (o.deliveryAddress || '').toLowerCase().includes(search.toLowerCase())
-    );
+    )
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), // Fix 7: use ISO updatedAt
+    [orders, filterStatus, search]);
 
-  // Fix 4: Inject COD collections directly into Master Revenue Ledger when collected!
-  const handleCollectPaymentSubmit = (orderId: string, method: 'CASH' | 'UPI' | 'CARD') => {
-    collectPayment(orderId, method, collectAmount);
-    
-    // Inject into master ledger
+  // Rider sees: their own orders + unassigned orders
+  const myOrders = isRiderMode
+    ? deliveryOrders.filter(o => o.deliveryBoyId === currentUser?.id || !o.deliveryBoyId)
+    : deliveryOrders;
+
+  const myActiveRun = isRiderMode
+    ? myOrders.find(o => o.deliveryBoyId === currentUser?.id && o.status === 'OUT_FOR_DELIVERY')
+    : null;
+
+  const handleCollectPaymentSubmit = (orderId: string, method: 'CASH' | 'UPI' | 'CARD' | 'SPLIT', splitAmounts?: { cash: number; upi: number }) => {
+    const collected = method === 'SPLIT' ? (splitAmounts ? splitAmounts.cash + splitAmounts.upi : collectAmount) : collectAmount;
+    collectPayment(orderId, method, collected);
     const order = orders.find(o => o.id === orderId);
     if (order) {
       useLedgerStore.getState().addEntry({
         customerId: `cust-${Date.now()}`,
         customerName: order.customerName,
         customerPhone: order.customerPhone,
-        amount: collectAmount,
+        amount: collected,
         billNumber: order.orderNumber,
         date: new Date().toLocaleDateString()
       });
-    }
-
-    // Free up the rider
-    if (order?.deliveryBoyId) {
-      updateDeliveryBoy(order.deliveryBoyId, { isAvailable: true, activeOrderId: undefined });
+      // Fix 2: Do NOT updateDeliveryBoy here — removeOrder handles rider availability safely
+      const methodLabel = method === 'SPLIT'
+        ? `Split (₹${splitAmounts?.cash ?? 0} Cash + ₹${splitAmounts?.upi ?? 0} UPI)`
+        : method;
+      setCompletedReceipt({ order, method: methodLabel, collected });
     }
     setPaymentModalOrder(null);
     setTimeout(() => removeOrder(orderId), 5000);
   };
 
-  // Fix 1: For Pre-Paid orders, mark delivered directly without money collection popup!
-  const handleMarkDeliveredPrepaid = (order: DeliveryOrder) => {
-    collectPayment(order.id, 'UPI', order.grandTotal);
-    if (order.deliveryBoyId) {
-      updateDeliveryBoy(order.deliveryBoyId, { isAvailable: true, activeOrderId: undefined });
-    }
+  const handleMarkDeliveredPrepaidWithReceipt = (order: DeliveryOrder) => {
+    // Fix 6: use 'PREPAID' label, not 'UPI'
+    collectPayment(order.id, 'PREPAID', order.grandTotal);
+    useLedgerStore.getState().addEntry({
+      customerId: `cust-${Date.now()}`,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      amount: order.grandTotal,
+      billNumber: order.orderNumber,
+      date: new Date().toLocaleDateString()
+    });
+    setCompletedReceipt({ order, method: 'PREPAID (Online)', collected: order.grandTotal });
     setTimeout(() => removeOrder(order.id), 5000);
+  };
+
+  // Fix 5: Rider self-unassign
+  const handleRiderUnassign = (orderId: string) => {
+    useDeliveryStore.getState().updateOrderStatus(orderId, 'READY');
+    const order = orders.find(o => o.id === orderId);
+    // Clear rider assignment
+    useDeliveryStore.setState(state => ({
+      orders: state.orders.map(o => o.id === orderId
+        ? { ...o, deliveryBoyId: undefined, deliveryBoyName: undefined, status: 'READY', updatedAt: new Date().toISOString() }
+        : o
+      )
+    }));
+    showToast('Order unassigned — back to Ready queue.', 'info');
   };
 
   const handleAssign = (orderId: string, riderId: string, riderName: string) => {
     assignDeliveryBoy(orderId, riderId, riderName);
   };
 
-  // Summary stats
-  const activeCount = orders.filter(o => o.orderType === 'DELIVERY' && o.status !== 'DELIVERED' && o.status !== 'CANCELLED').length;
-  const outForDelivery = orders.filter(o => o.orderType === 'DELIVERY' && o.status === 'OUT_FOR_DELIVERY').length;
-  const deliveredCount = orders.filter(o => o.orderType === 'DELIVERY' && o.status === 'DELIVERED').length;
+  // Stats
+  const allDeliv = orders.filter(o => o.orderType === 'DELIVERY');
+  const pendingCount = allDeliv.filter(o => o.status === 'RECEIVED' || o.status === 'PREPARING').length;
+  const readyCount = allDeliv.filter(o => o.status === 'READY').length;
+  const onRoadCount = allDeliv.filter(o => o.status === 'OUT_FOR_DELIVERY').length;
+  const codPendingAmt = allDeliv.filter(o => o.paymentStatus !== 'COLLECTED' && o.status !== 'DELIVERED').reduce((s, o) => s + o.grandTotal, 0);
 
   return (
-    <div className="h-[calc(100vh-64px)] bg-pos-bg overflow-hidden flex flex-col text-pos-text relative">
-      {/* Header */}
-      <div className="bg-pos-sidebar border-b border-pos-border px-6 py-4 flex items-center gap-4">
-        <div>
-          <h1 className="text-xl font-black text-pos-text flex items-center gap-2">
-            <Bike className="h-6 w-6 text-purple-500" /> Delivery Dispatch & Riders
-          </h1>
-          <p className="text-xs font-bold text-pos-text-muted">
-            {availableRiders.length} riders available · {outForDelivery} out on road
-          </p>
-        </div>
+    <div className="h-[calc(100vh-64px)] sm:h-full overflow-hidden flex flex-col relative text-slate-800" style={{ background: 'transparent' }}>
 
-        {/* Stats row */}
-        <div className="flex items-center gap-2 ml-4">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-pos-card rounded-xl border border-pos-border text-xs font-black">
-            <span className="w-2 h-2 rounded-full bg-amber-500" />
-            <span className="text-pos-text-muted">Active:</span>
-            <span className="text-pos-text">{activeCount}</span>
+      {/* ── Top Header ───────────────────────────────────────── */}
+      <div className="bg-white/80 backdrop-blur-xl border-b border-white/60 px-4 sm:px-6 py-3 flex-shrink-0 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-xl ${isRiderMode ? 'bg-orange-100' : 'bg-orange-100'}`}>
+            <Bike className="h-5 w-5 text-orange-600" />
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-pos-card rounded-xl border border-pos-border text-xs font-black">
-            <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-            <span className="text-pos-text-muted">On Road:</span>
-            <span className="text-pos-text">{outForDelivery}</span>
-          </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-pos-card rounded-xl border border-pos-border text-xs font-black">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-pos-text-muted">Delivered:</span>
-            <span className="text-pos-text">{deliveredCount}</span>
+          <div>
+            <h1 className="text-base sm:text-lg font-black text-slate-800 leading-tight">
+              {isRiderMode ? 'My Deliveries' : 'Delivery Dispatch'}
+            </h1>
+            <p className="hidden sm:block text-[10px] font-bold text-slate-500">
+              {isRiderMode ? 'Your active runs & available pickups' : 'Live dispatch board · assign riders · collect COD'}
+            </p>
           </div>
         </div>
 
-        {/* Search + filter + sync */}
-        <div className="flex items-center gap-2 ml-auto">
-          <button onClick={() => { emitAction('sync_delivery_orders', orders); alert('📡 Broadcasted delivery orders to all connected POS screens!'); }} className="px-3 py-1.5 text-xs font-black rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-sm flex items-center gap-1 cursor-pointer transition-colors" title="Push this terminal's orders to all other browsers">
-            🔄 Sync Screens
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { emitAction('sync_delivery_orders', orders); showToast('Board synced!', 'success'); }}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer shadow-sm">
+            <RefreshCw className="h-3 w-3" /> Sync
           </button>
-          <button onClick={() => setFilterStatus(f => f === 'ACTIVE' ? 'ALL' : 'ACTIVE')} className={`px-3 py-1.5 text-xs font-black rounded-xl border cursor-pointer transition-colors ${filterStatus === 'ALL' ? 'bg-pos-accent text-white border-pos-accent' : 'bg-pos-card text-pos-text-muted border-pos-border'}`}>
-            {filterStatus === 'ALL' ? 'All Orders' : 'Active Only'}
-          </button>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-pos-text-muted" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, address..." className="pl-9 pr-4 py-1.5 bg-pos-card border border-pos-border rounded-xl text-xs font-bold placeholder:text-pos-text-muted focus:outline-none focus:border-purple-400 w-52" />
-          </div>
+          {!isRiderMode && (
+            <button onClick={() => setShowRidersMobile(s => !s)}
+              className="sm:hidden px-3 py-2 text-xs font-black text-orange-600 bg-orange-50 rounded-xl border border-orange-100 flex items-center gap-1.5 cursor-pointer">
+              <User className="h-4 w-4" /> Riders
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Two-panel layout */}
-      <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-0">
-        {/* LEFT: Orders */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-5 space-y-4">
-          {deliveryOrders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-pos-text-muted">
-              <Bike className="h-16 w-16 opacity-20" />
-              <p className="text-lg font-black">No delivery orders</p>
-              <p className="text-sm">Create a Delivery order from the POS screen</p>
+      {/* ── Stats Bar ────────────────────────────────────────── */}
+      {!isRiderMode ? (
+        <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-4 sm:px-6 py-2.5 flex items-center gap-4 sm:gap-6 overflow-x-auto hide-scrollbar shrink-0">
+          {[
+            { label: 'Pending', value: pendingCount, color: 'text-orange-100' },
+            { label: 'Ready', value: readyCount, color: 'text-white' },
+            { label: 'On Road', value: onRoadCount, color: 'text-white' },
+            { label: 'COD Due', value: `₹${codPendingAmt.toFixed(0)}`, color: 'text-yellow-200' },
+          ].map((stat, i, arr) => (
+            <React.Fragment key={stat.label}>
+              <div className="flex items-center gap-2 shrink-0">
+                <div>
+                  <p className="text-[9px] font-black text-orange-200 uppercase tracking-widest">{stat.label}</p>
+                  <p className={`text-base font-black ${stat.color}`}>{stat.value}</p>
+                </div>
+              </div>
+              {i < arr.length - 1 && <div className="w-px h-6 bg-orange-400/50 shrink-0" />}
+            </React.Fragment>
+          ))}
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-black text-orange-200 uppercase tracking-widest">
+              {allDeliv.filter(o => o.status === 'DELIVERED').length} delivered today
+            </span>
+          </div>
+        </div>
+      ) : (
+        /* Rider stats bar */
+        <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-4 sm:px-6 py-2.5 flex items-center gap-4 overflow-x-auto hide-scrollbar shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <div>
+              <p className="text-[9px] font-black text-orange-200 uppercase tracking-widest">My Active</p>
+              <p className="text-base font-black text-white">
+                {myOrders.filter(o => o.deliveryBoyId === currentUser?.id && o.status === 'OUT_FOR_DELIVERY').length}
+              </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-              {deliveryOrders.map(order => (
-                <OrderCard
-                  key={order.id}
-                  order={order}
-                  kdsTicket={kdsTickets.find(t => t.orderNumber === order.orderNumber)}
-                  currentUser={currentUser}
-                  onAssign={(riderId, riderName) => handleAssign(order.id, riderId, riderName)}
-                  onOpenPaymentModal={() => {
-                    setPaymentModalOrder(order);
-                    setCollectAmount(order.grandTotal);
-                  }}
-                  onMarkDeliveredPrepaid={() => handleMarkDeliveredPrepaid(order)}
-                  onOpenReturnModal={() => setReturnModalOrder(order)}
-                  onRemove={() => removeOrder(order.id)}
-                  availableRiders={availableRiders}
-                />
-              ))}
+          </div>
+          <div className="w-px h-6 bg-orange-400/50 shrink-0" />
+          <div className="flex items-center gap-2 shrink-0">
+            <div>
+              <p className="text-[9px] font-black text-orange-200 uppercase tracking-widest">Completed</p>
+              <p className="text-base font-black text-white">
+                {orders.filter(o => o.deliveryBoyId === currentUser?.id && o.status === 'DELIVERED').length}
+              </p>
             </div>
-          )}
+          </div>
+          <div className="w-px h-6 bg-orange-400/50 shrink-0" />
+          <div className="flex items-center gap-2 shrink-0">
+            <div>
+              <p className="text-[9px] font-black text-yellow-200 uppercase tracking-widest">COD to Collect</p>
+              <p className="text-base font-black text-yellow-100">
+                ₹{myOrders.filter(o => o.deliveryBoyId === currentUser?.id && o.paymentStatus !== 'COLLECTED').reduce((s, o) => s + o.grandTotal, 0).toFixed(0)}
+              </p>
+            </div>
+          </div>
+          <div className="ml-auto">
+            <span className="text-[10px] font-black text-orange-200">Available pickups: {myOrders.filter(o => !o.deliveryBoyId).length}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Area ────────────────────────────────────────── */}
+      <div className="flex-1 overflow-hidden flex flex-col md:flex-row relative">
+
+        {/* Left: Order Grid */}
+        <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+
+          {/* Rider Active Run Hero */}
+          <AnimatePresence>
+            {isRiderMode && myActiveRun && (
+              <motion.div
+                initial={{ opacity: 0, y: -16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                className="mx-4 sm:mx-6 mt-4 p-4 rounded-[20px] bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-xl shadow-orange-200/50"
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 bg-white/20 rounded-lg"><Navigation className="h-4 w-4" /></div>
+                  <span className="text-xs font-black uppercase tracking-widest text-orange-100">Active Run</span>
+                  <span className="ml-auto text-[10px] font-black bg-white/20 px-2 py-0.5 rounded-full">#{myActiveRun.orderNumber}</span>
+                </div>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-black text-lg leading-tight">{myActiveRun.customerName}</p>
+                    <p className="text-sm text-orange-100 font-bold flex items-center gap-1 mt-0.5">
+                      <MapPin className="h-3.5 w-3.5" /> {myActiveRun.deliveryAddress || 'No Address'}
+                    </p>
+                    {myActiveRun.customerPhone && (
+                      <p className="text-xs text-orange-200 font-bold flex items-center gap-1 mt-0.5">
+                        <Phone className="h-3 w-3" /> {myActiveRun.customerPhone}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-black">₹{myActiveRun.grandTotal.toFixed(0)}</p>
+                    <p className="text-[10px] font-black text-orange-200">
+                      {myActiveRun.paymentStatus === 'COLLECTED' ? '✓ Paid' : 'COD'}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  {myActiveRun.paymentStatus === 'COLLECTED' ? (
+                    <button onClick={() => handleMarkDeliveredPrepaidWithReceipt(myActiveRun)}
+                      className="flex-1 py-2.5 bg-white text-orange-600 font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow active:scale-95 cursor-pointer">
+                      <Check className="h-4 w-4" /> Mark Delivered
+                    </button>
+                  ) : (
+                    <button onClick={() => { setPaymentModalOrder(myActiveRun); setCollectAmount(myActiveRun.grandTotal); }}
+                      className="flex-1 py-2.5 bg-white text-orange-600 font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow active:scale-95 cursor-pointer">
+                      <Wallet className="h-4 w-4" /> Collect ₹{myActiveRun.grandTotal.toFixed(0)}
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Toolbar */}
+          <div className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-black text-slate-700 uppercase tracking-tight">
+                {isRiderMode ? 'Available Pickups' : 'Orders'}
+              </h2>
+              <span className="text-[10px] font-black text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-full">
+                {myOrders.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-60 min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search name, order, address..."
+                  className="w-full pl-9 pr-3 py-2 bg-white/80 backdrop-blur-xl border border-slate-200/80 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-400/20 shadow-sm transition-all" />
+              </div>
+              <button onClick={() => setFilterStatus(f => f === 'ACTIVE' ? 'ALL' : 'ACTIVE')}
+                className={`shrink-0 px-3 py-2 text-[10px] font-black rounded-xl border flex items-center gap-1 cursor-pointer transition-colors ${
+                  filterStatus === 'ALL'
+                    ? 'bg-orange-50 text-orange-700 border-orange-200'
+                    : 'bg-white/80 text-slate-600 border-slate-200 shadow-sm'
+                }`}>
+                <Filter className="h-3 w-3" />
+                {filterStatus === 'ALL' ? 'All' : 'Active'}
+              </button>
+            </div>
+          </div>
+
+          {/* Grid */}
+          <div className="flex-1 px-4 sm:px-6 pb-8 overflow-y-auto">
+            {myOrders.length === 0 ? (
+              <div className="h-full w-full flex flex-col items-center justify-center text-center p-6 bg-white/40 border-2 border-dashed border-slate-200/60 rounded-[24px] min-h-[200px]">
+                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+                  <SearchX className="h-6 w-6 text-slate-300" />
+                </div>
+                <p className="text-base font-black text-slate-700 mb-1">No orders found</p>
+                <p className="text-xs font-bold text-slate-400">Delivery orders placed on POS will appear here.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 pb-24 md:pb-6">
+                <AnimatePresence>
+                  {myOrders.map(order => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                      kdsTicket={kdsTickets.find(t => t.orderNumber === order.orderNumber)}
+                      currentUser={currentUser}
+                      onAssign={(riderId: string, riderName: string) => handleAssign(order.id, riderId, riderName)}
+                      onOpenPaymentModal={() => { setPaymentModalOrder(order); setCollectAmount(order.grandTotal); setPayMode('CASH'); setSplitCash(0); setSplitUpi(0); }}
+                      onMarkDeliveredPrepaid={() => handleMarkDeliveredPrepaidWithReceipt(order)}
+                      onOpenReturnModal={() => setReturnModalOrder(order)}
+                      onRemove={() => removeOrder(order.id)}
+                      onRiderUnassign={handleRiderUnassign}
+                      availableRiders={availableRiders}
+                    />
+                  ))}
+
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* RIGHT: Rider Roster (Click card for Shift-End Settlement Summary) or My Shift Panel */}
-        <div className="w-full lg:w-72 bg-pos-sidebar border-b lg:border-b-0 lg:border-l border-pos-border flex flex-col shrink-0 order-first lg:order-last">
-          {currentUser?.role === 'DELIVERY' ? (
-            <div className="flex flex-col h-full p-4 space-y-4">
-              <div className="border-b border-pos-border pb-3">
-                <h2 className="font-black text-pos-text flex items-center gap-2 text-sm">
-                  <Bike className="h-4 w-4 text-purple-500" /> My Rider Shift
-                </h2>
-                <p className="text-[10px] text-pos-text-muted mt-0.5">Route & Delivery Status</p>
-              </div>
-              
-              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-center">
-                <div className="w-12 h-12 rounded-full bg-purple-500 text-white font-black text-lg flex items-center justify-center mx-auto mb-2 shadow-sm">
-                  {currentUser.name?.charAt(0) || 'D'}
+        {/* Right: Rider Sidebar */}
+        {!isRiderMode && (
+          <>
+            <div className={`${showRidersMobile ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} fixed inset-y-0 right-0 z-40 md:relative w-72 lg:w-80 bg-white/90 backdrop-blur-2xl border-l border-slate-200/60 flex flex-col shrink-0 transition-transform duration-300 shadow-2xl md:shadow-none`}>
+              <div className="px-5 py-4 border-b border-slate-200/60 flex items-center justify-between bg-white/60">
+                <div>
+                  <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Bike className="h-4 w-4 text-orange-500" /> RIDERS</h2>
+                  <p className="text-[10px] font-bold text-slate-500 mt-0.5">{staffRiders.length} on roster</p>
                 </div>
-                <h3 className="font-black text-base text-pos-text">{currentUser.name || 'Delivery Rider'}</h3>
-                <span className="inline-block text-[9px] font-black uppercase tracking-wider text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full mt-1">
-                  🛵 Active Rider Shift
-                </span>
+                <button onClick={() => setShowRidersMobile(false)} className="md:hidden p-2 rounded-xl bg-slate-100 text-slate-500 hover:text-slate-800 cursor-pointer"><X className="h-4 w-4" /></button>
               </div>
 
-              <div className="bg-pos-card rounded-2xl border border-pos-border p-4 space-y-3">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-bold text-pos-text-muted">On Road Now:</span>
-                  <span className="font-black text-purple-600">{orders.filter(o => o.deliveryBoyId === currentUser.id && o.status === 'OUT_FOR_DELIVERY').length}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-bold text-pos-text-muted">Completed Today:</span>
-                  <span className="font-black text-emerald-600">{orders.filter(o => o.deliveryBoyId === currentUser.id && o.status === 'DELIVERED').length}</span>
-                </div>
-              </div>
-
-              <div className="mt-auto p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl">
-                <p className="text-[11px] font-bold text-amber-700 text-center leading-relaxed">
-                  🔒 Shift Cash Settlement & Reconciliation is locked to Admin & Managers at shift end.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="border-b border-pos-border px-4 py-3">
-                <h2 className="font-black text-pos-text flex items-center gap-2 text-sm">
-                  <User className="h-4 w-4 text-purple-500" /> Rider Shift Roster
-                </h2>
-                <p className="text-[10px] text-pos-text-muted mt-0.5">Click rider for daily shift cash remittance</p>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {staffRiders.length === 0 ? (
-                  <div className="text-center p-4 text-pos-text-muted">
-                    <Bike className="h-8 w-8 mx-auto opacity-20 mb-2" />
-                    <p className="text-xs font-bold">No delivery riders found.</p>
-                    <p className="text-[10px] mt-1">Go to Admin → Staff and add a staff member with the "Delivery Rider" role.</p>
+                  <div className="text-center p-6 text-slate-400 bg-white/50 rounded-2xl border border-slate-100">
+                    <Bike className="h-8 w-8 mx-auto opacity-30 mb-2" />
+                    <p className="text-xs font-black text-slate-600">No riders</p>
+                    <p className="text-[10px] font-bold mt-1">Add staff with "Delivery Rider" role.</p>
                   </div>
                 ) : (
                   staffRiders.map(rider => {
                     const activeOrders = orders.filter(o => o.deliveryBoyId === rider.id && o.status === 'OUT_FOR_DELIVERY');
                     const completedToday = orders.filter(o => o.deliveryBoyId === rider.id && o.status === 'DELIVERED').length;
                     const isOnDelivery = activeOrders.length > 0;
-
                     return (
-                      <div
-                        key={rider.id}
-                        onClick={() => setSelectedRiderSummary(rider)}
-                        className={`rounded-xl border p-3 transition-all cursor-pointer hover:border-purple-400 active:scale-[0.98] ${isOnDelivery ? 'border-purple-200 bg-purple-50' : 'border-pos-border bg-pos-card'}`}
-                        title="Click for Shift Remittance Settlement"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${isOnDelivery ? 'bg-purple-500 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+                      <div key={rider.id} onClick={() => setSelectedRiderSummary(rider)}
+                        className={`relative overflow-hidden rounded-2xl border transition-all cursor-pointer hover:shadow-md active:scale-[0.98] group p-3.5 ${
+                          isOnDelivery ? 'bg-orange-50/70 border-orange-200' : 'bg-white border-slate-200 shadow-sm'
+                        }`}>
+                        {isOnDelivery && <div className="absolute top-0 left-0 w-1 h-full bg-orange-500 rounded-l-2xl" />}
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-[14px] flex items-center justify-center font-black text-sm shrink-0 shadow-sm ${
+                            isOnDelivery ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'
+                          }`}>
                             {rider.name.charAt(0)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-black text-sm text-pos-text truncate">{rider.name}</p>
-                            <p className="text-[10px] text-pos-text-muted font-bold">Today: {completedToday} deliveries</p>
+                            <p className="font-black text-sm text-slate-800 truncate">{rider.name}</p>
+                            <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${isOnDelivery ? 'text-orange-500' : 'text-emerald-500'}`}>
+                              {isOnDelivery ? '🛵 On Road' : '✓ Available'}
+                            </p>
                           </div>
+                          <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-orange-400 transition-colors" />
                         </div>
-                        <div className="mt-2 flex items-center justify-between">
-                          <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${isOnDelivery ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
-                            {isOnDelivery ? <><Bike className="h-2.5 w-2.5" /> {activeOrders.length} On Road</> : <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Available</>}
-                          </span>
-                          <span className="text-[10px] font-extrabold text-purple-600 underline">Shift Settle →</span>
+                        <div className="mt-3 flex items-center gap-4 pt-3 border-t border-slate-200/50">
+                          <div>
+                            <span className="text-[8px] font-black uppercase text-slate-400 block">Active</span>
+                            <span className={`text-sm font-black ${isOnDelivery ? 'text-orange-600' : 'text-slate-500'}`}>{activeOrders.length}</span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] font-black uppercase text-slate-400 block">Trips Today</span>
+                            <span className="text-sm font-black text-slate-700">{completedToday}</span>
+                          </div>
+                          <div className="ml-auto text-[9px] font-black text-orange-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                            View Shift →
+                          </div>
                         </div>
                       </div>
                     );
                   })
                 )}
               </div>
-            </>
-          )}
-        </div>
+            </div>
+            {showRidersMobile && (
+              <div onClick={() => setShowRidersMobile(false)}
+                className="md:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 animate-in fade-in" />
+            )}
+          </>
+        )}
       </div>
 
-      {/* SHIFT REMITTANCE SUMMARY MODAL (Fix 3) */}
-      {selectedRiderSummary && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-pos-card border border-pos-border rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 text-pos-text">
-            <div className="flex items-center justify-between border-b border-pos-border pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-purple-100 rounded-2xl text-purple-600">
-                  <User className="h-6 w-6" />
-                </div>
+      {/* ── Shift Remittance Modal ────────────────────────────── */}
+      <AnimatePresence>
+        {selectedRiderSummary && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+            <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+              className="bg-white/95 backdrop-blur-2xl border border-white rounded-t-[32px] sm:rounded-[32px] p-6 w-full max-w-sm shadow-2xl space-y-5">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-black leading-tight">Rider Shift Settlement</h3>
-                  <p className="text-xs font-bold text-pos-text-muted mt-0.5">Reconcile cash collections for {selectedRiderSummary.name}</p>
+                  <h3 className="text-xl font-black text-slate-800">Shift Remittance</h3>
+                  <p className="text-[11px] font-bold text-slate-500 mt-1 uppercase tracking-widest flex items-center gap-1.5">
+                    <Bike className="h-3.5 w-3.5 text-orange-500" /> {selectedRiderSummary.name}
+                  </p>
                 </div>
+                <button onClick={() => setSelectedRiderSummary(null)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-colors cursor-pointer">
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              <button onClick={() => setSelectedRiderSummary(null)} className="p-2 hover:bg-pos-bg rounded-full text-pos-text-muted transition-colors cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {(() => {
-              const riderOrders = orders.filter(o => o.deliveryBoyId === selectedRiderSummary.id && o.status === 'DELIVERED');
-              const totalDeliveries = riderOrders.length;
-              const cashInHand = riderOrders.filter(o => o.paymentMethod === 'CASH').reduce((sum, o) => sum + (o.collectedAmount || o.grandTotal), 0);
-              const upiBank = riderOrders.filter(o => o.paymentMethod === 'UPI' || o.paymentMethod === 'CARD').reduce((sum, o) => sum + (o.collectedAmount || o.grandTotal), 0);
-
-              return (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-pos-bg p-3 rounded-2xl border border-pos-border text-center">
-                      <p className="text-[10px] font-bold text-pos-text-muted uppercase">Total Completed</p>
-                      <p className="text-2xl font-black text-pos-text mt-1">{totalDeliveries} <span className="text-xs font-normal">orders</span></p>
+              {(() => {
+                const riderOrders = orders.filter(o => o.deliveryBoyId === selectedRiderSummary.id && o.status === 'DELIVERED');
+                const cashInHand = riderOrders.filter(o => o.paymentMethod === 'CASH').reduce((s, o) => s + (o.collectedAmount || o.grandTotal), 0);
+                const upiTotal = riderOrders.filter(o => o.paymentMethod === 'UPI' || o.paymentMethod === 'CARD').reduce((s, o) => s + (o.collectedAmount || o.grandTotal), 0);
+                return (
+                  <div className="space-y-4">
+                    <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 space-y-2">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Today's Summary</p>
+                      {[['Cash Collected', `₹${cashInHand.toFixed(0)}`], ['UPI / Card', `₹${upiTotal.toFixed(0)}`], ['Total Trips', `${riderOrders.length}`]].map(([l, v]) => (
+                        <div key={l} className="flex justify-between items-center text-sm font-bold text-slate-600">
+                          <span>{l}</span><span className="text-slate-800">{v}</span>
+                        </div>
+                      ))}
                     </div>
-                    <div className="bg-pos-bg p-3 rounded-2xl border border-pos-border text-center">
-                      <p className="text-[10px] font-bold text-pos-text-muted uppercase">Online / Pre-Paid</p>
-                      <p className="text-2xl font-black text-indigo-500 mt-1">₹{upiBank.toFixed(0)}</p>
+                    <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-5 text-center">
+                      <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Cash to Remit</p>
+                      <p className="text-4xl font-black text-orange-600">₹{cashInHand.toFixed(0)}</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <button onClick={() => setSelectedRiderSummary(null)}
+                        className="flex-1 py-3.5 bg-white hover:bg-slate-50 text-slate-600 font-black text-sm rounded-2xl border border-slate-200 transition-colors shadow-sm cursor-pointer">
+                        Cancel
+                      </button>
+                      <button onClick={() => {
+                        showToast("Shift closed!", 'success');
+                        setSelectedRiderSummary(null);
+                      }} className="flex-[2] py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-sm rounded-2xl shadow-md shadow-orange-200 transition-all active:scale-95 cursor-pointer">
+                        Confirm Remittance
+                      </button>
                     </div>
                   </div>
+                );
+              })()}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                  <div className="bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-4 text-center space-y-1 shadow-md">
-                    <p className="text-xs font-black text-emerald-800 uppercase tracking-wider">💵 CASH TO COLLECT FROM RIDER</p>
-                    <p className="text-4xl font-extrabold text-emerald-600">₹{cashInHand.toFixed(0)}</p>
-                    <p className="text-[10px] text-emerald-700 font-bold">Physical cash rider collected from COD deliveries today</p>
+      {/* Payment Modal */}
+      <AnimatePresence>
+        {paymentModalOrder && (() => {
+          const due = paymentModalOrder.grandTotal;
+          const splitTotal = splitCash + splitUpi;
+          const splitBalanced = Math.abs(splitTotal - due) < 0.01;
+          const change = collectAmount > due ? collectAmount - due : 0;
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+              <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+                className="bg-white/95 backdrop-blur-2xl border border-white rounded-t-[32px] sm:rounded-[32px] p-6 w-full max-w-sm shadow-2xl space-y-5">
+
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xl font-black text-slate-800">Collect Payment</h3>
+                    <p className="text-[11px] font-bold text-slate-500 mt-1 uppercase tracking-widest">#{paymentModalOrder.orderNumber} · {paymentModalOrder.customerName}</p>
                   </div>
-
-                  <button
-                    onClick={() => {
-                      alert(`✅ Shift closed for ${selectedRiderSummary.name}!\n\nReconciled ₹${cashInHand.toFixed(0)} cash in hand and ₹${upiBank.toFixed(0)} online collections.`);
-                      setSelectedRiderSummary(null);
-                    }}
-                    className="w-full py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black rounded-xl text-sm shadow-md active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <CheckCircle2 className="h-5 w-5" /> Reconcile & Close Shift
+                  <button onClick={() => setPaymentModalOrder(null)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition-colors cursor-pointer">
+                    <X className="h-5 w-5" />
                   </button>
                 </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
 
-      {/* PAYMENT COLLECTION MODAL (POPUP) */}
-      {paymentModalOrder && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-pos-card border border-pos-border rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 text-pos-text">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-pos-border pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-emerald-100 rounded-2xl text-emerald-600">
-                  <Wallet className="h-6 w-6" />
+                {/* Amount due */}
+                <div className="flex justify-between items-center bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100 rounded-2xl p-4">
+                  <span className="text-sm font-black text-slate-600">Amount Due</span>
+                  <span className="text-2xl font-black text-orange-600">₹{due.toFixed(0)}</span>
                 </div>
-                <div>
-                  <h3 className="text-lg font-black leading-tight">Collect Delivery Payment</h3>
-                  <p className="text-xs font-bold text-pos-text-muted mt-0.5">Order #{paymentModalOrder.orderNumber} • 👤 {paymentModalOrder.customerName}</p>
+
+                {/* Mode selector */}
+                <div className="flex gap-2">
+                  {(['CASH', 'UPI', 'SPLIT'] as const).map(m => (
+                    <button key={m} onClick={() => { setPayMode(m); setSplitCash(0); setSplitUpi(0); setCollectAmount(due); }}
+                      className={`flex-1 py-2 rounded-xl text-xs font-black border transition-all cursor-pointer ${
+                        payMode === m
+                          ? m === 'CASH' ? 'bg-emerald-500 text-white border-emerald-500 shadow-md'
+                            : m === 'UPI' ? 'bg-orange-500 text-white border-orange-500 shadow-md'
+                            : 'bg-indigo-500 text-white border-indigo-500 shadow-md'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                      }`}>
+                      {m === 'CASH' ? '💵 Cash' : m === 'UPI' ? '📱 UPI' : '✂️ Split'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Single payment amount */}
+                {payMode !== 'SPLIT' && (
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Amount Received</p>
+                    <div className="flex items-center gap-2 bg-white border-2 border-orange-200 rounded-2xl px-4 py-3 shadow-sm focus-within:border-orange-400 focus-within:ring-4 focus-within:ring-orange-400/20 transition-all">
+                      <span className="text-xl font-black text-slate-400">₹</span>
+                      <input type="number"
+                        value={collectAmount === 0 ? '' : collectAmount}
+                        onChange={e => setCollectAmount(e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-full text-2xl font-black text-slate-800 bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                    </div>
+                    {change > 0 && (
+                      <div className="mt-2 flex justify-between text-xs font-black text-amber-600 bg-amber-50 px-4 py-2 rounded-xl border border-amber-100">
+                        <span>Change to return:</span>
+                        <span>₹{change.toFixed(0)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Split payment inputs */}
+                {payMode === 'SPLIT' && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Split Amounts</p>
+                    <div className="flex items-center gap-2 bg-emerald-50 border-2 border-emerald-200 rounded-2xl px-4 py-3 focus-within:border-emerald-400 transition-all">
+                      <Banknote className="h-5 w-5 text-emerald-500 shrink-0" />
+                      <input type="number" placeholder="Cash amount"
+                        value={splitCash === 0 ? '' : splitCash}
+                        onChange={e => setSplitCash(e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-full text-lg font-black text-slate-800 bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                      <span className="text-sm font-black text-emerald-600">₹</span>
+                    </div>
+                    <div className="flex items-center gap-2 bg-orange-50 border-2 border-orange-200 rounded-2xl px-4 py-3 focus-within:border-orange-400 transition-all">
+                      <QrCode className="h-5 w-5 text-orange-500 shrink-0" />
+                      <input type="number" placeholder="UPI amount"
+                        value={splitUpi === 0 ? '' : splitUpi}
+                        onChange={e => setSplitUpi(e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-full text-lg font-black text-slate-800 bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                      <span className="text-sm font-black text-orange-600">₹</span>
+                    </div>
+                    {/* Running balance */}
+                    <div className={`flex justify-between text-xs font-black px-4 py-2.5 rounded-xl border ${
+                      splitBalanced ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                      splitTotal > due ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                      'bg-slate-50 text-slate-500 border-slate-200'
+                    }`}>
+                      <span>{splitBalanced ? '✅ Balanced' : splitTotal > due ? '⚠️ Overpaid' : `Remaining: ₹${(due - splitTotal).toFixed(0)}`}</span>
+                      <span>{splitCash > 0 || splitUpi > 0 ? `₹${splitTotal.toFixed(0)} / ₹${due.toFixed(0)}` : `Total: ₹${due.toFixed(0)}`}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confirm button */}
+                {payMode !== 'SPLIT' ? (
+                  <button
+                    onClick={() => handleCollectPaymentSubmit(paymentModalOrder.id, payMode)}
+                    disabled={collectAmount <= 0}
+                    className={`w-full py-3.5 font-black text-sm rounded-2xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2 ${
+                      payMode === 'CASH'
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-emerald-200'
+                        : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-orange-200'
+                    }`}>
+                    {payMode === 'CASH' ? <Banknote className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
+                    Confirm {payMode === 'CASH' ? 'Cash' : 'UPI'} · ₹{collectAmount.toFixed(0)}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleCollectPaymentSubmit(paymentModalOrder.id, 'SPLIT', { cash: splitCash, upi: splitUpi })}
+                    disabled={!splitBalanced}
+                    className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-black text-sm rounded-2xl shadow-md shadow-indigo-200 transition-all active:scale-95 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2">
+                    <Check className="h-4 w-4" />
+                    Confirm Split — ₹{splitCash.toFixed(0)} Cash + ₹{splitUpi.toFixed(0)} UPI
+                  </button>
+                )}
+
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* ── Receipt / Complete & Print Modal ─────────────────── */}
+      <AnimatePresence>
+        {completedReceipt && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl flex flex-col items-center text-center overflow-hidden">
+
+              {/* Success header */}
+              <div className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-5 flex flex-col items-center">
+                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mb-2">
+                  <CheckCircle2 className="h-7 w-7 text-white" />
+                </div>
+                <h3 className="font-black text-lg text-white">Payment Collected!</h3>
+                <p className="text-xs font-bold text-emerald-100 mt-1">
+                  {completedReceipt.order.customerName} · #{completedReceipt.order.orderNumber}
+                </p>
+              </div>
+
+              {/* Thermal receipt preview */}
+              <div className="w-full px-6 py-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 font-mono text-xs text-left space-y-2 border-t-4 border-dashed">
+                  <div className="text-center border-b border-dashed border-slate-300 pb-2">
+                    <p className="font-extrabold text-sm uppercase">🛵 Delivery Receipt</p>
+                    <p className="text-[10px] text-slate-500">#{completedReceipt.order.orderNumber}</p>
+                    <p className="text-[10px] text-slate-500">{new Date().toLocaleString()}</p>
+                  </div>
+                  <div className="space-y-1 py-1 border-b border-dashed border-slate-300">
+                    {completedReceipt.order.items.slice(0, 4).map((item: any, i: number) => (
+                      <div key={i} className="flex justify-between font-bold text-slate-700">
+                        <span>{item.quantity}× {item.name}</span>
+                        <span>₹{(item.price * item.quantity).toFixed(0)}</span>
+                      </div>
+                    ))}
+                    {completedReceipt.order.items.length > 4 && (
+                      <p className="text-slate-400 text-[10px] italic">+{completedReceipt.order.items.length - 4} more...</p>
+                    )}
+                  </div>
+                  <div className="space-y-1 pt-1">
+                    <div className="flex justify-between font-black text-base border-t border-dashed border-slate-300 pt-1">
+                      <span>TOTAL:</span>
+                      <span>₹{completedReceipt.order.grandTotal.toFixed(0)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>Paid via:</span><span className="font-black">{completedReceipt.method.toUpperCase()}</span>
+                    </div>
+                    {completedReceipt.collected > completedReceipt.order.grandTotal && (
+                      <div className="flex justify-between text-[10px] text-amber-600 font-black">
+                        <span>Change returned:</span>
+                        <span>₹{(completedReceipt.collected - completedReceipt.order.grandTotal).toFixed(0)}</span>
+                      </div>
+                    )}
+                    <div className="text-center text-[10px] text-slate-400 pt-1 border-t border-dashed border-slate-200">
+                      <p>Delivered to: {completedReceipt.order.deliveryAddress || '—'}</p>
+                      <p className="mt-0.5">Thank you! 🙏</p>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <button onClick={() => setPaymentModalOrder(null)} className="p-2 hover:bg-pos-bg rounded-full text-pos-text-muted transition-colors cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
 
-            {/* Total Amount Payable Box */}
-            <div className="bg-pos-bg border border-pos-border rounded-2xl p-4 text-center space-y-1">
-              <p className="text-xs font-bold text-pos-text-muted uppercase">Total Amount to Collect</p>
-              <div className="flex items-center justify-center gap-1">
-                <span className="text-xl font-extrabold text-emerald-600">₹</span>
-                <input
-                  type="number"
-                  value={collectAmount}
-                  onChange={e => setCollectAmount(Number(e.target.value))}
-                  className="text-3xl font-black text-emerald-600 bg-transparent text-center w-36 focus:outline-none border-b-2 border-emerald-500 pb-0.5"
-                />
-              </div>
-              <p className="text-[10px] text-pos-text-muted">Editable if customer paid tip or partial</p>
-            </div>
-
-            {/* Payment Methods */}
-            <div className="space-y-2">
-              <p className="text-xs font-extrabold text-pos-text-muted uppercase tracking-wider">Select Payment Mode:</p>
-              <div className="grid grid-cols-3 gap-3">
+              {/* Action buttons */}
+              <div className="px-6 pb-6 w-full grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => handleCollectPaymentSubmit(paymentModalOrder.id, 'CASH')}
-                  className="flex flex-col items-center justify-center gap-2 py-4 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer"
-                >
-                  <Banknote className="h-6 w-6" />
-                  <span>Cash (₹)</span>
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-xs rounded-2xl shadow-md shadow-emerald-200 transition-all active:scale-95 cursor-pointer">
+                  <Printer className="h-4 w-4" /> Confirm & Print
                 </button>
                 <button
-                  onClick={() => handleCollectPaymentSubmit(paymentModalOrder.id, 'UPI')}
-                  className="flex flex-col items-center justify-center gap-2 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer"
-                >
-                  <QrCode className="h-6 w-6" />
-                  <span>UPI / QR</span>
+                  onClick={() => {
+                    if (!completedReceipt.order.customerPhone) return;
+                    window.open(`https://wa.me/${completedReceipt.order.customerPhone}?text=Thank you ${completedReceipt.order.customerName}! Your delivery order #${completedReceipt.order.orderNumber} of ₹${completedReceipt.order.grandTotal.toFixed(0)} has been delivered. Thank you for ordering from us!`, '_blank');
+                  }}
+                  disabled={!completedReceipt.order.customerPhone}
+                  className="flex items-center justify-center gap-2 py-3 bg-white hover:bg-slate-50 text-slate-700 font-black text-xs rounded-2xl border border-slate-200 shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                  <Share2 className="h-4 w-4" /> WhatsApp
                 </button>
-                <button
-                  onClick={() => handleCollectPaymentSubmit(paymentModalOrder.id, 'CARD')}
-                  className="flex flex-col items-center justify-center gap-2 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer"
-                >
-                  <CreditCard className="h-6 w-6" />
-                  <span>Card / POS</span>
+                <button onClick={() => setCompletedReceipt(null)}
+                  className="col-span-2 py-3 text-slate-500 font-black text-xs hover:text-slate-700 cursor-pointer transition-colors">
+                  Close
                 </button>
               </div>
-            </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            {/* Cancel Button */}
-            <button
-              onClick={() => setPaymentModalOrder(null)}
-              className="w-full py-2.5 bg-pos-bg hover:bg-pos-sidebar border border-pos-border rounded-xl font-bold text-xs text-pos-text-muted transition-colors cursor-pointer"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* RETURN & REFUND STUDIO MODAL */}
+      {/* ── Return Modal ──────────────────────────────────────── */}
       <ReturnOrderModal
         isOpen={!!returnModalOrder}
         onClose={() => setReturnModalOrder(null)}
@@ -640,14 +928,32 @@ export const DeliveryDispatchScreen: React.FC = () => {
           grandTotal: returnModalOrder.grandTotal,
           paymentMethod: returnModalOrder.paymentMethod
         } : null}
-        onConfirmReturn={(returnedItems, action, reason, refundDest, isFullOrder) => {
+        onConfirmReturn={() => {
           if (returnModalOrder) {
             useDeliveryStore.getState().updateOrderStatus(returnModalOrder.id, 'CANCELLED');
+            showToast('Order returned & cancelled.', 'info');
           }
         }}
       />
+
+      {/* ── Toast ─────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100]">
+            <div className={`flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl border font-black text-xs sm:text-sm ${
+              toast.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+              toast.type === 'error' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+              'bg-orange-50 text-orange-700 border-orange-200'
+            }`}>
+              {toast.type === 'success' && <CheckCircle2 className="h-4 w-4" />}
+              {toast.type === 'error' && <X className="h-4 w-4" />}
+              {toast.type === 'info' && <RefreshCw className="h-4 w-4" />}
+              {toast.message}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
-
-

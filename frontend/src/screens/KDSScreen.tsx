@@ -4,10 +4,11 @@ import { useKdsStore } from '../store/useKdsStore';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type ViewMode = 'GRID' | 'COMPACT' | 'KANBAN';
+type SLAFilter = 'ALL' | 'NORMAL' | 'WARNING' | 'URGENT';
 
 export const KDSScreen: React.FC = () => {
   const { tickets, updateTicketStatus, updateElapsedTimes } = useKdsStore();
-  const [slaFilter, setSlaFilter] = useState<'ALL' | 'NORMAL' | 'WARNING' | 'URGENT'>('ALL');
+  const [slaFilter, setSlaFilter] = useState<SLAFilter>('ALL');
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('GRID');
 
@@ -104,18 +105,18 @@ export const KDSScreen: React.FC = () => {
     >
       {/* Card Header */}
       <div>
-        <div className={`${isCompact ? 'p-3' : 'p-4'} flex items-center justify-between gap-2 ${getSlaHeaderStyle(
+        <div className={`${isCompact ? 'p-2 sm:p-3' : 'p-3 sm:p-4'} flex items-center justify-between gap-2 ${getSlaHeaderStyle(
           ticket.elapsedMinutes,
           ticket.status,
           ticket.orderType
         )}`}>
-          <div className="flex items-center gap-3">
-            <span className={`${isCompact ? 'text-xl px-2.5 py-1' : 'text-3xl px-3.5 py-1.5'} font-black rounded-2xl bg-white/60 text-slate-800 tracking-tight shadow-sm border border-white/50`}>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className={`${isCompact ? 'text-lg sm:text-xl px-2 sm:px-2.5 py-1' : 'text-2xl sm:text-3xl px-2.5 sm:px-3.5 py-1.5'} font-black rounded-2xl bg-white/60 text-slate-800 tracking-tight shadow-sm border border-white/50`}>
               {ticket.tableNumber}
             </span>
             <div>
-              <div className="flex items-center gap-2 mb-0.5">
-                <h4 className={`font-black uppercase text-slate-800 tracking-tight ${isCompact ? 'text-sm' : 'text-base'}`}>{ticket.orderNumber}</h4>
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                <h4 className={`font-black uppercase text-slate-800 tracking-tight ${isCompact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'}`}>{ticket.orderNumber}</h4>
                 {ticket.orderType === 'PARCEL' && (
                   <span className={`flex items-center gap-1 font-black bg-white/60 rounded-full uppercase tracking-wide text-slate-700 ${isCompact ? 'text-[8px] px-1.5 py-0.5' : 'text-[10px] px-2 py-0.5'}`}>
                     <Package className={isCompact ? 'h-2 w-2' : 'h-3 w-3'} /> Parcel
@@ -127,14 +128,15 @@ export const KDSScreen: React.FC = () => {
                   </span>
                 )}
               </div>
-              <p className={`${isCompact ? 'text-[10px]' : 'text-xs'} font-bold text-slate-500`}>
-                {ticket.customerName ? `👤 ${ticket.customerName}` : `Fired ${new Date(ticket.firedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+              <p className={`${isCompact ? 'text-[9px] sm:text-[10px]' : 'text-[10px] sm:text-xs'} font-bold text-slate-500`}>
+                {ticket.customerName && <span className="mr-2">👤 {ticket.customerName}</span>}
+                <span>Fired {new Date(ticket.firedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </p>
             </div>
           </div>
 
           <span
-            className={`${isCompact ? 'text-sm px-2 py-1' : 'text-lg px-3 py-1.5'} rounded-2xl flex items-center gap-1.5 ${getSlaBadgeStyle(
+            className={`${isCompact ? 'text-xs sm:text-sm px-1.5 sm:px-2 py-1' : 'text-sm sm:text-lg px-2.5 sm:px-3 py-1 sm:py-1.5'} rounded-2xl flex items-center gap-1 sm:gap-1.5 ${getSlaBadgeStyle(
               ticket.elapsedMinutes,
               ticket.status
             )}`}
@@ -145,19 +147,19 @@ export const KDSScreen: React.FC = () => {
         </div>
 
         {/* Food Items List */}
-        <div className={`${isCompact ? 'p-3 space-y-2' : 'p-4 space-y-3.5'} max-h-[300px] overflow-y-auto bg-transparent`}>
+        <div className={`${isCompact ? 'p-2 sm:p-3 space-y-1.5 sm:space-y-2' : 'p-3 sm:p-4 space-y-2.5 sm:space-y-3.5'} max-h-[250px] sm:max-h-[300px] overflow-y-auto bg-transparent`}>
           {ticket.items.map((item: any, idx: number) => (
-            <div key={idx} className={`flex items-start justify-between border-b border-kv-border last:border-none last:pb-0 ${isCompact ? 'pb-2' : 'pb-3'}`}>
-              <div className="flex items-start gap-3 w-full">
-                <span className={`${isCompact ? 'text-sm px-2 py-0.5' : 'text-base px-2.5 py-1'} font-black rounded-xl bg-white/60 text-slate-800 shadow-sm border border-white/50 shrink-0 mt-0.5`}>
+            <div key={idx} className={`flex items-start justify-between border-b border-slate-200/50 last:border-none last:pb-0 ${isCompact ? 'pb-1.5 sm:pb-2' : 'pb-2 sm:pb-3'}`}>
+              <div className="flex items-start gap-2 sm:gap-3 w-full">
+                <span className={`${isCompact ? 'text-xs sm:text-sm px-1.5 sm:px-2 py-0.5' : 'text-sm sm:text-base px-2 sm:px-2.5 py-1'} font-black rounded-xl bg-white/60 text-slate-800 shadow-sm border border-white/50 shrink-0 mt-0.5`}>
                   {item.quantity}x
                 </span>
-                <div className="flex-1">
-                  <span className={`font-bold text-slate-800 leading-snug block tracking-tight ${isCompact ? 'text-sm' : 'text-base'}`}>{item.name}</span>
+                <div className="flex-1 min-w-0">
+                  <span className={`font-bold text-slate-800 leading-snug block tracking-tight truncate whitespace-normal ${isCompact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'}`}>{item.name}</span>
                   {item.notes && (
-                    <div className={`font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-200 rounded-xl flex items-center shadow-sm ${isCompact ? 'text-[10px] px-2 py-1 mt-1 gap-1' : 'text-sm px-3 py-1.5 mt-2 gap-2'}`}>
+                    <div className={`font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-200 rounded-xl flex items-center shadow-sm whitespace-normal break-words ${isCompact ? 'text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 sm:py-1 mt-1 gap-1' : 'text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 mt-1 sm:mt-2 gap-1 sm:gap-2'}`}>
                       <AlertTriangle className={`${isCompact ? 'h-3 w-3' : 'h-4 w-4'} text-amber-600 shrink-0`} />
-                      <span>{item.notes}</span>
+                      <span className="flex-1">{item.notes}</span>
                     </div>
                   )}
                 </div>
@@ -168,11 +170,11 @@ export const KDSScreen: React.FC = () => {
       </div>
 
       {/* Action Footer Buttons */}
-      <div className={`p-3 bg-white/40 border-t border-black/5 ${isCompact ? 'flex gap-2' : ''}`}>
+      <div className={`p-2 sm:p-3 bg-white/40 border-t border-black/5 ${isCompact ? 'flex gap-2' : ''}`}>
         {ticket.status === 'RECEIVED' && (
           <button
             onClick={() => handleStatusProgression(ticket.id, 'COOKING')}
-            className={`w-full py-3 bg-amber-400 hover:bg-amber-500 text-amber-950 font-black text-base uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer border border-amber-300/50 ${isCompact ? 'py-2 text-xs' : ''}`}
+            className={`w-full py-4 sm:py-3 bg-amber-400 hover:bg-amber-500 text-amber-950 font-black text-sm sm:text-base uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer border border-amber-300/50 ${isCompact ? 'py-3 sm:py-2 text-xs' : ''}`}
           >
             <Flame className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />
             <span>Start Cooking</span>
@@ -181,7 +183,7 @@ export const KDSScreen: React.FC = () => {
         {ticket.status === 'COOKING' && (
           <button
             onClick={() => handleStatusProgression(ticket.id, 'READY')}
-            className={`w-full bg-[#b5ef85] hover:bg-[#a2db74] text-[#0d212b] font-black uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer border border-[#b5ef85]/50 ${isCompact ? 'py-2 text-xs' : 'py-4 text-base'}`}
+            className={`w-full bg-[#b5ef85] hover:bg-[#a2db74] text-[#0d212b] font-black uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer border border-[#b5ef85]/50 ${isCompact ? 'py-3 sm:py-2 text-xs' : 'py-4 text-sm sm:text-base'}`}
           >
             <ChefHat className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />
             <span>Mark Ready</span>
@@ -190,7 +192,7 @@ export const KDSScreen: React.FC = () => {
         {ticket.status === 'READY' && (
           <button
             onClick={() => handleStatusProgression(ticket.id, 'SERVED')}
-            className={`w-full bg-slate-800 hover:bg-slate-700 text-white font-black uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer ${isCompact ? 'py-2 text-xs' : 'py-4 text-base'}`}
+            className={`w-full bg-slate-800 hover:bg-slate-700 text-white font-black uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer ${isCompact ? 'py-3 sm:py-2 text-xs' : 'py-4 text-sm sm:text-base'}`}
           >
             <CheckCircle2 className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />
             <span>Mark Served</span>
@@ -201,57 +203,79 @@ export const KDSScreen: React.FC = () => {
   );
 
   return (
-    <div className="p-6 h-[calc(100vh-64px)] overflow-y-auto bg-pos-bg space-y-6 text-pos-text transition-colors duration-300">
+    <div className="p-2 sm:p-3 xl:p-6 h-[calc(100vh-64px)] overflow-y-auto bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] space-y-3 sm:space-y-4 xl:space-y-6 text-slate-800 transition-colors duration-300 pb-24 sm:pb-28 xl:pb-6 relative">
       {/* KDS Header Bar */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-pos-sidebar p-5 rounded-2xl border border-pos-border shadow-glass transition-colors duration-300">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-teal-100 text-teal-800 rounded-xl border border-teal-300">
-            <Flame className="h-6 w-6 text-pos-accent" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/70 backdrop-blur-xl p-3 sm:p-4 xl:p-5 rounded-3xl border border-white/60 shadow-lg transition-colors duration-300">
+        <div className="flex items-center justify-between w-full sm:w-auto gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 sm:p-2.5 xl:p-3 bg-teal-100 text-teal-800 rounded-xl border border-teal-300 shrink-0">
+              <Flame className="h-5 w-5 xl:h-6 xl:w-6 text-pos-accent" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base xl:text-xl font-extrabold text-slate-800 flex items-center gap-2 flex-wrap">
+                <span>KDS Live</span>
+                <span className="text-[9px] sm:text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300">
+                  ● Local Cache
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">
+                High-visibility live ticket routing for kitchen staff.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-extrabold text-pos-text flex items-center gap-2">
-              <span>Kitchen Display System (KDS)</span>
-              <span
-                className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300"
-              >
-                ● Live Local Cache
-              </span>
-            </h2>
-            <p className="text-xs text-pos-text-muted mt-0.5">
-              High-visibility live ticket routing for kitchen staff.
-            </p>
-          </div>
+          
+          {/* Audio toggle on mobile header right */}
+          <button
+            onClick={() => {
+              setAudioEnabled(!audioEnabled);
+              if (!audioEnabled) playReadyChime();
+            }}
+            className={`sm:hidden flex items-center justify-center p-2 rounded-xl text-xs font-extrabold border transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 ${
+              audioEnabled
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                : 'bg-white/60 backdrop-blur-md text-slate-500 border-white/50 hover:bg-white/80'
+            }`}
+            title="Toggle Web Audio Bell Chime"
+          >
+            <Volume2 className="h-5 w-5" />
+          </button>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* View Toggles */}
-          <div className="flex items-center gap-1 bg-pos-card p-1 rounded-xl border border-pos-border shadow-2xs">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
+          {/* View Toggles (Desktop only) */}
+          <div className="hidden sm:flex items-center bg-white/60 backdrop-blur-md p-1 rounded-2xl border border-white/50 shadow-sm shrink-0">
             <button
               onClick={() => setViewMode('GRID')}
-              className={`p-2 rounded-lg transition-all cursor-pointer ${viewMode === 'GRID' ? 'bg-pos-accent text-white shadow-sm' : 'text-pos-text-muted hover:text-pos-text hover:bg-pos-card-hover'}`}
-              title="Grid View (Default)"
+              className={`relative px-3 py-2 rounded-xl text-sm font-bold transition-all z-10 cursor-pointer ${viewMode === 'GRID' ? 'text-white' : 'text-slate-500 hover:text-slate-800'}`}
             >
+              {viewMode === 'GRID' && (
+                <motion.div layoutId="kdsViewTabDesktop" className="absolute inset-0 bg-[#8cc63f] rounded-xl shadow-md -z-10" transition={{ type: "spring", stiffness: 500, damping: 30 }} />
+              )}
               <LayoutGrid className="h-4 w-4" />
             </button>
             <button
               onClick={() => setViewMode('COMPACT')}
-              className={`p-2 rounded-lg transition-all cursor-pointer ${viewMode === 'COMPACT' ? 'bg-pos-accent text-white shadow-sm' : 'text-pos-text-muted hover:text-pos-text hover:bg-pos-card-hover'}`}
-              title="Compact View"
+              className={`relative px-3 py-2 rounded-xl text-sm font-bold transition-all z-10 cursor-pointer ${viewMode === 'COMPACT' ? 'text-white' : 'text-slate-500 hover:text-slate-800'}`}
             >
+              {viewMode === 'COMPACT' && (
+                <motion.div layoutId="kdsViewTabDesktop" className="absolute inset-0 bg-[#8cc63f] rounded-xl shadow-md -z-10" transition={{ type: "spring", stiffness: 500, damping: 30 }} />
+              )}
               <LayoutList className="h-4 w-4" />
             </button>
             <button
               onClick={() => setViewMode('KANBAN')}
-              className={`p-2 rounded-lg transition-all cursor-pointer ${viewMode === 'KANBAN' ? 'bg-pos-accent text-white shadow-sm' : 'text-pos-text-muted hover:text-pos-text hover:bg-pos-card-hover'}`}
-              title="Kanban Board View"
+              className={`relative px-3 py-2 rounded-xl text-sm font-bold transition-all z-10 cursor-pointer ${viewMode === 'KANBAN' ? 'text-white' : 'text-slate-500 hover:text-slate-800'}`}
             >
+              {viewMode === 'KANBAN' && (
+                <motion.div layoutId="kdsViewTabDesktop" className="absolute inset-0 bg-[#8cc63f] rounded-xl shadow-md -z-10" transition={{ type: "spring", stiffness: 500, damping: 30 }} />
+              )}
               <Columns className="h-4 w-4" />
             </button>
           </div>
 
-          {/* SLA Filter Bar */}
-          <div className="flex items-center gap-1 bg-pos-card p-1 rounded-xl border border-pos-border shadow-2xs">
-            <span className="text-xs font-bold text-pos-text-muted px-2 hidden sm:flex items-center gap-1">
+          {/* SLA Filter Bar (Scrollable on mobile) */}
+          <div className="flex-1 sm:flex-none flex items-center gap-1 bg-white/60 backdrop-blur-md p-1 rounded-2xl border border-white/50 shadow-sm overflow-x-auto no-scrollbar snap-x">
+            <span className="text-xs font-bold text-slate-500 px-2 hidden lg:flex items-center gap-1 shrink-0">
               <Filter className="h-3 w-3 text-pos-accent" />
               <span>SLA:</span>
             </span>
@@ -259,43 +283,51 @@ export const KDSScreen: React.FC = () => {
               <button
                 key={flt}
                 onClick={() => setSlaFilter(flt)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`relative px-3 py-1.5 sm:px-2.5 xl:px-3 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer z-10 shrink-0 snap-center ${
                   slaFilter === flt
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm scale-[1.02]'
-                    : 'text-pos-text-muted hover:text-pos-text hover:bg-pos-card-hover'
+                    ? 'text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
+                {slaFilter === flt && (
+                  <motion.div 
+                    layoutId="kdsSlaTab" 
+                    className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl shadow-md -z-10" 
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }} 
+                  />
+                )}
                 {flt === 'ALL' ? `All (${tickets.length})` : flt}
               </button>
             ))}
           </div>
 
+          {/* Audio toggle on desktop */}
           <button
             onClick={() => {
               setAudioEnabled(!audioEnabled);
               if (!audioEnabled) playReadyChime();
             }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold border transition-all shadow-2xs active:scale-95 cursor-pointer ${
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-extrabold border transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 ${
               audioEnabled
                 ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                : 'bg-pos-card text-pos-text-muted border-pos-border'
+                : 'bg-white/60 backdrop-blur-md text-slate-500 border-white/50 hover:bg-white/80'
             }`}
             title="Toggle Web Audio Bell Chime"
           >
             <Volume2 className="h-4 w-4" />
-            <span className="hidden sm:inline">{audioEnabled ? 'Chime ON' : 'Muted'}</span>
+            <span>{audioEnabled ? 'Chime ON' : 'Muted'}</span>
           </button>
         </div>
       </div>
 
       {/* Tickets Display Container */}
       {filteredTickets.length === 0 ? (
-        <div className="h-80 flex flex-col items-center justify-center text-center p-8 bg-pos-card rounded-2xl border border-pos-border shadow-2xs">
-          <div className="w-16 h-16 rounded-2xl bg-pos-bg border border-pos-border flex items-center justify-center mb-3">
-            <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+        <div className="h-64 sm:h-80 flex flex-col items-center justify-center text-center p-6 sm:p-8 bg-white/70 backdrop-blur-xl rounded-3xl border border-white/60 shadow-lg">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mb-3">
+            <CheckCircle2 className="h-6 w-6 sm:h-8 sm:w-8 text-emerald-500" />
           </div>
-          <h3 className="text-xl font-extrabold text-pos-text">No Tickets!</h3>
-          <p className="text-sm text-pos-text-muted mt-1 max-w-sm font-medium">
+          <h3 className="text-lg sm:text-xl font-extrabold text-slate-800">No Tickets!</h3>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-sm font-medium">
             {slaFilter === 'ALL'
               ? 'All orders complete & served! New Kitchen Order Tickets (KOT) will appear here instantly.'
               : `There are currently no tickets matching the "${slaFilter}" SLA filter criteria.`}
@@ -309,15 +341,15 @@ export const KDSScreen: React.FC = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full min-h-[60vh]"
+              className="flex sm:grid sm:grid-cols-3 gap-4 sm:gap-6 h-full min-h-[60vh] overflow-x-auto sm:overflow-visible snap-x snap-mandatory pb-4"
             >
               {/* Kanban Column: Received */}
-              <div className="bg-kv-creme/50 rounded-2xl p-4 border border-kv-border flex flex-col">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-1.5 bg-kv-surface border border-kv-border rounded-lg"><Package className="h-5 w-5 text-kv-dark" /></div>
-                  <h3 className="text-lg font-black text-kv-dark">Received ({sortedTickets.filter(t => t.status === 'RECEIVED').length})</h3>
+              <div className="min-w-[85vw] sm:min-w-0 snap-center bg-white/40 backdrop-blur-md rounded-3xl p-3 sm:p-4 border border-white/50 flex flex-col shadow-sm">
+                <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                  <div className="p-1.5 bg-white/70 border border-white/60 rounded-xl"><Package className="h-4 w-4 sm:h-5 sm:w-5 text-slate-800" /></div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-800">Received ({sortedTickets.filter(t => t.status === 'RECEIVED').length})</h3>
                 </div>
-                <div className="flex flex-col gap-4 overflow-y-auto flex-1 p-1">
+                <div className="flex flex-col gap-3 sm:gap-4 overflow-y-auto flex-1 p-1">
                   <AnimatePresence>
                     {sortedTickets.filter(t => t.status === 'RECEIVED').map(t => renderTicketCard(t, true))}
                   </AnimatePresence>
@@ -325,12 +357,12 @@ export const KDSScreen: React.FC = () => {
               </div>
               
               {/* Kanban Column: Cooking */}
-              <div className="bg-kv-creme/50 rounded-2xl p-4 border border-kv-border flex flex-col">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-1.5 bg-kv-surface border border-kv-border text-amber-600 rounded-lg"><Flame className="h-5 w-5" /></div>
-                  <h3 className="text-lg font-black text-kv-dark">Cooking ({sortedTickets.filter(t => t.status === 'COOKING').length})</h3>
+              <div className="min-w-[85vw] sm:min-w-0 snap-center bg-white/40 backdrop-blur-md rounded-3xl p-3 sm:p-4 border border-white/50 flex flex-col shadow-sm">
+                <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                  <div className="p-1.5 bg-white/70 border border-white/60 text-amber-600 rounded-xl"><Flame className="h-4 w-4 sm:h-5 sm:w-5" /></div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-800">Cooking ({sortedTickets.filter(t => t.status === 'COOKING').length})</h3>
                 </div>
-                <div className="flex flex-col gap-4 overflow-y-auto flex-1 p-1">
+                <div className="flex flex-col gap-3 sm:gap-4 overflow-y-auto flex-1 p-1">
                   <AnimatePresence>
                     {sortedTickets.filter(t => t.status === 'COOKING').map(t => renderTicketCard(t, true))}
                   </AnimatePresence>
@@ -338,12 +370,12 @@ export const KDSScreen: React.FC = () => {
               </div>
 
               {/* Kanban Column: Ready */}
-              <div className="bg-kv-creme/50 rounded-2xl p-4 border border-kv-border flex flex-col">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-1.5 bg-kv-primary/10 border border-kv-primary/30 text-kv-primary rounded-lg"><ChefHat className="h-5 w-5" /></div>
-                  <h3 className="text-lg font-black text-kv-dark">Ready for Pickup ({sortedTickets.filter(t => t.status === 'READY').length})</h3>
+              <div className="min-w-[85vw] sm:min-w-0 snap-center bg-white/40 backdrop-blur-md rounded-3xl p-3 sm:p-4 border border-white/50 flex flex-col shadow-sm">
+                <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                  <div className="p-1.5 bg-[#b5ef85]/40 border border-[#b5ef85] text-[#0d212b] rounded-xl"><ChefHat className="h-4 w-4 sm:h-5 sm:w-5" /></div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-800">Ready for Pickup ({sortedTickets.filter(t => t.status === 'READY').length})</h3>
                 </div>
-                <div className="flex flex-col gap-4 overflow-y-auto flex-1 p-1">
+                <div className="flex flex-col gap-3 sm:gap-4 overflow-y-auto flex-1 p-1">
                   <AnimatePresence>
                     {sortedTickets.filter(t => t.status === 'READY').map(t => renderTicketCard(t, true))}
                   </AnimatePresence>
@@ -357,7 +389,7 @@ export const KDSScreen: React.FC = () => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className={`grid gap-5 ${viewMode === 'COMPACT' ? 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}
+              className={`grid gap-3 sm:gap-4 xl:gap-5 ${viewMode === 'COMPACT' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}
             >
               <AnimatePresence>
                 {sortedTickets.map((ticket) => renderTicketCard(ticket, viewMode === 'COMPACT'))}
@@ -366,6 +398,44 @@ export const KDSScreen: React.FC = () => {
           )}
         </AnimatePresence>
       )}
+
+      {/* MOBILE STICKY BOTTOM BAR FOR VIEW TOGGLES */}
+      <div className="sm:hidden fixed bottom-20 left-4 right-4 z-40 flex flex-col gap-2">
+        <div className="flex bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-xl border border-white/60 w-full animate-in slide-in-from-bottom-4">
+          <button
+            onClick={() => setViewMode('GRID')}
+            className={`flex-1 relative py-3 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 flex items-center justify-center gap-2 ${viewMode === 'GRID' ? 'text-white' : 'text-slate-500'}`}
+          >
+            {viewMode === 'GRID' && (
+              <motion.div layoutId="kdsViewTabMobile" className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10" transition={{ type: "spring", stiffness: 500, damping: 30 }} />
+            )}
+            <LayoutGrid className="w-4 h-4" />
+            <span>Grid</span>
+          </button>
+          
+          <button
+            onClick={() => setViewMode('COMPACT')}
+            className={`flex-1 relative py-3 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 flex items-center justify-center gap-2 ${viewMode === 'COMPACT' ? 'text-white' : 'text-slate-500'}`}
+          >
+            {viewMode === 'COMPACT' && (
+              <motion.div layoutId="kdsViewTabMobile" className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10" transition={{ type: "spring", stiffness: 500, damping: 30 }} />
+            )}
+            <LayoutList className="w-4 h-4" />
+            <span>List</span>
+          </button>
+
+          <button
+            onClick={() => setViewMode('KANBAN')}
+            className={`flex-1 relative py-3 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 flex items-center justify-center gap-2 ${viewMode === 'KANBAN' ? 'text-white' : 'text-slate-500'}`}
+          >
+            {viewMode === 'KANBAN' && (
+              <motion.div layoutId="kdsViewTabMobile" className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10" transition={{ type: "spring", stiffness: 500, damping: 30 }} />
+            )}
+            <Columns className="w-4 h-4" />
+            <span>Kanban</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
