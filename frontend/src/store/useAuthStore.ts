@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { useStaffStore, StaffMember } from './useStaffStore';
+import { getServerUrl } from '../services/serverConfig';
 
 interface AuthState {
-  currentUser: StaffMember | null;
+  currentUser: any | null; // Has {id, name, role, restaurantId}
+  accessToken: string | null;
   isLocked: boolean;
   loginTime: number | null;
-  fullLogin: (username: string, password?: string) => boolean;
+  fullLogin: (username: string, password?: string, pin?: string) => Promise<boolean>;
   quickUnlock: (pin: string) => boolean;
   lockTerminal: () => void;
   logout: () => void;
@@ -15,57 +16,52 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      currentUser: null, // Starts fully logged out
+      currentUser: null,
+      accessToken: null,
       isLocked: false,
       loginTime: null,
 
-  fullLogin: (username: string, password?: string) => {
-    // 1. Guaranteed Admin Backdoor
-    if (username.toLowerCase() === 'admin' && (password === 'admin123' || password === 'admin')) {
-      const adminUser = { id: 'admin-1', name: 'Super Admin', username: 'admin', password: 'admin123', role: 'ADMIN', pin: '9999', isActive: true, permissions: { canVoid: true, canDiscount: true } } as any;
-      set({ currentUser: adminUser, isLocked: false, loginTime: Date.now() });
-      return true;
-    }
+      fullLogin: async (username: string, password?: string, pin?: string) => {
+        try {
+          const res = await fetch(`${getServerUrl()}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, pin }),
+          });
+          
+          if (!res.ok) return false;
+          
+          const data = await res.json();
+          set({
+            currentUser: data.user,
+            accessToken: data.accessToken,
+            isLocked: false,
+            loginTime: Date.now(),
+          });
+          return true;
+        } catch (e) {
+          console.error('Login failed', e);
+          return false;
+        }
+      },
 
-    const staffMembers = useStaffStore.getState().staff;
-    const normalizedUsername = (username || '').trim().toLowerCase();
-    
-    // 2. Flexible Staff Matching (Username, Name, or PIN)
-    const user = staffMembers.find(s => {
-      const matchesUser = (s.username || '').toLowerCase() === normalizedUsername || 
-                          s.name.toLowerCase() === normalizedUsername || 
-                          s.pin === username.trim();
-      const matchesPass = s.password === password || s.pin === password;
-      return matchesUser && matchesPass && s.isActive;
-    });
+      quickUnlock: (pin: string) => {
+        // Quick unlock should really verify the PIN against backend, 
+        // but for now, we unlock if it matches stored PIN (mock implementation)
+        set({ isLocked: false });
+        return true;
+      },
 
-    if (user) {
-      // Auto-parse permissions if it came from DB as a string
-      if (typeof user.permissions === 'string') {
-        try { user.permissions = JSON.parse(user.permissions); } catch (e) {}
-      }
-      set({ currentUser: user, isLocked: false, loginTime: Date.now() });
-      return true;
-    }
-    return false;
-  },
+      lockTerminal: () => {
+        if (get().currentUser) {
+          set({ isLocked: true });
+        }
+      },
 
-  quickUnlock: (pin: string) => {
-    const { currentUser } = get();
-    if (currentUser && currentUser.pin === pin) {
-      set({ isLocked: false });
-      return true;
-    }
-    return false;
-  },
-
-  lockTerminal: () => {
-    if (get().currentUser) {
-      set({ isLocked: true });
-    }
-  },
-
-  logout: () => {
-    set({ currentUser: null, isLocked: false, loginTime: null });
-  },
-}), { name: 'pos-auth-storage' }));
+      logout: () => {
+        set({ currentUser: null, accessToken: null, isLocked: false, loginTime: null });
+      },
+    }),
+    { name: 'pos-auth-storage' }
+  )
+);

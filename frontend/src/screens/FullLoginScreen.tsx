@@ -34,28 +34,25 @@ export const FullLoginScreen: React.FC = () => {
     setTimeout(() => setIsShaking(false), 500);
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(false);
     setDebugInfo('');
     setIsLoading(true);
 
-    // Simulate network request for UI feedback
-    setTimeout(() => {
-      try {
-        const uTrimmed = username.trim();
-        const pTrimmed = password.trim();
-        const success = fullLogin(uTrimmed, pTrimmed);
-        if (!success) {
-          triggerErrorShake();
-          setIsLoading(false);
-        }
-      } catch (err: any) {
-        setDebugInfo(`ERROR: ${err?.message || String(err)}`);
+    try {
+      const uTrimmed = username.trim();
+      const pTrimmed = password.trim();
+      const success = await fullLogin(uTrimmed, pTrimmed);
+      if (!success) {
         triggerErrorShake();
-        setIsLoading(false);
       }
-    }, 800);
+    } catch (err: any) {
+      setDebugInfo(`ERROR: ${err?.message || String(err)}`);
+      triggerErrorShake();
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

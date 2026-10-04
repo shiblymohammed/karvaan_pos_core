@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { KdsGateway } from '../kds/kds.gateway'; // To broadcast settings updates
 
@@ -9,10 +9,13 @@ export class SettingsService {
     private gateway: KdsGateway
   ) {}
 
-  async getSettings() {
+  async getSettings(restaurantId: string) {
+    if (!restaurantId) throw new UnauthorizedException('No restaurant context');
+
     const setting = await this.prisma.systemSetting.findUnique({
-      where: { id: 'singleton' },
+      where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } },
     });
+    
     if (!setting) {
       return {};
     }
@@ -23,20 +26,22 @@ export class SettingsService {
     }
   }
 
-  async updateSettings(data: any) {
+  async updateSettings(data: any, restaurantId: string) {
+    if (!restaurantId) throw new UnauthorizedException('No restaurant context');
+
     // Get existing settings to merge with new
-    const existing = await this.getSettings();
+    const existing = await this.getSettings(restaurantId);
     const merged = { ...existing, ...data };
     
     const setting = await this.prisma.systemSetting.upsert({
-      where: { id: 'singleton' },
+      where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } },
       update: { data: JSON.stringify(merged) },
-      create: { id: 'singleton', data: JSON.stringify(merged) },
+      create: { settingKey: 'general', data: JSON.stringify(merged), restaurantId },
     });
     
     const finalSettings = JSON.parse(setting.data);
     
-    // Broadcast the update so all terminals sync
+    // Broadcast the update so all terminals sync (Room-based broadcast needed later)
     this.gateway.server.emit('settings_updated', finalSettings);
     
     return finalSettings;

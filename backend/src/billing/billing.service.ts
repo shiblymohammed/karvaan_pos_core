@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { KdsGateway } from '../kds/kds.gateway';
 
@@ -15,14 +15,16 @@ export class BillingService {
     waiterId?: string;
     customerId?: string;
     notes?: string;
+    restaurantId: string;
     items: Array<{ productId: string; quantity: number; notes?: string }>;
   }) {
+    if (!data.restaurantId) throw new UnauthorizedException('No restaurant context');
     if (!data.items || data.items.length === 0) {
       throw new BadRequestException('Order must contain at least one item.');
     }
 
-    // Generate unique order number (e.g., KORD-1001)
-    const orderCount = await this.prisma.order.count();
+    // Generate unique order number scoped to restaurant
+    const orderCount = await this.prisma.order.count({ where: { restaurantId: data.restaurantId } });
     const orderNumber = `KORD-${1000 + orderCount + 1}`;
 
     // Calculate item prices from Product catalog
@@ -30,8 +32,13 @@ export class BillingService {
     const orderItemsData = [];
 
     for (const item of data.items) {
-      const product = await this.prisma.product.findUnique({ where: { id: item.productId } });
-      if (!product) throw new NotFoundException(`Product ID ${item.productId} not found.`);
+      const product = await this.prisma.product.findUnique({ 
+        where: { id: item.productId } 
+      });
+      // Ensure product belongs to this restaurant
+      if (!product || product.restaurantId !== data.restaurantId) {
+        throw new NotFoundException(`Product ID ${item.productId} not found in this restaurant.`);
+      }
 
       const itemTotal = product.price * item.quantity;
       totalAmount += itemTotal;
@@ -49,6 +56,7 @@ export class BillingService {
       const newOrder = await tx.order.create({
         data: {
           orderNumber,
+          restaurantId: data.restaurantId,
           tableId: data.tableId || null,
           waiterId: data.waiterId || null,
           customerId: data.customerId || null,
@@ -63,18 +71,24 @@ export class BillingService {
 
       // Update table status to OCCUPIED if applicable
       if (data.tableId) {
-        await tx.table.update({
-          where: { id: data.tableId },
-          data: { status: 'OCCUPIED', currentOrderId: newOrder.id },
-        });
+        // Ensure table belongs to this restaurant
+        const table = await tx.table.findUnique({ where: { id: data.tableId } });
+        if (table && table.restaurantId === data.restaurantId) {
+          await tx.table.update({
+            where: { id: data.tableId },
+            data: { status: 'OCCUPIED', currentOrderId: newOrder.id },
+          });
+        }
       }
 
       return newOrder;
     });
 
     // Broadcast WebSocket ticket to KDS and Table Layout monitors in real time
+    // TODO: Add room-based broadcasting by restaurantId
     this.kdsGateway.server.emit('kds_new_ticket', {
       id: order.id,
+      restaurantId: order.restaurantId,
       orderNumber: order.orderNumber,
       tableNumber: order.table?.tableNumber || 'Takeaway',
       items: order.items.map((i) => ({
@@ -89,6 +103,7 @@ export class BillingService {
     if (order.tableId) {
       this.kdsGateway.server.emit('table_updated', {
         tableId: order.tableId,
+        restaurantId: order.restaurantId,
         status: 'OCCUPIED',
         orderId: order.id,
       });
@@ -98,12 +113,14 @@ export class BillingService {
   }
 
   // 2. Calculate GST breakdown and discounts for billing settlement
-  async calculateBillPreview(orderId: string, discountAmount: number = 0) {
+  async calculateBillPreview(orderId: string, restaurantId: string, discountAmount: number = 0) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: { include: { product: true } } },
     });
-    if (!order) throw new NotFoundException(`Order ID ${orderId} not found.`);
+    if (!order || order.restaurantId !== restaurantId) {
+      throw new NotFoundException(`Order ID ${orderId} not found.`);
+    }
 
     const subtotal = order.totalAmount;
     // Calculate weighted GST (e.g. 5% standard dining GST => 2.5% CGST + 2.5% SGST)
@@ -125,14 +142,13 @@ export class BillingService {
   }
 
   // 3. Settle Bill & Automate Inventory Recipe Deduction
-  async settleBill(data: {
-    orderId: string;
-    paymentMethod: 'CASH' | 'CARD' | 'UPI' | 'SPLIT';
-    discount?: number;
-    cashierId?: string;
-  }) {
-    const preview = await this.calculateBillPreview(data.orderId, data.discount || 0);
-    const billCount = await this.prisma.bill.count();
+  async settleBill(
+    data: { orderId: string; paymentMethod: 'CASH' | 'CARD' | 'UPI' | 'SPLIT'; discount?: number },
+    restaurantId: string,
+    cashierId?: string
+  ) {
+    const preview = await this.calculateBillPreview(data.orderId, restaurantId, data.discount || 0);
+    const billCount = await this.prisma.bill.count({ where: { restaurantId } });
     const billNumber = `INV-${2026000 + billCount + 1}`;
 
     const settledBill = await this.prisma.$transaction(async (tx) => {
@@ -141,13 +157,14 @@ export class BillingService {
         data: {
           billNumber,
           orderId: data.orderId,
+          restaurantId,
           subtotal: preview.subtotal,
           cgst: preview.cgst,
           sgst: preview.sgst,
           discount: preview.discount,
           grandTotal: preview.grandTotal,
           paymentMethod: data.paymentMethod,
-          cashierId: data.cashierId || null,
+          cashierId: cashierId || null,
         },
       });
 
@@ -166,14 +183,13 @@ export class BillingService {
         });
       }
 
-      // 4. Automated Inventory Recipe Deduction (e.g., deducting coffee/milk per sold item)
+      // 4. Automated Inventory Recipe Deduction
       for (const item of order.items) {
-        // Attempt to match product category or name to inventory items for stock depletion
         const invItem = await tx.inventoryItem.findFirst({
-          where: { name: { contains: item.product.name } },
+          where: { restaurantId, name: { contains: item.product.name } },
         });
         if (invItem) {
-          const deductQty = item.quantity * 0.1; // Simulated standard recipe deduction per portion
+          const deductQty = item.quantity * 0.1; // Simulated standard recipe deduction
           await tx.inventoryItem.update({
             where: { id: invItem.id },
             data: { currentStock: { decrement: deductQty } },
@@ -192,10 +208,10 @@ export class BillingService {
       return { bill, order };
     });
 
-    // Broadcast table settlement to dining room devices
     if (settledBill.order.tableId) {
       this.kdsGateway.server.emit('table_updated', {
         tableId: settledBill.order.tableId,
+        restaurantId,
         status: 'AVAILABLE',
       });
     }
@@ -204,12 +220,12 @@ export class BillingService {
   }
 
   // 4. Get Today's Dashboard Sales Summary
-  async getDailyDashboardSummary() {
+  async getDailyDashboardSummary(restaurantId: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const billsToday = await this.prisma.bill.findMany({
-      where: { settledAt: { gte: today } },
+      where: { restaurantId, settledAt: { gte: today } },
     });
 
     const grossRevenue = billsToday.reduce((sum, b) => sum + b.grandTotal, 0);
@@ -220,10 +236,10 @@ export class BillingService {
     const upiRevenue = billsToday.filter((b) => b.paymentMethod === 'UPI').reduce((s, b) => s + b.grandTotal, 0);
 
     const activeOrdersCount = await this.prisma.order.count({
-      where: { status: { in: ['RECEIVED', 'COOKING', 'READY'] } },
+      where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } },
     });
     const occupiedTablesCount = await this.prisma.table.count({
-      where: { status: 'OCCUPIED' },
+      where: { restaurantId, status: 'OCCUPIED' },
     });
 
     return {

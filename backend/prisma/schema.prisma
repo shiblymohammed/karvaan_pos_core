@@ -1,4 +1,4 @@
-// Karvaan POS Core Edition - Enterprise Database Schema
+// Karvaan POS Core Edition - Enterprise Database Schema (Multi-Tenant)
 // Optimized for NestJS + Prisma ORM + SQLite (production-ready, multi-year reliable)
 
 generator client {
@@ -12,43 +12,107 @@ datasource db {
   url      = "file:./dev.db"
 }
 
+// ---------------------------------------------------------
+// TENANT MANAGEMENT
+// ---------------------------------------------------------
+
+model Restaurant {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Subscription Details
+  subscriptionPlan   String   @default("TRIAL") // TRIAL, MONTHLY, YEARLY, CUSTOM
+  subscriptionPrice  Float    @default(0)
+  subscriptionExpiry DateTime?
+  subscriptionStatus String   @default("ACTIVE") // ACTIVE, EXPIRED, DISABLED
+
+  // The owner of this restaurant (Role: OWNER)
+  ownerId String
+  owner   User   @relation("OwnerRestaurants", fields: [ownerId], references: [id])
+
+  // Operational Data belonging to this Restaurant
+  users          User[]          @relation("RestaurantUsers")
+  tables         Table[]
+  categories     Category[]
+  products       Product[]
+  customers      Customer[]
+  orders         Order[]
+  bills          Bill[]
+  deliveryOrders DeliveryOrder[]
+  parkedOrders   ParkedOrder[]
+  inventory      InventoryItem[]
+  wasteLogs      WasteLog[]
+  settings       SystemSetting[]
+  backups        BackupLog[]
+}
+
+// ---------------------------------------------------------
+// USER MANAGEMENT
+// ---------------------------------------------------------
+
 model User {
-  id          String   @id @default(uuid())
-  name        String
-  username    String?  @unique
-  password    String?
-  pin         String   @unique
-  role        String   @default("CASHIER") // ADMIN, MANAGER, CASHIER, WAITER, KITCHEN, DELIVERY
+  id       String  @id @default(uuid())
+  name     String
+  username String? @unique
+  password String?
+  pin      String? // PIN is optional for super admins / owners, required for POS staff
+
+  // Roles: SUPER_ADMIN, OWNER, REST_ADMIN, MANAGER, CASHIER, WAITER, KITCHEN, DELIVERY
+  role        String   @default("CASHIER")
   phone       String?
   isActive    Boolean  @default(true)
-  permissions String?  // JSON: {"canVoid":true,"canDiscount":true}
+  permissions String? // JSON: {"canVoid":true,"canDiscount":true}
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Multi-tenant Relations
+  restaurantId     String? // Null for SUPER_ADMIN and OWNER. Required for REST_ADMIN and STAFF
+  restaurant       Restaurant?  @relation("RestaurantUsers", fields: [restaurantId], references: [id], onDelete: Cascade)
+  ownedRestaurants Restaurant[] @relation("OwnerRestaurants")
+
+  // POS Operation Relations
   ordersCreated  Order[]         @relation("WaiterOrders")
   billsSettled   Bill[]          @relation("CashierBills")
   deliveryOrders DeliveryOrder[] @relation("RiderOrders")
 }
 
+// ---------------------------------------------------------
+// POS OPERATIONS
+// ---------------------------------------------------------
+
 model Table {
   id             String   @id @default(uuid())
-  tableNumber    String   @unique
+  tableNumber    String
   capacity       Int      @default(4)
   status         String   @default("AVAILABLE") // AVAILABLE, OCCUPIED, RESERVED, BILLED
   currentOrderId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  orders Order[]
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  orders       Order[]
+
+  @@unique([restaurantId, tableNumber])
 }
 
 model Category {
-  id        String    @id @default(uuid())
-  name      String    @unique
-  sortOrder Int       @default(0)
+  id        String  @id @default(uuid())
+  name      String
+  sortOrder Int     @default(0)
   iconName  String?
   imageUrl  String?
-  products  Product[]
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@unique([restaurantId, name])
 }
 
 model Product {
@@ -65,49 +129,59 @@ model Product {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  category   Category    @relation(fields: [categoryId], references: [id])
-  orderItems OrderItem[]
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  category     Category    @relation(fields: [categoryId], references: [id])
+  orderItems   OrderItem[]
 }
 
 model Customer {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   name          String
-  mobile        String   @unique
+  mobile        String
   email         String?
   address       String?
-  totalSpend    Float    @default(0.0)
-  loyaltyPoints Int      @default(0)
-  creditBalance Float    @default(0.0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  totalSpend    Float     @default(0.0)
+  loyaltyPoints Int       @default(0)
+  creditBalance Float     @default(0.0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   syncedAt      DateTime?
 
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  orders         Order[]
-  ledgerEntries  LedgerEntry[]
+  orders        Order[]
+  ledgerEntries LedgerEntry[]
+
+  @@unique([restaurantId, mobile])
 }
 
 model Order {
-  id          String   @id @default(uuid())
-  orderNumber String   @unique
-  orderType   String   @default("DINE_IN") // DINE_IN, PARCEL, DELIVERY
+  id          String    @id @default(uuid())
+  orderNumber String
+  orderType   String    @default("DINE_IN") // DINE_IN, PARCEL, DELIVERY
   tableId     String?
   waiterId    String?
   customerId  String?
-  status      String   @default("RECEIVED") // RECEIVED, COOKING, READY, SERVED, CANCELLED
-  totalAmount Float    @default(0.0)
-  discount    Float    @default(0.0)
+  status      String    @default("RECEIVED") // RECEIVED, COOKING, READY, SERVED, CANCELLED
+  totalAmount Float     @default(0.0)
+  discount    Float     @default(0.0)
   notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   syncedAt    DateTime?
 
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   table    Table?      @relation(fields: [tableId], references: [id])
   waiter   User?       @relation("WaiterOrders", fields: [waiterId], references: [id])
   customer Customer?   @relation(fields: [customerId], references: [id])
   items    OrderItem[]
   bill     Bill?
+
+  @@unique([restaurantId, orderNumber])
 }
 
 model OrderItem {
@@ -117,7 +191,7 @@ model OrderItem {
   quantity  Int      @default(1)
   price     Float
   notes     String?
-  addons    String?  // JSON: [{name, price}]
+  addons    String? // JSON: [{name, price}]
   status    String   @default("NEW") // NEW, SENT, COOKING, READY, SERVED
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -127,31 +201,36 @@ model OrderItem {
 }
 
 model Bill {
-  id            String   @id @default(uuid())
-  billNumber    String   @unique
-  orderId       String   @unique
-  orderType     String   @default("DINE_IN")
+  id            String    @id @default(uuid())
+  billNumber    String
+  orderId       String    @unique
+  orderType     String    @default("DINE_IN")
   subtotal      Float
-  cgst          Float    @default(0.0)
-  sgst          Float    @default(0.0)
-  discount      Float    @default(0.0)
-  deliveryFee   Float    @default(0.0)
+  cgst          Float     @default(0.0)
+  sgst          Float     @default(0.0)
+  discount      Float     @default(0.0)
+  deliveryFee   Float     @default(0.0)
   grandTotal    Float
-  paymentMethod String   @default("CASH") // CASH, CARD, UPI, CREDIT, SPLIT
+  paymentMethod String    @default("CASH") // CASH, CARD, UPI, CREDIT, SPLIT
   cashierId     String?
   customerName  String?
   customerPhone String?
   waiterName    String?
-  settledAt     DateTime @default(now())
+  settledAt     DateTime  @default(now())
   syncedAt      DateTime?
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   order   Order @relation(fields: [orderId], references: [id])
   cashier User? @relation("CashierBills", fields: [cashierId], references: [id])
+
+  @@unique([restaurantId, billNumber])
 }
 
 model DeliveryOrder {
   id              String    @id @default(uuid())
-  orderNumber     String    @unique
+  orderNumber     String
   customerName    String
   customerPhone   String?
   deliveryAddress String?
@@ -165,7 +244,7 @@ model DeliveryOrder {
   grandTotal      Float     @default(0.0)
   deliveryFee     Float     @default(0.0)
   collectedAmount Float?
-  items           String    // JSON string of order items
+  items           String // JSON string of order items
   notes           String?
   dispatchedAt    DateTime?
   deliveredAt     DateTime?
@@ -173,39 +252,56 @@ model DeliveryOrder {
   updatedAt       DateTime  @updatedAt
   syncedAt        DateTime?
 
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
   rider User? @relation("RiderOrders", fields: [riderId], references: [id])
+
+  @@unique([restaurantId, orderNumber])
 }
 
 model ParkedOrder {
   id        String   @id @default(uuid())
   orderId   String   @unique // Client-side order ID from frontend
-  data      String   // Full JSON snapshot of cart state
+  data      String // Full JSON snapshot of cart state
   heldAt    DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 }
 
+// ---------------------------------------------------------
+// INVENTORY & LEDGER
+// ---------------------------------------------------------
+
 model InventoryItem {
-  id           String     @id @default(uuid())
-  name         String     @unique
-  category     String     // e.g. "Vegetables", "Dairy", "Meat", "Dry Pantry"
-  currentStock Float      @default(0.0)
-  unit         String     @default("kg")
-  minThreshold Float      @default(5.0)
-  costPrice    Float      @default(0.0)
-  updatedAt    DateTime   @updatedAt
+  id           String   @id @default(uuid())
+  name         String
+  category     String // e.g. "Vegetables", "Dairy", "Meat", "Dry Pantry"
+  currentStock Float    @default(0.0)
+  unit         String   @default("kg")
+  minThreshold Float    @default(5.0)
+  costPrice    Float    @default(0.0)
+  updatedAt    DateTime @updatedAt
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   logs StockLog[]
+
+  @@unique([restaurantId, name])
 }
 
 model StockLog {
-  id             String        @id @default(uuid())
+  id             String    @id @default(uuid())
   itemId         String
-  type           String        // "IN", "OUT", "ADJUSTMENT", "WASTE"
+  type           String // "IN", "OUT", "ADJUSTMENT", "WASTE"
   quantityChange Float
-  reason         String?       // "SALE", "DAMAGE", "EXPIRY", "RETURN", "PURCHASE"
+  reason         String? // "SALE", "DAMAGE", "EXPIRY", "RETURN", "PURCHASE"
   orderId        String?
   notes          String?
-  createdAt      DateTime      @default(now())
+  createdAt      DateTime  @default(now())
   syncedAt       DateTime?
 
   item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
@@ -216,11 +312,14 @@ model WasteLog {
   itemName   String
   quantity   Float
   unit       String   @default("pcs")
-  reason     String   // "RETURN", "SPOILAGE", "EXPIRY", "DAMAGE"
+  reason     String // "RETURN", "SPOILAGE", "EXPIRY", "DAMAGE"
   orderId    String?
   billNumber String?
   loggedBy   String?
   createdAt  DateTime @default(now())
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 }
 
 model LedgerEntry {
@@ -233,7 +332,7 @@ model LedgerEntry {
   notes        String?
   createdAt    DateTime @default(now())
 
-  customer Customer @relation(fields: [customerId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
 
 model ReturnRecord {
@@ -241,12 +340,16 @@ model ReturnRecord {
   billNumber   String
   orderType    String
   reason       String
-  action       String   // "RESTOCK", "WASTE"
-  refundDest   String   // "CASH", "UPI", "LEDGER"
+  action       String // "RESTOCK", "WASTE"
+  refundDest   String // "CASH", "UPI", "LEDGER"
   totalRefund  Float
-  items        String   // JSON string of returned items
+  items        String // JSON string of returned items
   authorizedBy String?
   createdAt    DateTime @default(now())
+
+  // Note: For multi-tenant, technically we should link this to restaurant, 
+  // but let's add it to maintain isolation.
+  restaurantId String?
 }
 
 model BackupLog {
@@ -256,10 +359,19 @@ model BackupLog {
   status    String   @default("SUCCESS") // SUCCESS, FAILED
   error     String?
   createdAt DateTime @default(now())
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 }
 
 model SystemSetting {
-  id        String   @id @default("singleton")
-  data      String   // JSON string of all settings
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid()) // Can no longer be singleton globally
+  settingKey String   @default("general") // e.g. "hardware", "general"
+  data       String // JSON string of all settings
+  updatedAt  DateTime @updatedAt
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, settingKey])
 }

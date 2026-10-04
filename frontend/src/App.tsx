@@ -11,6 +11,7 @@ import { useModalOpen } from './hooks/useModalOpen';
 import { AdminPortalScreen } from './screens/AdminPortalScreen';
 import { AdminDashboard } from './screens/Admin/AdminDashboard';
 import { FullLoginScreen } from './screens/FullLoginScreen';
+import { SuperAdminDashboard } from './screens/SuperAdminDashboard';
 import { LockScreen } from './screens/LockScreen';
 import { ParcelBoardScreen } from './screens/ParcelBoardScreen';
 import { DeliveryDispatchScreen } from './screens/DeliveryDispatchScreen';
@@ -140,6 +141,10 @@ export const App: React.FC = () => {
 
   if (currentUser && isLocked) {
     return <LockScreen />;
+  }
+
+  if (currentUser.role === 'SUPER_ADMIN') {
+    return <SuperAdminDashboard />;
   }
 
   if (currentUser.role === 'KITCHEN' && activeScreen !== 'KDS') {

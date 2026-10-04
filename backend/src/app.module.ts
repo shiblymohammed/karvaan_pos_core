@@ -9,7 +9,9 @@ import { HistoryModule } from './history/history.module';
 import { SyncModule } from './sync/sync.module';
 import { UploadModule } from './upload/upload.module';
 import { SettingsModule } from './settings/settings.module';
-
+import { AuthModule } from './auth/auth.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { TenantModule } from './tenant/tenant.module';
 
 @Module({
   imports: [
@@ -20,6 +22,9 @@ import { SettingsModule } from './settings/settings.module';
     SyncModule,
     UploadModule,
     SettingsModule,
+    AuthModule,
+    PrismaModule,
+    TenantModule,
   ],
 
   controllers: [BillingController],

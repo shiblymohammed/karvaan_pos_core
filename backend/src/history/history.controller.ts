@@ -1,15 +1,13 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { HistoryService } from './history.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { GetUser } from '../auth/get-user.decorator';
 
+@UseGuards(JwtAuthGuard)
 @Controller('history')
 export class HistoryController {
   constructor(private readonly historyService: HistoryService) {}
 
-  /**
-   * GET /history/bills?startDate=2026-07-01&endDate=2026-07-27&page=1&limit=50
-   * Paginated billing history with optional date range, orderType, paymentMethod filters.
-   * Defaults to TODAY's bills only for fast initial load.
-   */
   @Get('bills')
   async getBillHistory(
     @Query('startDate') startDate?: string,
@@ -18,8 +16,11 @@ export class HistoryController {
     @Query('limit') limit?: string,
     @Query('orderType') orderType?: string,
     @Query('paymentMethod') paymentMethod?: string,
+    @GetUser() user?: any,
   ) {
+    if (!user.restaurantId) throw new UnauthorizedException('No restaurant context');
     return this.historyService.getBillHistory({
+      restaurantId: user.restaurantId,
       startDate,
       endDate,
       page: page ? parseInt(page) : 1,
@@ -29,32 +30,23 @@ export class HistoryController {
     });
   }
 
-  /**
-   * GET /history/daily-summary?date=2026-07-27
-   * Full day-close revenue summary. Used for end-of-day reconciliation reports.
-   */
   @Get('daily-summary')
-  async getDailySummary(@Query('date') date?: string) {
-    return this.historyService.getDailySummary(date);
+  async getDailySummary(@Query('date') date?: string, @GetUser() user?: any) {
+    if (!user.restaurantId) throw new UnauthorizedException('No restaurant context');
+    return this.historyService.getDailySummary(user.restaurantId, date);
   }
 
-  /**
-   * GET /history/top-items?startDate=2026-07-01&endDate=2026-07-27&limit=10
-   * Top-selling menu items report by quantity sold in a date range.
-   */
   @Get('top-items')
   async getTopItems(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
+    @GetUser() user?: any,
   ) {
-    return this.historyService.getTopSellingItems(startDate, endDate, limit ? parseInt(limit) : 10);
+    if (!user.restaurantId) throw new UnauthorizedException('No restaurant context');
+    return this.historyService.getTopSellingItems(user.restaurantId, startDate, endDate, limit ? parseInt(limit) : 10);
   }
 
-  /**
-   * GET /history/deliveries?startDate=2026-07-01&riderId=xxx&status=DELIVERED
-   * Paginated delivery order history for reporting and rider reconciliation.
-   */
   @Get('deliveries')
   async getDeliveryHistory(
     @Query('startDate') startDate?: string,
@@ -63,8 +55,11 @@ export class HistoryController {
     @Query('limit') limit?: string,
     @Query('riderId') riderId?: string,
     @Query('status') status?: string,
+    @GetUser() user?: any,
   ) {
+    if (!user.restaurantId) throw new UnauthorizedException('No restaurant context');
     return this.historyService.getDeliveryHistory({
+      restaurantId: user.restaurantId,
       startDate,
       endDate,
       page: page ? parseInt(page) : 1,
@@ -74,21 +69,15 @@ export class HistoryController {
     });
   }
 
-  /**
-   * GET /history/waste?startDate=2026-07-01&endDate=2026-07-27
-   * Waste & spoilage log entries in date range.
-   */
   @Get('waste')
-  async getWasteLogs(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
-    return this.historyService.getWasteLogs(startDate, endDate);
+  async getWasteLogs(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string, @GetUser() user?: any) {
+    if (!user.restaurantId) throw new UnauthorizedException('No restaurant context');
+    return this.historyService.getWasteLogs(user.restaurantId, startDate, endDate);
   }
 
-  /**
-   * GET /history/returns?startDate=2026-07-01&endDate=2026-07-27
-   * Return and refund records in date range.
-   */
   @Get('returns')
-  async getReturnRecords(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
-    return this.historyService.getReturnRecords(startDate, endDate);
+  async getReturnRecords(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string, @GetUser() user?: any) {
+    if (!user.restaurantId) throw new UnauthorizedException('No restaurant context');
+    return this.historyService.getReturnRecords(user.restaurantId, startDate, endDate);
   }
 }

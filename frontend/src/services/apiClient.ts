@@ -3,6 +3,7 @@ import { useCartStore } from '../store/cartStore';
 import { useTableStore } from '../store/useTableStore';
 import { useMenuStore } from '../store/useMenuStore';
 import { useKdsStore } from '../store/useKdsStore';
+import { useAuthStore } from '../store/useAuthStore';
 
 /**
  * apiClient is an abstraction over standard fetch.
@@ -37,12 +38,19 @@ async function _request(method: string, endpoint: string, body?: any) {
   const baseUrl = getServerUrl();
   const url = `${baseUrl}${endpoint}`;
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Bypass-Tunnel-Reminder': 'true'
+  };
+
+  const { accessToken } = useAuthStore.getState();
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
   const options: RequestInit = {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      'Bypass-Tunnel-Reminder': 'true'
-    },
+    headers,
   };
 
   if (body) {
