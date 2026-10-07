@@ -82,7 +82,7 @@ export const AdminStaffManager: React.FC = () => {
             <div key={s.id} className="bg-white/60 backdrop-blur-xl p-4 rounded-3xl border border-white/60 shadow-sm flex flex-col justify-between hover:shadow-md transition-all group relative overflow-hidden">
               <div className="absolute top-3 right-3 flex flex-col gap-1.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                 <button onClick={() => handleOpenModal(s)} className="p-2 bg-white/50 backdrop-blur-md hover:bg-amber-100 text-slate-500 hover:text-amber-600 rounded-lg shadow-sm transition-colors border border-white/40 cursor-pointer"><Edit3 className="h-4 w-4"/></button>
-                <button onClick={() => { if (confirm(`Remove ${s.name}?`)) deleteStaff(s.id); }} className="p-2 bg-white/50 backdrop-blur-md hover:bg-rose-100 text-slate-500 hover:text-rose-600 rounded-lg shadow-sm transition-colors border border-white/40 cursor-pointer"><Trash2 className="h-4 w-4"/></button>
+                <button onClick={() => setDeleteConfirmId(s.id)} className="p-2 bg-white/50 backdrop-blur-md hover:bg-rose-100 text-slate-500 hover:text-rose-600 rounded-lg shadow-sm transition-colors border border-white/40 cursor-pointer"><Trash2 className="h-4 w-4"/></button>
               </div>
 
               <div className="flex items-start gap-3 mb-4">
@@ -289,6 +289,19 @@ export const AdminStaffManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={deleteConfirmId !== null}
+        title="Remove Staff Member"
+        message={`Are you sure you want to remove ${staff.find(s => s.id === deleteConfirmId)?.name}? They will no longer be able to log in to the POS.`}
+        confirmText="Remove"
+        onConfirm={() => {
+          if (deleteConfirmId) {
+            deleteStaff(deleteConfirmId);
+          }
+        }}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   );
 };

@@ -8,9 +8,10 @@ interface AuthState {
   isLocked: boolean;
   loginTime: number | null;
   fullLogin: (username: string, password?: string, pin?: string) => Promise<boolean>;
-  quickUnlock: (pin: string) => boolean;
+  quickUnlock: (pin: string) => Promise<boolean>;
   lockTerminal: () => void;
   logout: () => void;
+  validateToken: () => Promise<boolean>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -45,11 +46,22 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      quickUnlock: (pin: string) => {
-        // Quick unlock should really verify the PIN against backend, 
-        // but for now, we unlock if it matches stored PIN (mock implementation)
-        set({ isLocked: false });
-        return true;
+      quickUnlock: async (pin: string) => {
+        try {
+          const res = await fetch(`${getServerUrl()}/auth/unlock`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin, userId: get().currentUser?.id }),
+          });
+          
+          if (!res.ok) return false;
+          
+          set({ isLocked: false });
+          return true;
+        } catch (e) {
+          console.error('Unlock failed', e);
+          return false;
+        }
       },
 
       lockTerminal: () => {
@@ -60,6 +72,32 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         set({ currentUser: null, accessToken: null, isLocked: false, loginTime: null });
+      },
+
+      validateToken: async () => {
+        const token = get().accessToken;
+        if (!token) return false;
+
+        try {
+          const res = await fetch(`${getServerUrl()}/auth/me`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (!res.ok) {
+            get().logout();
+            return false;
+          }
+          
+          const user = await res.json();
+          // Update user details (in case role changed)
+          set({ currentUser: user });
+          return true;
+        } catch (e) {
+          console.error('Token validation failed', e);
+          // If offline, we might want to let them stay logged in, but for security we'll assume failure means logout if we can't verify.
+          // In a true local-first POS, we might skip logout on NetworkError.
+          return true; // Keep logged in on network error for offline POS support
+        }
       },
     }),
     { name: 'pos-auth-storage' }

@@ -15,6 +15,7 @@ export class BackupService {
   private readonly DB_PATH = path.resolve(__dirname, '../../prisma/dev.db');
   private readonly BACKUP_DIR = path.resolve(__dirname, '../../backups');
   private readonly MAX_BACKUPS = 30; // Keep 30 days of history
+  private readonly restaurantId = process.env.RESTAURANT_ID || 'demo-restaurant-001';
 
   constructor(private readonly prisma: PrismaService) {
     // Ensure backup directory exists at startup
@@ -67,7 +68,7 @@ export class BackupService {
 
       // Log to database
       await this.prisma.backupLog.create({
-        data: { filename, sizeBytes: stats.size, status: 'SUCCESS' },
+        data: { filename, sizeBytes: stats.size, status: 'SUCCESS', restaurantId: this.restaurantId },
       });
 
       // Prune old backups beyond MAX_BACKUPS
@@ -80,7 +81,7 @@ export class BackupService {
       // Log failure to database
       try {
         await this.prisma.backupLog.create({
-          data: { filename, status: 'FAILED', error: err.message },
+          data: { filename, status: 'FAILED', error: err.message, restaurantId: this.restaurantId },
         });
       } catch (_) {}
 

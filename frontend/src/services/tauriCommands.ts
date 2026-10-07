@@ -49,9 +49,8 @@ export async function listSerialPorts(): Promise<string[]> {
  */
 export async function printReceipt(portName: string, data: Uint8Array): Promise<string> {
   if (!isTauri()) {
-    console.warn('[Tauri] printReceipt: not in Tauri â€” falling back to window.print()');
-    window.print();
-    return 'Fallback: browser print dialog';
+    console.warn('[Tauri] printReceipt: not in Tauri - falling back to browser print disabled');
+    return 'Fallback: browser print dialog disabled';
   }
   return invoke<string>('print_receipt', {
     portName,

@@ -22,7 +22,7 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAddonStore } from '../../store/useAddonStore';
 import { getServerUrl, setServerUrl, probeServer } from '../../services/serverConfig';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PrinterSettings } from '../../components/PrinterSettings';
+
 import { Printer } from 'lucide-react';
 
 // --- REUSABLE COMPONENTS ---
@@ -271,8 +271,7 @@ export const AdminSettingsManager: React.FC = () => {
   // --- RENDER SECTIONS ---
   const renderHardware = () => (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <SettingsHeader title="Printer & Hardware" description="Manage receipt printers, cash drawers, and label printing options." />
-      <PrinterSettings restaurantName="Karvaan POS" />
+      <SettingsHeader title="Printer & Hardware" description="Manage receipt printers, cash drawers, and label printing options. Please use the dedicated 'Label & Printers' tab in the sidebar." />
     </div>
   );
 

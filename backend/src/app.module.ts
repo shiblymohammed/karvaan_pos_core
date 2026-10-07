@@ -12,6 +12,7 @@ import { SettingsModule } from './settings/settings.module';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantModule } from './tenant/tenant.module';
+import { PrinterModule } from './printer/printer.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { TenantModule } from './tenant/tenant.module';
     AuthModule,
     PrismaModule,
     TenantModule,
+    PrinterModule,
   ],
 
   controllers: [BillingController],

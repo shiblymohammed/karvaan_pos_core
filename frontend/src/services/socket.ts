@@ -8,7 +8,8 @@ import { useSettingsStore } from '../store/useSettingsStore';
 // URL is resolved at runtime: env var → localStorage Setup Screen → localhost:3001
 export const socket = io(getServerUrl(), {
   transports: ['websocket', 'polling'],
-  reconnectionAttempts: Infinity, // Reconnect indefinitely for long-running restaurant shifts
+  autoConnect: false, // Connect manually with auth details
+  reconnectionAttempts: Infinity,
   reconnectionDelay: 2000,
   reconnectionDelayMax: 10000,
   extraHeaders: {
@@ -133,42 +134,43 @@ export function initSocketListeners() {
         socket.on('sync_master_state', (masterState: any) => {
           console.log('📥 [POS] Received Master State from Server');
 
-          if (masterState.kdsTickets && masterState.kdsTickets.length > 0) {
+          if (masterState.kdsTickets) {
             useKdsStore.setState({ tickets: masterState.kdsTickets });
           }
 
-          if (masterState.parkedOrders && masterState.parkedOrders.length > 0) {
+          if (masterState.parkedOrders) {
             useCartStore.setState({ heldOrders: masterState.parkedOrders });
           }
 
-          if (masterState.deliveryOrders && masterState.deliveryOrders.length > 0) {
+          if (masterState.deliveryOrders) {
             useDeliveryStore.setState({ orders: masterState.deliveryOrders });
           }
 
-          if (masterState.staffMembers && masterState.staffMembers.length > 0) {
+          if (masterState.staffMembers) {
             useStaffStore.setState({ staff: masterState.staffMembers });
           }
 
-          if (masterState.inventoryStock && masterState.inventoryStock.length > 0) {
+          if (masterState.inventoryStock) {
             useInventoryStore.setState({ ingredients: masterState.inventoryStock });
           }
 
-          if (masterState.recipes && masterState.recipes.length > 0) {
+          if (masterState.recipes) {
             useInventoryStore.setState({ recipes: masterState.recipes });
           }
 
-          if (masterState.wasteLogs && masterState.wasteLogs.length > 0) {
+          if (masterState.wasteLogs) {
             useInventoryStore.setState({ wasteLogs: masterState.wasteLogs });
           }
 
-          if (masterState.tableStatuses && Object.keys(masterState.tableStatuses).length > 0) {
+          if (masterState.tableStatuses) {
             const currentTables = useTableStore.getState().tables;
             const updatedTables = currentTables.map(t => {
               const statusData = masterState.tableStatuses[t.id];
               if (statusData) {
                 return { ...t, status: statusData.status, currentBill: statusData.subtotal };
               }
-              return t;
+              // If not found in master state, reset it to AVAILABLE (in case it was occupied in old restaurant state)
+              return { ...t, status: 'AVAILABLE', currentBill: null };
             });
             useTableStore.setState({ tables: updatedTables });
           }

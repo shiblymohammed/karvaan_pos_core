@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { KdsGateway } from '../kds/kds.gateway';
 
 @Injectable()
@@ -22,10 +23,6 @@ export class BillingService {
     if (!data.items || data.items.length === 0) {
       throw new BadRequestException('Order must contain at least one item.');
     }
-
-    // Generate unique order number scoped to restaurant
-    const orderCount = await this.prisma.order.count({ where: { restaurantId: data.restaurantId } });
-    const orderNumber = `KORD-${1000 + orderCount + 1}`;
 
     // Calculate item prices from Product catalog
     let totalAmount = 0.0;
@@ -53,6 +50,9 @@ export class BillingService {
 
     // Create Order in Database within an ACID transaction
     const order = await this.prisma.$transaction(async (tx) => {
+      const orderCount = await tx.order.count({ where: { restaurantId: data.restaurantId } });
+      const orderNumber = `KORD-${1000 + orderCount + 1}`;
+
       const newOrder = await tx.order.create({
         data: {
           orderNumber,
@@ -82,6 +82,8 @@ export class BillingService {
       }
 
       return newOrder;
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
 
     // Broadcast WebSocket ticket to KDS and Table Layout monitors in real time
@@ -148,10 +150,11 @@ export class BillingService {
     cashierId?: string
   ) {
     const preview = await this.calculateBillPreview(data.orderId, restaurantId, data.discount || 0);
-    const billCount = await this.prisma.bill.count({ where: { restaurantId } });
-    const billNumber = `INV-${2026000 + billCount + 1}`;
 
     const settledBill = await this.prisma.$transaction(async (tx) => {
+      const billCount = await tx.bill.count({ where: { restaurantId } });
+      const billNumber = `INV-${2026000 + billCount + 1}`;
+
       // 1. Create Bill record
       const bill = await tx.bill.create({
         data: {
@@ -172,7 +175,7 @@ export class BillingService {
       const order = await tx.order.update({
         where: { id: data.orderId },
         data: { status: 'SERVED' },
-        include: { items: { include: { product: true } }, table: true },
+        include: { items: { include: { product: { include: { recipeItems: true } } } }, table: true },
       });
 
       // 3. Free up dining table if occupied
@@ -183,29 +186,32 @@ export class BillingService {
         });
       }
 
-      // 4. Automated Inventory Recipe Deduction
+      // 4. True Recipe-Based Inventory Deduction
       for (const item of order.items) {
-        const invItem = await tx.inventoryItem.findFirst({
-          where: { restaurantId, name: { contains: item.product.name } },
-        });
-        if (invItem) {
-          const deductQty = item.quantity * 0.1; // Simulated standard recipe deduction
+        if (!item.product.recipeItems || item.product.recipeItems.length === 0) continue;
+        
+        for (const recipeItem of item.product.recipeItems) {
+          const deductQty = item.quantity * recipeItem.quantity;
+          
           await tx.inventoryItem.update({
-            where: { id: invItem.id },
+            where: { id: recipeItem.inventoryItemId },
             data: { currentStock: { decrement: deductQty } },
           });
+          
           await tx.stockLog.create({
             data: {
-              itemId: invItem.id,
+              itemId: recipeItem.inventoryItemId,
               type: 'OUT',
               quantityChange: -deductQty,
-              notes: `Automated POS deduction for Bill #${billNumber}`,
+              notes: `Automated POS deduction for Bill #${billNumber} (${item.quantity}x ${item.product.name})`,
             },
           });
         }
       }
 
       return { bill, order };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
 
     if (settledBill.order.tableId) {

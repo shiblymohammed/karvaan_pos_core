@@ -3,6 +3,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { join } from 'path';
 import { json, urlencoded } from 'express';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import * as os from 'os';
 
 function getLocalIPs(): string[] {
@@ -33,6 +34,9 @@ async function bootstrap() {
 
   app.use(json({ limit: '500mb' }));
   app.use(urlencoded({ extended: true, limit: '500mb' }));
+
+  // Apply the global exception filter to sanitize errors
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Health check — used by Setup Screen to probe connectivity
   const httpAdapter = app.getHttpAdapter();

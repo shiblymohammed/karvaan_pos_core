@@ -1,5 +1,6 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TenantService {
@@ -16,20 +17,45 @@ export class TenantService {
     const existing = await this.prisma.user.findUnique({ where: { username: data.username } });
     if (existing) throw new ConflictException('Username already taken');
 
+    const hashedPassword = await bcrypt.hash(data.password || 'password123', 10);
+
     return this.prisma.user.create({
       data: {
         name: data.name,
         username: data.username,
-        password: data.password || 'password123',
+        password: hashedPassword,
         role: 'OWNER',
       },
       select: { id: true, name: true, username: true },
     });
   }
 
-  async getAllRestaurants() {
+  async getAllRestaurants(ownerId?: string) {
+    const whereClause = ownerId ? { ownerId } : {};
     return this.prisma.restaurant.findMany({
+      where: whereClause,
       include: { owner: { select: { name: true } } },
+    });
+  }
+
+  async createAdminForRestaurant(restaurantId: string, data: { name: string; username: string; password?: string }, ownerId: string) {
+    const restaurant = await this.prisma.restaurant.findUnique({ where: { id: restaurantId } });
+    if (!restaurant || restaurant.ownerId !== ownerId) throw new UnauthorizedException('Not your restaurant');
+
+    const existing = await this.prisma.user.findUnique({ where: { username: data.username } });
+    if (existing) throw new ConflictException('Username already taken');
+
+    const hashedPassword = await bcrypt.hash(data.password || 'password123', 10);
+
+    return this.prisma.user.create({
+      data: {
+        name: data.name,
+        username: data.username,
+        password: hashedPassword,
+        role: 'ADMIN',
+        restaurantId: restaurantId,
+      },
+      select: { id: true, name: true, username: true, role: true }
     });
   }
 

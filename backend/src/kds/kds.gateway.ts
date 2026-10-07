@@ -29,13 +29,19 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(client: Socket) {
     console.log(`📡 [WebSocket] Terminal Connected: ${client.id}`);
+    
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) {
+      console.log(`📡 [WebSocket] Connection rejected: No restaurantId for ${client.id}`);
+      return;
+    }
 
     try {
       // ── Load active state from DATABASE (the real source of truth) ──────────
 
       // 1. Active KDS tickets: orders in RECEIVED, COOKING, READY state
       const activeOrders = await this.prisma.order.findMany({
-        where: { status: { in: ['RECEIVED', 'COOKING', 'READY'] } },
+        where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } },
         include: {
           items: { include: { product: true } },
           table: true,
@@ -65,6 +71,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // 2. Parked orders: load from ParkedOrder table
       const parkedRaw = await this.prisma.parkedOrder.findMany({
+        where: { restaurantId },
         orderBy: { heldAt: 'desc' },
         take: 50,
       });
@@ -74,7 +81,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // 3. Delivery orders: ACTIVE only (not DELIVERED/CANCELLED) for current operational view
       const deliveryOrders = await this.prisma.deliveryOrder.findMany({
-        where: { status: { in: ['RECEIVED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'] } },
+        where: { restaurantId, status: { in: ['RECEIVED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'] } },
         orderBy: { createdAt: 'desc' },
         take: 100,
         include: { rider: { select: { id: true, name: true, phone: true } } },
@@ -82,17 +89,20 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // 4. Staff members: ACTIVE only
       const staffMembers = await this.prisma.user.findMany({
-        where: { isActive: true },
+        where: { restaurantId, isActive: true },
         select: { id: true, name: true, username: true, password: true, role: true, phone: true, isActive: true, permissions: true, pin: true },
       });
 
       // 5. Inventory items (current stock levels)
       const inventoryStock = await this.prisma.inventoryItem.findMany({
+        where: { restaurantId },
         orderBy: { name: 'asc' },
       });
 
       // 6. Table statuses
-      const tables = await this.prisma.table.findMany();
+      const tables = await this.prisma.table.findMany({
+        where: { restaurantId }
+      });
       const tableStatusMap: Record<string, any> = {};
       for (const t of tables) {
         tableStatusMap[t.id] = { status: t.status, subtotal: null, tableId: t.id, tableNumber: t.tableNumber };
@@ -130,6 +140,8 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('fire_order')
   async handleFireOrder(@MessageBody() orderData: any, @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'OK' };
     console.log(`🍳 [KDS Gateway] Fired KOT Order #${orderData.orderNumber} to Kitchen.`);
 
     const newTicket = {
@@ -142,13 +154,14 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       if (orderData.items && Array.isArray(orderData.items)) {
         // Check if order already exists (avoid duplicate KOT on reconnect)
-        const existing = await this.prisma.order.findUnique({
-          where: { orderNumber: orderData.orderNumber },
+        const existing = await this.prisma.order.findFirst({
+          where: { restaurantId, orderNumber: orderData.orderNumber },
         }).catch(() => null);
 
         if (!existing && orderData.orderType !== 'DELIVERY') {
           await this.prisma.order.create({
             data: {
+              restaurantId,
               orderNumber: orderData.orderNumber,
               orderType: orderData.orderType || 'DINE_IN',
               status: 'RECEIVED',
@@ -220,24 +233,31 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('sync_parked_orders')
   async handleSyncParkedOrders(@MessageBody() orders: any[], @ConnectedSocket() client: Socket) {
-    console.log(`🛒 [Parked Orders] Sync from terminal ${client.id}: ${orders?.length || 0} orders`);
-    if (!Array.isArray(orders)) { return { status: 'OK' }; }
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId || !Array.isArray(orders)) return { status: 'OK' };
+    console.log(`🛒 [Parked Orders] Sync from terminal ${client.id}: ${orders.length} orders`);
 
     try {
       // Upsert each parked order to DB
       for (const order of orders) {
         if (!order?.id) continue;
-        await this.prisma.parkedOrder.upsert({
-          where: { orderId: order.id },
-          update: { data: JSON.stringify(order), updatedAt: new Date() },
-          create: { orderId: order.id, data: JSON.stringify(order) },
-        });
+        const existing = await this.prisma.parkedOrder.findUnique({ where: { orderId: order.id } }).catch(() => null);
+        if (existing) {
+          await this.prisma.parkedOrder.update({
+            where: { id: existing.id },
+            data: { data: JSON.stringify(order), updatedAt: new Date() }
+          });
+        } else {
+          await this.prisma.parkedOrder.create({
+            data: { orderId: order.id, restaurantId, data: JSON.stringify(order) }
+          });
+        }
       }
 
       // Remove DB parked orders that are no longer in the list (resumed/cancelled)
       const activeIds = orders.map((o) => o.id).filter(Boolean);
       await this.prisma.parkedOrder.deleteMany({
-        where: { orderId: { notIn: activeIds } },
+        where: { restaurantId, orderId: { notIn: activeIds } },
       });
     } catch (e) {
       console.warn('[Parked] Persist error (non-fatal):', e.message);
@@ -270,40 +290,51 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('sync_delivery_orders')
   async handleSyncDeliveryOrders(@MessageBody() orders: any[], @ConnectedSocket() client: Socket) {
-    console.log(`🛵 [Delivery Gateway] Sync from ${client.id}: ${orders?.length || 0} orders`);
-    if (!Array.isArray(orders)) { return { status: 'OK' }; }
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId || !Array.isArray(orders)) return { status: 'OK' };
+    console.log(`🛵 [Delivery Gateway] Sync from ${client.id}: ${orders.length} orders`);
 
     try {
       for (const order of orders) {
         if (!order?.id) continue;
-        await this.prisma.deliveryOrder.upsert({
-          where: { orderNumber: order.orderNumber || order.id },
-          update: {
-            status: order.status,
-            riderId: order.deliveryBoyId || null,
-            riderName: order.deliveryBoyName || null,
-            paymentStatus: order.paymentStatus || 'PENDING',
-            paymentMethod: order.paymentMethod || 'CASH',
-            collectedAmount: order.collectedAmount || null,
-            deliveredAt: order.status === 'DELIVERED' ? new Date() : null,
-            updatedAt: new Date(),
-          },
-          create: {
-            orderNumber: order.orderNumber || order.id,
-            customerName: order.customerName || 'Customer',
-            customerPhone: order.customerPhone || null,
-            deliveryAddress: order.deliveryAddress || null,
-            riderId: order.deliveryBoyId || null,
-            riderName: order.deliveryBoyName || null,
-            status: order.status || 'RECEIVED',
-            paymentMethod: order.paymentMethod || 'CASH',
-            paymentStatus: order.paymentStatus || 'PENDING',
-            grandTotal: order.grandTotal || 0,
-            deliveryFee: order.deliveryFee || 0,
-            items: JSON.stringify(order.items || []),
-            notes: order.notes || null,
-          },
-        }).catch((e) => console.warn('[Delivery] Upsert skip:', e.message));
+        const existing = await this.prisma.deliveryOrder.findFirst({
+          where: { restaurantId, orderNumber: order.orderNumber || order.id },
+        }).catch(() => null);
+
+        if (existing) {
+          await this.prisma.deliveryOrder.update({
+            where: { id: existing.id },
+            data: {
+              status: order.status,
+              riderId: order.deliveryBoyId || null,
+              riderName: order.deliveryBoyName || null,
+              paymentStatus: order.paymentStatus || 'PENDING',
+              paymentMethod: order.paymentMethod || 'CASH',
+              collectedAmount: order.collectedAmount || null,
+              deliveredAt: order.status === 'DELIVERED' ? new Date() : null,
+              updatedAt: new Date(),
+            }
+          });
+        } else {
+          await this.prisma.deliveryOrder.create({
+            data: {
+              restaurantId,
+              orderNumber: order.orderNumber || order.id,
+              customerName: order.customerName || 'Customer',
+              customerPhone: order.customerPhone || null,
+              deliveryAddress: order.deliveryAddress || null,
+              riderId: order.deliveryBoyId || null,
+              riderName: order.deliveryBoyName || null,
+              status: order.status || 'RECEIVED',
+              paymentMethod: order.paymentMethod || 'CASH',
+              paymentStatus: order.paymentStatus || 'PENDING',
+              grandTotal: order.grandTotal || 0,
+              deliveryFee: order.deliveryFee || 0,
+              items: JSON.stringify(order.items || []),
+              notes: order.notes || null,
+            }
+          });
+        }
       }
     } catch (e) {
       console.warn('[Delivery] Persist error (non-fatal):', e.message);
@@ -317,6 +348,8 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('sync_staff')
   async handleSyncStaff(@MessageBody() staff: any[], @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'ERROR' };
     console.log(`👥 [Staff Gateway] Sync from ${client.id}: ${staff?.length || 0} members`);
     if (!Array.isArray(staff)) { return { status: 'OK' }; }
 
@@ -324,7 +357,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       for (const member of staff) {
         if (!member?.id || !member?.name || !member?.pin) continue;
         await this.prisma.user.upsert({
-          where: { pin: member.pin },
+          where: { id: member.id },
           update: {
             name: member.name,
             username: member.username || null,
@@ -344,8 +377,9 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             phone: member.phone || null,
             isActive: member.isActive !== false,
             permissions: member.permissions ? JSON.stringify(member.permissions) : null,
+            restaurantId,
           },
-        }).catch((e) => console.warn('[Staff] Upsert skip (duplicate PIN?):', e.message));
+        }).catch((e) => console.warn('[Staff] Upsert skip:', e.message));
       }
     } catch (e) {
       console.warn('[Staff] Persist error (non-fatal):', e.message);
@@ -359,6 +393,8 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('sync_inventory')
   async handleSyncInventory(@MessageBody() inventory: any[], @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'ERROR' };
     console.log(`📦 [Inventory Gateway] Sync from ${client.id}: ${inventory?.length || 0} items`);
     if (!Array.isArray(inventory)) { return { status: 'OK' }; }
 
@@ -366,7 +402,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       for (const item of inventory) {
         if (!item?.name) continue;
         await this.prisma.inventoryItem.upsert({
-          where: { name: item.name },
+          where: { restaurantId_name: { restaurantId, name: item.name } },
           update: {
             currentStock: item.currentStock ?? item.currentQty ?? 0,
             category: item.category || 'General',
@@ -381,6 +417,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             unit: item.unit || 'pcs',
             minThreshold: item.minThreshold || item.minLevel || 5,
             costPrice: item.costPrice || 0,
+            restaurantId,
           },
         }).catch((e) => console.warn('[Inventory] Upsert skip:', e.message));
       }
@@ -404,6 +441,8 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('sync_waste')
   async handleSyncWaste(@MessageBody() wasteLogs: any[], @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'ERROR' };
     console.log(`🗑️ [Waste Gateway] Sync from ${client.id}: ${wasteLogs?.length || 0} logs`);
     if (!Array.isArray(wasteLogs)) { return { status: 'OK' }; }
 
@@ -414,6 +453,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // Upsert by a unique timestamp+name key to avoid duplicates
         const existing = await this.prisma.wasteLog.findFirst({
           where: {
+            restaurantId,
             itemName: log.itemName,
             createdAt: { gte: new Date(Date.now() - 5000) } // Within last 5s = duplicate
           },
@@ -429,6 +469,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
               orderId: log.orderId || null,
               billNumber: log.billNumber || null,
               loggedBy: log.loggedBy || null,
+              restaurantId,
             },
           }).catch((e) => console.warn('[Waste] Create skip:', e.message));
         }
@@ -444,14 +485,16 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ─── BILL SETTLEMENT — PERSIST TO DATABASE ───────────────────────────────────
 
   @SubscribeMessage('settle_bill')
-  async handleSettleBill(@MessageBody() billData: any) {
+  async handleSettleBill(@MessageBody() billData: any, @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'ERROR' };
     console.log(`💳 [Gateway] Bill settled: ${billData.billNumber}`);
 
     try {
       // Ensure we have a parent Order record
       let orderId: string | undefined;
       const existing = await this.prisma.order.findUnique({
-        where: { orderNumber: billData.orderNumber },
+        where: { restaurantId_orderNumber: { restaurantId, orderNumber: billData.orderNumber } },
       }).catch(() => null);
 
       if (existing) {
@@ -464,11 +507,11 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Persist the Bill record
       await this.prisma.bill.upsert({
-        where: { billNumber: billData.billNumber },
+        where: { restaurantId_billNumber: { restaurantId, billNumber: billData.billNumber } },
         update: {},
         create: {
           billNumber: billData.billNumber,
-          orderId: orderId || await this.getOrCreateOrderId(billData),
+          orderId: orderId || await this.getOrCreateOrderId(billData, restaurantId),
           orderType: billData.orderType || 'DINE_IN',
           subtotal: billData.subtotal || 0,
           cgst: billData.cgst || 0,
@@ -481,6 +524,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           customerPhone: billData.customerPhone || null,
           waiterName: billData.waiter || null,
           settledAt: new Date(),
+          restaurantId,
         },
       }).catch((e) => console.warn('[Bill] Persist skip:', e.message));
 
@@ -493,10 +537,10 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // Helper: create a minimal Order shell for bills fired directly from frontend (no prior DB order)
-  private async getOrCreateOrderId(billData: any): Promise<string> {
+  private async getOrCreateOrderId(billData: any, restaurantId: string): Promise<string> {
     const orderNumber = billData.orderNumber || `KORD-${Date.now()}`;
     const order = await this.prisma.order.upsert({
-      where: { orderNumber },
+      where: { restaurantId_orderNumber: { restaurantId, orderNumber } },
       update: { status: 'SERVED' },
       create: {
         orderNumber,
@@ -504,6 +548,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         status: 'SERVED',
         totalAmount: billData.subtotal || 0,
         discount: billData.discount || 0,
+        restaurantId,
       },
     });
     return order.id;

@@ -10,8 +10,10 @@ import { AdminSettingsManager } from './Admin/AdminSettingsManager';
 import { AdminCustomerLedger } from './Admin/AdminCustomerLedger';
 import { AdminInventoryScreen } from './Admin/AdminInventoryScreen';
 import { AdminTableManager } from './Admin/AdminTableManager';
+import { AdminPrinterSettings } from './Admin/AdminPrinterSettings';
+import { Printer } from 'lucide-react';
 
-type AdminTab = 'MENU' | 'STAFF' | 'QUICK_KEYS' | 'SETTINGS' | 'LEDGER' | 'INVENTORY' | 'TABLES';
+type AdminTab = 'MENU' | 'STAFF' | 'QUICK_KEYS' | 'SETTINGS' | 'LEDGER' | 'INVENTORY' | 'TABLES' | 'PRINTER';
 
 export const AdminPortalScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
@@ -66,6 +68,7 @@ export const AdminPortalScreen: React.FC = () => {
             { id: 'STAFF', label: 'Staff & Waiters', icon: Users },
             { id: 'INVENTORY', label: 'Inventory & Recipes', icon: Package },
             { id: 'LEDGER', label: 'Customer Ledger', icon: BookOpen },
+            { id: 'PRINTER', label: 'Label & Printers', icon: Printer },
             { id: 'SETTINGS', label: 'Settings', icon: Settings },
           ].map(({ id, label, icon: Icon }) => {
             const isActive = activeTab === id;
@@ -129,8 +132,9 @@ export const AdminPortalScreen: React.FC = () => {
         {activeTab === 'TABLES' && <AdminTableManager />}
         {activeTab === 'STAFF' && <AdminStaffManager />}
         {activeTab === 'SETTINGS' && <AdminSettingsManager />}
-        {activeTab === 'LEDGER' && <AdminCustomerLedger />}
-        {activeTab === 'INVENTORY' && <AdminInventoryScreen />}
+        { activeTab === 'LEDGER' && <AdminCustomerLedger />}
+        { activeTab === 'INVENTORY' && <AdminInventoryScreen />}
+        { activeTab === 'PRINTER' && <AdminPrinterSettings />}
       </main>
     </div>
   );

@@ -12,6 +12,7 @@ import { FolioItemCard } from './FolioItemCard';
 import { EmptyCartState } from './EmptyCartState';
 import { PaymentMethod } from '../SettlementModal';
 import { CheckCircle2, Utensils, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ConfirmModal } from '../shared/ConfirmModal';
 
 interface FolioSidebarProps {
   isMobileCartOpen: boolean;
@@ -49,6 +50,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
 
   const [activeFolioTab, setActiveFolioTab] = useState<'CURRENT' | 'PARKED'>('CURRENT');
   const [isFolioExpanded, setIsFolioExpanded] = useState(true);
+  const [confirmConfig, setConfirmConfig] = useState<{ isOpen: boolean; title: string; message: string; action: () => void }>({ isOpen: false, title: '', message: '', action: () => {} });
   const { tables, floors } = useTableStore();
   const { getActiveWaiters } = useStaffStore();
   const { currentUser } = useAuthStore();
@@ -94,9 +96,12 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
 
   const handleVoidItem = (idx: number, item: any) => {
     if (currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.permissions?.canVoid) {
-      if (window.confirm(`Void sent item "${item.name}"?`)) {
-        removeItemByIndex(idx);
-      }
+      setConfirmConfig({
+        isOpen: true,
+        title: 'Void Item',
+        message: `Void sent item "${item.name}"?`,
+        action: () => removeItemByIndex(idx)
+      });
     } else {
       onManagerAuthRequest({
         isOpen: true,
@@ -111,9 +116,12 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
     const hasSent = items.some(i => i.status === 'SENT');
     if (hasSent) {
       if (currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER' || currentUser?.permissions?.canVoid) {
-        if (window.confirm('Void this entire sent folio? Cooking items will be cancelled.')) {
-          clearCart();
-        }
+        setConfirmConfig({
+          isOpen: true,
+          title: 'Void Folio',
+          message: 'Void this entire sent folio? Cooking items will be cancelled.',
+          action: () => clearCart()
+        });
       } else {
         onManagerAuthRequest({
           isOpen: true,
@@ -123,7 +131,12 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         });
       }
     } else {
-      if (window.confirm('Delete this entire folio? This cannot be undone.')) clearCart();
+      setConfirmConfig({
+        isOpen: true,
+        title: 'Delete Folio',
+        message: 'Delete this entire folio? This cannot be undone.',
+        action: () => clearCart()
+      });
     }
   };
 
@@ -263,6 +276,13 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
       />
       </div>
     </div>
+    <ConfirmModal
+      isOpen={confirmConfig.isOpen}
+      title={confirmConfig.title}
+      message={confirmConfig.message}
+      onConfirm={confirmConfig.action}
+      onCancel={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}
+    />
     </>
   );
 };

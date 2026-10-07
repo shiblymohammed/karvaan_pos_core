@@ -13,6 +13,7 @@ export class SyncService {
   // Assume the VPS URL is configured in .env, fallback for safety
   private vpsUrl = process.env.VPS_SYNC_URL || 'https://api.karvaan-cloud.com/sync';
   private restaurantId = process.env.RESTAURANT_ID || 'demo-restaurant-001';
+  private cloudSyncApiKey = process.env.CLOUD_SYNC_API_KEY || 'default_demo_key';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -85,7 +86,10 @@ export class SyncService {
     // (In a real implementation, we use fetch or axios. Using fetch for now)
     const response = await fetch(this.vpsUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.cloudSyncApiKey}`
+      },
       body: JSON.stringify(payload),
     });
 
@@ -161,7 +165,11 @@ export class SyncService {
     try {
       // In a real implementation, you'd track the last sync timestamp
       // to only pull delta changes. For now, we simulate pulling changes.
-      const response = await fetch(`${this.vpsUrl}/pull?restaurantId=${this.restaurantId}`);
+      const response = await fetch(`${this.vpsUrl}/pull?restaurantId=${this.restaurantId}`, {
+        headers: {
+          'Authorization': `Bearer ${this.cloudSyncApiKey}`
+        }
+      });
       if (!response.ok) {
         if (response.status === 404 || response.status === 502 || response.status === 500) {
            this.logger.log(`VPS pull endpoint not reachable or implemented yet. Skipping pull.`);
@@ -188,7 +196,7 @@ export class SyncService {
             }
           }
         }
-        await this.settingsService.updateSettings(settings);
+        await this.settingsService.updateSettings(settings, this.restaurantId);
         this.logger.log(`✅ Successfully updated system settings from VPS.`);
       }
 
@@ -200,7 +208,7 @@ export class SyncService {
           await tx.category.upsert({
             where: { id: cat.id },
             update: { name: cat.name, sortOrder: cat.sortOrder },
-            create: { id: cat.id, name: cat.name, sortOrder: cat.sortOrder }
+            create: { id: cat.id, name: cat.name, sortOrder: cat.sortOrder, restaurantId: this.restaurantId }
           });
           updateCount++;
         }
@@ -214,7 +222,8 @@ export class SyncService {
             },
             create: { 
               id: prod.id, name: prod.name, price: prod.price, 
-              categoryId: prod.categoryId, isAvailable: prod.isAvailable, imageUrl: prod.imageUrl 
+              categoryId: prod.categoryId, isAvailable: prod.isAvailable, imageUrl: prod.imageUrl,
+              restaurantId: this.restaurantId
             }
           });
           updateCount++;

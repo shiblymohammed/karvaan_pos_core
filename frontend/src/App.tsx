@@ -12,6 +12,7 @@ import { AdminPortalScreen } from './screens/AdminPortalScreen';
 import { AdminDashboard } from './screens/Admin/AdminDashboard';
 import { FullLoginScreen } from './screens/FullLoginScreen';
 import { SuperAdminDashboard } from './screens/SuperAdminDashboard';
+import { OwnerDashboard } from './screens/OwnerDashboard';
 import { LockScreen } from './screens/LockScreen';
 import { ParcelBoardScreen } from './screens/ParcelBoardScreen';
 import { DeliveryDispatchScreen } from './screens/DeliveryDispatchScreen';
@@ -30,6 +31,7 @@ import { isServerConfigured, getOperatingMode } from './services/serverConfig';
 import { startAndroidMasterServer, stopAndroidMasterServer } from './services/localServer';
 import { startMasterSyncPolling, stopMasterSyncPolling } from './services/socket';
 import { SetupScreen } from './screens/SetupScreen';
+import { ToastContainer } from './components/ToastContainer';
 
 export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY' | 'DASHBOARD' | 'SETTINGS' | 'QUEUE';
 
@@ -95,6 +97,23 @@ export const App: React.FC = () => {
     initSocketListeners();
   }, []);
 
+  // Sync WebSocket connection with user's restaurant session
+  useEffect(() => {
+    if (currentUser?.restaurantId) {
+      socket.io.opts.query = { restaurantId: currentUser.restaurantId };
+      socket.connect();
+    } else {
+      socket.disconnect();
+    }
+  }, [currentUser?.restaurantId]);
+
+  // Validate the JWT token on app boot
+  useEffect(() => {
+    if (currentUser) {
+      useAuthStore.getState().validateToken();
+    }
+  }, []);
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -119,6 +138,7 @@ export const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="relative h-[100dvh] w-full overflow-hidden">
+        <ToastContainer />
         <FullLoginScreen />
         {showSetup && <SetupScreen onComplete={() => setShowSetup(false)} />}
       </div>
@@ -147,6 +167,10 @@ export const App: React.FC = () => {
     return <SuperAdminDashboard />;
   }
 
+  if (currentUser.role === 'OWNER') {
+    return <OwnerDashboard />;
+  }
+
   if (currentUser.role === 'KITCHEN' && activeScreen !== 'KDS') {
     setActiveScreen('KDS');
   }
@@ -169,9 +193,8 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row h-[100dvh] bg-carbon-lines text-kv-dark font-sans selection:bg-kv-primary selection:text-white overflow-hidden transition-colors duration-300 p-0 md:py-4 md:pr-4 gap-0 md:gap-4 relative">
+      <ToastContainer />
       
-
-
       {/* Sidebar Navigation (Desktop/Tablet) */}
       <aside className={`${isMobileCartOpen ? 'w-0 md:w-0 -translate-x-full opacity-0 overflow-hidden' : isSidebarOpen ? 'w-20 md:w-[220px] translate-x-0 opacity-100' : 'w-16 md:w-[64px] translate-x-0 opacity-100'} hidden md:flex bg-transparent flex-col shrink-0 transition-all duration-300 z-30 relative`}>
         {/* Edge Collapse Trigger */}

@@ -133,6 +133,7 @@ model Product {
   restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   category     Category    @relation(fields: [categoryId], references: [id])
   orderItems   OrderItem[]
+  recipeItems  RecipeIngredient[]
 }
 
 model Customer {
@@ -288,7 +289,8 @@ model InventoryItem {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  logs StockLog[]
+  logs        StockLog[]
+  recipeItems RecipeIngredient[]
 
   @@unique([restaurantId, name])
 }
@@ -375,3 +377,17 @@ model SystemSetting {
 
   @@unique([restaurantId, settingKey])
 }
+
+model RecipeIngredient {
+  id              String   @id @default(uuid())
+  productId       String
+  inventoryItemId String
+  quantity        Float    // the amount to deduct from stock
+  unit            String   // the unit of measurement (must match InventoryItem)
+  
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, inventoryItemId])
+}
+

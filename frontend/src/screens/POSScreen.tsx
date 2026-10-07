@@ -839,7 +839,7 @@ export const POSScreen: React.FC = () => {
             <div className="w-full grid grid-cols-2 gap-2 pt-2">
               <button
                 onClick={() => {
-                  alert('🖨️ ESC/POS Thermal Print command dispatched to USB/Serial port!');
+                  toast.success('🖨️ ESC/POS Thermal Print command dispatched to USB/Serial port!');
                   if (receiptType === 'PREBILL') setReceiptType(null);
                 }}
                 className="flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-pos-accent to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-extrabold text-xs rounded-xl transition-colors shadow-sm cursor-pointer"

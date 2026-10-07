@@ -22,12 +22,17 @@ export class TenantController {
 
   @Get('restaurants')
   async getRestaurants(@GetUser() user: any) {
-    // Both SUPER_ADMIN and OWNER can view restaurants (owners see all for now, we can scope later)
     if (user.role !== 'SUPER_ADMIN' && user.role !== 'OWNER') {
       throw new UnauthorizedException('Not authorized');
     }
-    // In a real app, if role===OWNER, we would pass ownerId to the service. For now SUPER_ADMIN sees all.
-    return this.tenantService.getAllRestaurants();
+    const ownerId = user.role === 'OWNER' ? user.id : undefined;
+    return this.tenantService.getAllRestaurants(ownerId);
+  }
+
+  @Post('restaurants/:id/admin')
+  async createAdmin(@Param('id') restaurantId: string, @Body() body: any, @GetUser() user: any) {
+    if (user.role !== 'OWNER') throw new UnauthorizedException('Only owners can create admins for their restaurants');
+    return this.tenantService.createAdminForRestaurant(restaurantId, body, user.id);
   }
 
   @Post('restaurants')

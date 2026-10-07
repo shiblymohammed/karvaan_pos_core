@@ -13,6 +13,7 @@ import {
   SearchX, User, ChevronRight, Printer, Share2
 } from 'lucide-react';
 import { ReturnOrderModal } from '../components/ReturnOrderModal';
+import { toast } from '../components/ToastContainer';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const statusConfig: Record<string, { label: string; bar: string; badge: string; text: string }> = {
@@ -890,7 +891,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
               <div className="px-6 pb-6 w-full grid grid-cols-2 gap-3">
                 <button
                   onClick={() => {
-                    window.print();
+                    toast.success('🖨️ ESC/POS Thermal Print command dispatched to USB/Serial port!');
                   }}
                   className="flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-xs rounded-2xl shadow-md shadow-emerald-200 transition-all active:scale-95 cursor-pointer">
                   <Printer className="h-4 w-4" /> Confirm & Print

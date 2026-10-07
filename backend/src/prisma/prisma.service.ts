@@ -5,7 +5,11 @@ import { PrismaClient } from '@prisma/client';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     await this.$connect();
-    console.log('✅ [PrismaService] Connected to POS Database successfully.');
+    
+    // Enable SQLite Write-Ahead Logging (WAL) for concurrency
+    await this.$executeRawUnsafe(`PRAGMA journal_mode = WAL;`);
+    
+    console.log('✅ [PrismaService] Connected to POS Database successfully (WAL mode enabled).');
   }
 
   async onModuleDestroy() {
