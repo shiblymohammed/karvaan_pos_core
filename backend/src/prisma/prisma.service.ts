@@ -7,7 +7,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     await this.$connect();
     
     // Enable SQLite Write-Ahead Logging (WAL) for concurrency
-    await this.$executeRawUnsafe(`PRAGMA journal_mode = WAL;`);
+    await this.$queryRawUnsafe(`PRAGMA journal_mode = WAL;`);
     
     console.log('✅ [PrismaService] Connected to POS Database successfully (WAL mode enabled).');
   }

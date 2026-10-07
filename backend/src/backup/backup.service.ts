@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import { PrismaService } from '../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -10,26 +11,93 @@ import { promisify } from 'util';
 const pipelineAsync = promisify(pipeline);
 
 @Injectable()
-export class BackupService {
+export class BackupService implements OnModuleInit {
   private readonly logger = new Logger(BackupService.name);
   private readonly DB_PATH = path.resolve(__dirname, '../../prisma/dev.db');
-  private readonly BACKUP_DIR = path.resolve(__dirname, '../../backups');
+  private BACKUP_DIR = path.resolve(__dirname, '../../backups');
   private readonly MAX_BACKUPS = 30; // Keep 30 days of history
   private readonly restaurantId = process.env.RESTAURANT_ID || 'demo-restaurant-001';
 
-  constructor(private readonly prisma: PrismaService) {
-    // Ensure backup directory exists at startup
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly schedulerRegistry: SchedulerRegistry
+  ) {}
+
+  async onModuleInit() {
+    await this.applyBackupSettings();
+  }
+
+  async getSettings() {
+    const defaultSettings = { enabled: true, time: '03:00', location: path.resolve(__dirname, '../../backups') };
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: {
+        restaurantId_settingKey: {
+          restaurantId: this.restaurantId,
+          settingKey: 'backup'
+        }
+      }
+    });
+    return setting ? { ...defaultSettings, ...JSON.parse(setting.data) } : defaultSettings;
+  }
+
+  async updateSettings(settings: any) {
+    const data = JSON.stringify(settings);
+    await this.prisma.systemSetting.upsert({
+      where: {
+        restaurantId_settingKey: {
+          restaurantId: this.restaurantId,
+          settingKey: 'backup'
+        }
+      },
+      update: { data },
+      create: {
+        restaurantId: this.restaurantId,
+        settingKey: 'backup',
+        data
+      }
+    });
+    
+    await this.applyBackupSettings();
+    return this.getSettings();
+  }
+
+  async applyBackupSettings() {
+    const settings = await this.getSettings();
+    
+    // Ensure dir
+    let backupDir = settings.location || path.resolve(__dirname, '../../backups');
+    if (!path.isAbsolute(backupDir)) {
+      backupDir = path.resolve(__dirname, backupDir);
+    }
+    this.BACKUP_DIR = backupDir;
+    
     if (!fs.existsSync(this.BACKUP_DIR)) {
       fs.mkdirSync(this.BACKUP_DIR, { recursive: true });
       this.logger.log(`📁 Created backup directory: ${this.BACKUP_DIR}`);
     }
+
+    // Schedule cron
+    try {
+      this.schedulerRegistry.deleteCronJob('daily-database-backup');
+    } catch (e) {} // ignore if not exists
+
+    if (settings.enabled) {
+      const [hour, minute] = (settings.time || '03:00').split(':');
+      const cronExpression = `${minute} ${hour} * * *`;
+      const job = new CronJob(cronExpression, () => {
+        this.runDailyBackup();
+      });
+      this.schedulerRegistry.addCronJob('daily-database-backup', job);
+      job.start();
+      this.logger.log(`⏰ Scheduled automated backup for ${settings.time}`);
+    } else {
+      this.logger.log(`⏸️ Automated backup is disabled`);
+    }
   }
 
   /**
-   * Automatic daily backup at 3:00 AM every night.
-   * Compresses dev.db into backups/karvaan-YYYY-MM-DD.db.gz
+   * Automatic daily backup.
    */
-  @Cron('0 3 * * *', { name: 'daily-database-backup' })
   async runDailyBackup(): Promise<void> {
     await this.createBackup('scheduled');
   }

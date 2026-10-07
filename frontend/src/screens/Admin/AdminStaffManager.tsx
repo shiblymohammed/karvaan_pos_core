@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Users, Plus, Edit3, Trash2, ShieldCheck, X, Bike, Key, Save, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useStaffStore, StaffMember } from '../../store/useStaffStore';
 import CustomSelect from '../../components/shared/CustomSelect';
+import { ConfirmModal } from '../../components/shared/ConfirmModal';
 
 const inputCls = 'w-full px-4 py-3 bg-white/60 border border-slate-200/80 rounded-2xl text-slate-700 text-sm font-bold focus:outline-none focus:border-[#8cc63f] focus:ring-4 focus:ring-[#8cc63f]/20 shadow-sm transition-all';
 const labelCls = 'block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2';
@@ -13,6 +14,7 @@ export const AdminStaffManager: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
