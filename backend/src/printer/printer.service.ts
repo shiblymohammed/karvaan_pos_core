@@ -236,6 +236,9 @@ export class PrinterService {
         const name = (item.name || item.product?.name || '').substring(0, 18).padEnd(20, ' ');
         const price = (item.price * item.quantity).toFixed(2).padStart(8, ' ');
         bufs.push(Buffer.from(`${qty} ${name} ${price}\n`));
+        if (item.notes) {
+          bufs.push(Buffer.from(`   * ${item.notes}\n`));
+        }
       }
     }
     

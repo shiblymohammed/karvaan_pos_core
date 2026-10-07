@@ -183,6 +183,7 @@ model Order {
   bill     Bill?
 
   @@unique([restaurantId, orderNumber])
+  @@index([restaurantId, createdAt])
 }
 
 model OrderItem {
@@ -227,6 +228,7 @@ model Bill {
   cashier User? @relation("CashierBills", fields: [cashierId], references: [id])
 
   @@unique([restaurantId, billNumber])
+  @@index([restaurantId, settledAt])
 }
 
 model DeliveryOrder {
@@ -259,6 +261,7 @@ model DeliveryOrder {
   rider User? @relation("RiderOrders", fields: [riderId], references: [id])
 
   @@unique([restaurantId, orderNumber])
+  @@index([restaurantId, createdAt])
 }
 
 model ParkedOrder {

@@ -245,7 +245,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export const DeliveryDispatchScreen: React.FC = () => {
-  const { orders, collectPayment, assignDeliveryBoy, removeOrder } = useDeliveryStore();
+  const { orders, collectPayment, assignDeliveryBoy, removeOrder, removeOrders } = useDeliveryStore();
   const { getDeliveryRiders } = useStaffStore();
   const { currentUser } = useAuthStore();
   const { tickets: kdsTickets } = useKdsStore();
@@ -686,7 +686,9 @@ export const DeliveryDispatchScreen: React.FC = () => {
                         Cancel
                       </button>
                       <button onClick={() => {
-                        showToast("Shift closed!", 'success');
+                        const orderIds = riderOrders.map(o => o.id);
+                        removeOrders(orderIds);
+                        showToast("Shift closed and orders cleared!", 'success');
                         setSelectedRiderSummary(null);
                       }} className="flex-[2] py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-sm rounded-2xl shadow-md shadow-orange-200 transition-all active:scale-95 cursor-pointer">
                         Confirm Remittance
