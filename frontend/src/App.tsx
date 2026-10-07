@@ -4,13 +4,14 @@ import { POSScreen } from './screens/POSScreen';
 import { TableMapScreen } from './screens/TableMapScreen';
 import { KDSScreen } from './screens/KDSScreen';
 import { QueueScreen } from './screens/QueueScreen';
-import { InventoryScreen } from './screens/InventoryScreen';
+import { AdminInventoryScreen } from './screens/Admin/AdminInventoryScreen';
 import { QROrderScreen } from './screens/QROrderScreen';
 import { useFullscreen } from './hooks/useFullscreen';
 import { useModalOpen } from './hooks/useModalOpen';
 import { AdminPortalScreen } from './screens/AdminPortalScreen';
 import { AdminDashboard } from './screens/Admin/AdminDashboard';
 import { FullLoginScreen } from './screens/FullLoginScreen';
+import { AdminCustomerScreen } from './screens/Admin/AdminCustomerScreen';
 import { SuperAdminDashboard } from './screens/SuperAdminDashboard';
 import { OwnerDashboard } from './screens/OwnerDashboard';
 import { LockScreen } from './screens/LockScreen';
@@ -23,7 +24,7 @@ import {
   Utensils, LayoutGrid, Flame, Package, QrCode, 
   Wifi, WifiOff, ShieldCheck, Clock, Sparkles, Settings, Lock, Bike,
   ChevronLeft, ChevronRight, ChevronDown, LayoutDashboard, LogOut,
-  MoreHorizontal, X, MonitorSpeaker
+  MoreHorizontal, X, MonitorSpeaker, Users
 } from 'lucide-react';
 import { initSocketListeners } from './services/socket';
 import { socket } from './services/socket';
@@ -33,7 +34,7 @@ import { startMasterSyncPolling, stopMasterSyncPolling } from './services/socket
 import { SetupScreen } from './screens/SetupScreen';
 import { ToastContainer } from './components/ToastContainer';
 
-export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY' | 'DASHBOARD' | 'SETTINGS' | 'QUEUE';
+export type ScreenType = 'POS' | 'TABLES' | 'KDS' | 'INVENTORY' | 'QR' | 'ADMIN' | 'PARCEL' | 'DELIVERY' | 'DASHBOARD' | 'SETTINGS' | 'QUEUE' | 'CUSTOMERS';
 
 const navItems = [
   { id: 'POS', label: 'POS Billing', icon: Utensils, role: 'ALL', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
@@ -44,6 +45,7 @@ const navItems = [
   { id: 'DELIVERY', label: 'Delivery', icon: Bike, role: 'NON_WAITER', gradient: 'from-purple-400 to-indigo-500', shadow: 'shadow-[0_4px_12px_rgba(168,85,247,0.4)]', border: 'border-purple-500/50' },
   { id: 'QR', label: 'QR Orders', icon: QrCode, role: 'NON_WAITER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
   { id: 'DASHBOARD', label: 'Dashboard', icon: LayoutDashboard, role: 'ADMIN_MANAGER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
+  { id: 'CUSTOMERS', label: 'Customers', icon: Users, role: 'ADMIN_MANAGER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
   { id: 'INVENTORY', label: 'Inventory', icon: Package, role: 'ADMIN_MANAGER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
   { id: 'ADMIN', label: 'Settings', icon: Settings, role: 'ADMIN_MANAGER', gradient: 'from-[#8cc63f] to-[#6a9a2a]', shadow: 'shadow-[0_4px_12px_rgba(140,198,63,0.4)]', border: 'border-[#8cc63f]/50' },
 ];
@@ -367,7 +369,8 @@ export const App: React.FC = () => {
           {activeScreen === 'TABLES' && <TableMapScreen onNavigateToPOS={() => setActiveScreen('POS')} />}
           {activeScreen === 'KDS' && <KDSScreen />}
           {activeScreen === 'QUEUE' && <QueueScreen />}
-          {activeScreen === 'INVENTORY' && <InventoryScreen />}
+          {activeScreen === 'INVENTORY' && <AdminInventoryScreen />}
+          {activeScreen === 'CUSTOMERS' && <AdminCustomerScreen />}
           {activeScreen === 'QR' && <QROrderScreen />}
           {activeScreen === 'ADMIN' && <AdminPortalScreen />}
           {activeScreen === 'DASHBOARD' && <AdminDashboard />}

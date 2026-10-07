@@ -26,6 +26,7 @@ interface FolioFooterProps {
   onApplyDiscount: (amount: number) => void;
   onSettle: (method: PaymentMethod) => void;
   onSendKot: () => void;
+  onSendKotPrint: () => void;
   onPreBill: () => void;
   onCompleteDelivery: () => void;
   onDispatchDelivery: (isPrepaid: boolean) => void;
@@ -35,7 +36,7 @@ export const FolioFooter: React.FC<FolioFooterProps> = ({
   items, subtotal, floorSurcharge, floorSurchargeLabel, cgst, sgst, discount, grandTotal,
   orderType, deliveryStatus, deliveryFee, parcelCharge, collectedMethod, deliveryAddress,
   currentUserRole,
-  onApplyDiscount, onSettle, onSendKot, onPreBill,
+  onApplyDiscount, onSettle, onSendKot, onSendKotPrint, onPreBill,
   onCompleteDelivery, onDispatchDelivery
 }) => {
   const hasItems = items.length > 0;
@@ -89,18 +90,26 @@ export const FolioFooter: React.FC<FolioFooterProps> = ({
 
       {/* Secondary Actions (Moved up for visibility on mobile) */}
       <div className="grid grid-cols-2 gap-2 mb-2 md:mb-4">
-        <button 
-          onClick={onSendKot} 
-          disabled={!hasNewItems} 
-          className={`relative group py-3.5 md:py-4 font-bold text-sm rounded-2xl transition-all duration-300 disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-4 hover:brightness-110 hover:-translate-y-0.5 ${currentUserRole === 'WAITER' ? 'col-span-2' : ''} bg-gradient-to-br from-rose-400 to-rose-600 text-white border border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:shadow-[0_8px_24px_rgba(243,24,104,0.3)] focus-visible:ring-rose-500/40 overflow-hidden disabled:hover:brightness-100 disabled:hover:translate-y-0 disabled:active:scale-100`}
-        >
-          {/* Shine effect */}
-          <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/20 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-          
-          <UtensilsCrossed className="h-4 w-4 md:h-5 md:w-5 transition-transform group-hover:rotate-12 text-white/90 group-hover:text-white" /> 
-          <span className="drop-shadow-sm text-white/90 group-hover:text-white">Send KOT</span>
-          <kbd className="hidden md:inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-black rounded ml-1 absolute right-2 bg-black/10 text-white/70 border border-white/20 group-hover:bg-black/20 group-hover:text-white transition-colors">F1</kbd>
-        </button>
+        {/* The KOT Buttons Group */}
+        <div className={`grid grid-cols-2 gap-1.5 ${currentUserRole === 'WAITER' ? 'col-span-2' : ''}`}>
+          <button 
+            onClick={onSendKot} 
+            disabled={!hasNewItems} 
+            className="relative group py-2 md:py-2.5 font-bold text-xs md:text-[13px] rounded-xl transition-all duration-300 disabled:opacity-40 flex flex-col items-center justify-center gap-1 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-[0.96] bg-gradient-to-br from-slate-700 to-slate-900 text-white border border-slate-600 hover:shadow-lg overflow-hidden"
+          >
+            <UtensilsCrossed className="h-4 w-4 md:h-5 md:w-5" /> 
+            <span className="drop-shadow-sm text-white/90">KDS Only</span>
+          </button>
+          <button 
+            onClick={onSendKotPrint} 
+            disabled={!hasNewItems} 
+            className="relative group py-2 md:py-2.5 font-bold text-xs md:text-[13px] rounded-xl transition-all duration-300 disabled:opacity-40 flex flex-col items-center justify-center gap-1 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-[0.96] bg-gradient-to-br from-rose-400 to-rose-600 text-white border border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:shadow-[0_8px_24px_rgba(243,24,104,0.3)] overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/20 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+            <Printer className="h-4 w-4 md:h-5 md:w-5" /> 
+            <span className="drop-shadow-sm text-white/90">KDS + Print</span>
+          </button>
+        </div>
         {currentUserRole !== 'WAITER' && (
           <button 
             onClick={onPreBill} 

@@ -261,4 +261,40 @@ export class BillingService {
       },
     };
   }
+
+  // 5. Get Order History for Dashboard
+  async getOrderHistory(restaurantId: string, startDate?: string, endDate?: string) {
+    const whereClause: any = { restaurantId };
+    
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      
+      whereClause.settledAt = { gte: start, lte: end };
+    }
+
+    const bills = await this.prisma.bill.findMany({
+      where: whereClause,
+      include: {
+        order: {
+          include: {
+            items: {
+              include: {
+                product: true
+              }
+            },
+            waiter: { select: { name: true } },
+            table: { select: { tableNumber: true } }
+          }
+        },
+        cashier: { select: { name: true } }
+      },
+      orderBy: { settledAt: 'desc' }
+    });
+
+    return bills;
+  }
 }

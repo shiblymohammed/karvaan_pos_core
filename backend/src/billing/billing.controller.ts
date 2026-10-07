@@ -31,4 +31,10 @@ export class BillingController {
     if (!user.restaurantId) throw new UnauthorizedException('No restaurant context');
     return this.billingService.getDailyDashboardSummary(user.restaurantId);
   }
+
+  @Get('history')
+  async getOrderHistory(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string, @GetUser() user?: any) {
+    if (!user.restaurantId) throw new UnauthorizedException('No restaurant context');
+    return this.billingService.getOrderHistory(user.restaurantId, startDate, endDate);
+  }
 }

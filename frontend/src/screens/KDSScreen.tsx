@@ -148,24 +148,27 @@ export const KDSScreen: React.FC = () => {
 
         {/* Food Items List */}
         <div className={`${isCompact ? 'p-2 sm:p-3 space-y-1.5 sm:space-y-2' : 'p-3 sm:p-4 space-y-2.5 sm:space-y-3.5'} max-h-[250px] sm:max-h-[300px] overflow-y-auto bg-transparent`}>
-          {ticket.items.map((item: any, idx: number) => (
-            <div key={idx} className={`flex items-start justify-between border-b border-slate-200/50 last:border-none last:pb-0 ${isCompact ? 'pb-1.5 sm:pb-2' : 'pb-2 sm:pb-3'}`}>
-              <div className="flex items-start gap-2 sm:gap-3 w-full">
-                <span className={`${isCompact ? 'text-xs sm:text-sm px-1.5 sm:px-2 py-0.5' : 'text-sm sm:text-base px-2 sm:px-2.5 py-1'} font-black rounded-xl bg-white/60 text-slate-800 shadow-sm border border-white/50 shrink-0 mt-0.5`}>
-                  {item.quantity}x
-                </span>
-                <div className="flex-1 min-w-0">
-                  <span className={`font-bold text-slate-800 leading-snug block tracking-tight truncate whitespace-normal ${isCompact ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'}`}>{item.name}</span>
-                  {item.notes && (
-                    <div className={`font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-200 rounded-xl flex items-center shadow-sm whitespace-normal break-words ${isCompact ? 'text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 sm:py-1 mt-1 gap-1' : 'text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 mt-1 sm:mt-2 gap-1 sm:gap-2'}`}>
-                      <AlertTriangle className={`${isCompact ? 'h-3 w-3' : 'h-4 w-4'} text-amber-600 shrink-0`} />
-                      <span className="flex-1">{item.notes}</span>
-                    </div>
-                  )}
+          {ticket.items.map((item: any, idx: number) => {
+            const isAddon = item.category === 'ADD-ON';
+            return (
+              <div key={idx} className={`flex items-start justify-between border-b border-slate-200/50 last:border-none last:pb-0 ${isCompact ? 'pb-1.5 sm:pb-2' : 'pb-2 sm:pb-3'}`}>
+                <div className={`flex items-start gap-2 sm:gap-3 w-full ${isAddon ? 'pl-4 sm:pl-6 opacity-80' : ''}`}>
+                  <span className={`${isAddon ? 'text-[10px] sm:text-xs px-1 sm:px-1.5 py-0.5 bg-amber-100/50 text-amber-800 border-amber-200/50' : (isCompact ? 'text-xs sm:text-sm px-1.5 sm:px-2 py-0.5 bg-white/60 text-slate-800 border-white/50' : 'text-sm sm:text-base px-2 sm:px-2.5 py-1 bg-white/60 text-slate-800 border-white/50')} font-black rounded-xl shadow-sm border shrink-0 mt-0.5`}>
+                    {item.quantity}x
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className={`font-bold leading-snug block tracking-tight truncate whitespace-normal ${isAddon ? 'text-amber-800 text-[11px] sm:text-xs' : (isCompact ? 'text-slate-800 text-xs sm:text-sm' : 'text-slate-800 text-sm sm:text-base')}`}>{item.name}</span>
+                    {item.notes && (
+                      <div className={`font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-200 rounded-xl flex items-center shadow-sm whitespace-normal break-words ${isCompact ? 'text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 sm:py-1 mt-1 gap-1' : 'text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 mt-1 sm:mt-2 gap-1 sm:gap-2'}`}>
+                        <AlertTriangle className={`${isCompact ? 'h-3 w-3' : 'h-4 w-4'} text-amber-600 shrink-0`} />
+                        <span className="flex-1">{item.notes}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

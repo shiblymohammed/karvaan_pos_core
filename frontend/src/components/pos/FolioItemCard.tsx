@@ -1,6 +1,8 @@
-import React from 'react';
-import { Edit3, Minus, Plus, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Edit3, Minus, Plus, Trash2, CheckSquare, Square } from 'lucide-react';
 import { useMenuStore } from '../../store/useMenuStore';
+import { useAddonStore, PaidAddon } from '../../store/useAddonStore';
 
 interface FolioItemCardProps {
   item: any;
@@ -8,6 +10,7 @@ interface FolioItemCardProps {
   onUpdateQuantity: (idx: number, delta: number) => void;
   onRemove: (idx: number) => void;
   onUpdateNote: (idx: number, note: string) => void;
+  onUpdateAddons?: (idx: number, addons: any[]) => void;
   onVoid: (idx: number, item: any) => void;
   kdsStatusBadge?: React.ReactNode;
 }
@@ -18,20 +21,40 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
   onUpdateQuantity,
   onRemove,
   onUpdateNote,
+  onUpdateAddons,
   onVoid,
   kdsStatusBadge
 }) => {
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [noteText, setNoteText] = useState(item.notes || '');
+  const [selectedAddons, setSelectedAddons] = useState<PaidAddon[]>(item.addons || []);
+  
+  const { getActiveAddons } = useAddonStore();
+  const activeAddons = getActiveAddons();
+
+  const handleSaveNote = () => {
+    onUpdateNote(index, noteText);
+    if (onUpdateAddons) {
+      onUpdateAddons(index, selectedAddons);
+    }
+    setIsNoteModalOpen(false);
+  };
+
   const isSent = item.status === 'SENT';
+  const isAddon = item.category === 'ADD-ON';
   const addonsTotal = item.addons?.reduce((sum: number, a: any) => sum + a.price, 0) || 0;
   const totalPrice = (item.price + addonsTotal) * item.quantity;
   const product = useMenuStore.getState().products.find(p => p.id === item.productId);
 
   return (
     <div 
-      className={`p-2 mb-1.5 rounded-lg transition-all border group ${
-        isSent 
-          ? 'bg-white/40 border-white/40 opacity-90 backdrop-blur-md' 
-          : 'bg-white/70 border-white/70 hover:border-emerald-300 hover:bg-white/90 backdrop-blur-xl shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+      className={`mb-1.5 rounded-lg transition-all border group ${
+        isAddon 
+          ? 'p-1.5 bg-amber-50/50 border-dashed border-amber-200/50 scale-[0.97] opacity-80'
+          : `p-2 ${isSent 
+              ? 'bg-white/40 border-white/40 opacity-90 backdrop-blur-md' 
+              : 'bg-white/70 border-white/70 hover:border-emerald-300 hover:bg-white/90 backdrop-blur-xl shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+            }`
       }`}
     >
       <div className="flex items-center justify-between gap-2">
@@ -73,8 +96,8 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
             {!isSent && (
               <button
                 onClick={() => {
-                  const note = window.prompt(`Enter note for ${item.name}`, item.notes || '');
-                  if (note !== null) onUpdateNote(index, note);
+                  setNoteText(item.notes || '');
+                  setIsNoteModalOpen(true);
                 }}
                 className="opacity-0 group-hover:opacity-100 flex items-center justify-center p-1 rounded-md text-amber-600 hover:bg-amber-50 transition-all cursor-pointer shrink-0 border border-transparent hover:border-amber-200"
                 title="Add Note"
@@ -123,9 +146,14 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
               {item.notes}
             </span>
           )}
-          {item.addons?.map((addon: any, aIdx: number) => (
+          {Object.entries(
+            (item.addons || []).reduce((acc: any, addon: any) => {
+              acc[addon.name] = (acc[addon.name] || 0) + 1;
+              return acc;
+            }, {})
+          ).map(([name, qty]: [string, any], aIdx: number) => (
             <span key={aIdx} className="text-[9px] md:text-[10px] font-semibold text-emerald-700 bg-emerald-50/80 border border-emerald-200/60 px-1.5 py-0.5 rounded truncate">
-              +{addon.name}
+              {qty > 1 ? `${qty}x ` : '+'}{name}
             </span>
           ))}
           {product?.isCombo && Object.entries(
@@ -140,6 +168,111 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
             </span>
           ))}
         </div>
+      )}
+
+      {/* Note Modal via React Portal to prevent overflow clipping */}
+      {isNoteModalOpen && document.body && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsNoteModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+              <Edit3 className="h-4 w-4 text-amber-500" />
+              <h3 className="font-bold text-slate-800 text-sm">Add Note to {item.name}</h3>
+            </div>
+            <div className="p-4">
+              <input
+                type="text"
+                autoFocus
+                value={noteText}
+                onChange={e => setNoteText(e.target.value)}
+                placeholder="e.g. Extra spicy, no onions..."
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20"
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleSaveNote();
+                  if (e.key === 'Escape') setIsNoteModalOpen(false);
+                }}
+              />
+
+              {activeAddons.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="font-bold text-xs text-slate-500 mb-2 uppercase tracking-wider">Select Add-ons</h4>
+                  <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200">
+                    {activeAddons.map(addon => {
+                      const qty = selectedAddons.filter(a => a.id === addon.id).length;
+                      return (
+                        <div 
+                          key={addon.id}
+                          className={`flex items-center justify-between p-2 rounded-lg border transition-all ${
+                            qty > 0 
+                              ? 'bg-amber-50 border-amber-200 shadow-sm' 
+                              : 'bg-white border-slate-200 hover:border-amber-200 hover:bg-amber-50/50'
+                          }`}
+                        >
+                          <div className="flex flex-col min-w-0 pr-1">
+                            <span className={`text-sm font-semibold truncate ${qty > 0 ? 'text-amber-700' : 'text-slate-600'}`}>{addon.name}</span>
+                            <span className="text-xs opacity-70 tabular-nums text-slate-500">+₹{addon.price}</span>
+                          </div>
+
+                          {qty === 0 ? (
+                            <button 
+                              onClick={() => setSelectedAddons(prev => [...prev, addon])}
+                              className="w-7 h-7 shrink-0 rounded bg-slate-100 text-slate-500 hover:bg-amber-100 hover:text-amber-600 flex items-center justify-center font-bold active:scale-95 transition-colors border border-transparent"
+                            >
+                              <Plus className="w-4 h-4 stroke-[3]" />
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-1.5 bg-amber-100/50 rounded-lg p-1 shrink-0 border border-amber-200/50">
+                              <button 
+                                onClick={() => {
+                                  const idx = selectedAddons.findIndex(a => a.id === addon.id);
+                                  if(idx !== -1) {
+                                    const newArr = [...selectedAddons];
+                                    newArr.splice(idx, 1);
+                                    setSelectedAddons(newArr);
+                                  }
+                                }}
+                                className="w-5 h-5 rounded bg-white text-amber-700 flex items-center justify-center shadow-sm active:scale-95"
+                              >
+                                <Minus className="w-3 h-3 stroke-[3]" />
+                              </button>
+                              <span className="text-[11px] font-black text-amber-800 w-3 text-center">{qty}</span>
+                              <button 
+                                onClick={() => setSelectedAddons(prev => [...prev, addon])}
+                                className="w-5 h-5 rounded bg-white text-amber-700 flex items-center justify-center shadow-sm active:scale-95"
+                              >
+                                <Plus className="w-3 h-3 stroke-[3]" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-4 pt-0 flex gap-2 justify-end">
+              <button
+                onClick={() => setIsNoteModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveNote}
+                className="px-4 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors cursor-pointer shadow-sm active:scale-95"
+              >
+                Save Note
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

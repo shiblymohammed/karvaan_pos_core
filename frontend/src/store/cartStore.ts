@@ -60,6 +60,7 @@ interface CartState {
   removeItemByIndex: (index: number) => void;
   updateQuantityByIndex: (index: number, delta: number) => void;
   updateItemNoteByIndex: (index: number, notes: string) => void;
+  updateItemAddonsByIndex: (index: number, addons: { id: string; name: string; price: number }[]) => void;
   setTable: (id: string | null, name: string | null) => void;
   setWaiter: (name: string | null) => void;
   setDiscount: (amount: number) => void;
@@ -171,6 +172,16 @@ export const useCartStore = create<CartState>()(
       const newItems = [...state.items];
       if (newItems[index]) {
         newItems[index] = { ...newItems[index], notes };
+      }
+      return { items: newItems };
+    });
+  },
+
+  updateItemAddonsByIndex: (index, addons) => {
+    set((state) => {
+      const newItems = [...state.items];
+      if (newItems[index]) {
+        newItems[index] = { ...newItems[index], addons };
       }
       return { items: newItems };
     });

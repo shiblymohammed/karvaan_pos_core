@@ -267,7 +267,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       fetchSettings: async () => {
         try {
-          const res = await fetch(`http://${getServerUrl()}/settings`);
+          const res = await fetch(`${getServerUrl()}/settings`);
           if (res.ok) {
             const data = await res.json();
             if (Object.keys(data).length > 0) {

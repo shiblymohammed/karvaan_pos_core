@@ -21,6 +21,7 @@ interface FolioSidebarProps {
   onShowCustomerModal: (show: boolean) => void;
   onShowMapPicker: (show: boolean) => void;
   onReturnFolio: () => void;
+  onSendKotPrint: () => void;
   onPreBill: () => void;
   onManagerAuthRequest: (action: any) => void;
   onDispatchDelivery?: (isPrepaid: boolean) => void;
@@ -35,6 +36,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
   onShowMapPicker,
   onReturnFolio,
   onPreBill,
+  onSendKotPrint,
   onManagerAuthRequest,
   onDispatchDelivery,
   onCompleteDelivery
@@ -44,7 +46,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
     discount, customer,
     orderType, deliveryAddress, deliveryFee, deliveryStatus, collectedMethod,
     removeItemByIndex, updateQuantityByIndex, setWaiter, setTable,
-    holdCurrentOrder, clearCart, updateItemNoteByIndex, sendKot,
+    holdCurrentOrder, clearCart, updateItemNoteByIndex, updateItemAddonsByIndex, sendKot,
     setDiscount, setOrderType, setDeliveryFee
   } = useCartStore();
 
@@ -243,6 +245,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
                 onUpdateQuantity={updateQuantityByIndex}
                 onRemove={removeItemByIndex}
                 onUpdateNote={updateItemNoteByIndex}
+                onUpdateAddons={updateItemAddonsByIndex}
                 onVoid={handleVoidItem}
                 kdsStatusBadge={getKitchenStatusBadge(selectedTableName, orderType)}
               />
@@ -270,6 +273,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         onApplyDiscount={setDiscount}
         onSettle={onSettle}
         onSendKot={sendKot}
+        onSendKotPrint={onSendKotPrint}
         onPreBill={onPreBill}
         onCompleteDelivery={onCompleteDelivery || (() => {})}
         onDispatchDelivery={onDispatchDelivery || (() => {})}

@@ -34,6 +34,8 @@ interface FolioHeaderProps {
   operatingMode?: string;
 }
 
+import { useLedgerStore } from '../../store/useLedgerStore';
+
 export const FolioHeader: React.FC<FolioHeaderProps> = ({
   orderType, setOrderType, activeFolioTab, setActiveFolioTab,
   deliveryAddress, deliveryFee, setDeliveryFee, setShowMapPicker,
@@ -42,6 +44,9 @@ export const FolioHeader: React.FC<FolioHeaderProps> = ({
   customer, setShowCustomerModal,
   hasItems, hasSentItems, onParkFolio, onClearFolio, onReturnFolio, currentUserRole, operatingMode = 'FINE_DINING'
 }) => {
+  const getOutstandingBalance = useLedgerStore(state => state.getOutstandingBalance);
+  const outstandingBalance = customer?.phone ? getOutstandingBalance(customer.phone) : 0;
+
   return (
     <div className="flex flex-col shrink-0 bg-transparent relative z-20 rounded-t-[32px] lg:rounded-t-none border-b border-white/20">
       
@@ -131,9 +136,16 @@ export const FolioHeader: React.FC<FolioHeaderProps> = ({
               }`}
             >
               <User className="h-3.5 w-3.5 shrink-0" />
-              <span className="font-semibold truncate max-w-[120px]">
-                {customer ? customer.name : 'Add Guest'}
-              </span>
+              <div className="flex flex-col items-start">
+                <span className="font-semibold truncate max-w-[120px] leading-tight">
+                  {customer ? customer.name : 'Add Guest'}
+                </span>
+                {outstandingBalance > 0 && (
+                  <span className="text-[9px] font-black text-rose-100 bg-rose-600/50 px-1 rounded uppercase tracking-wider leading-none py-0.5 mt-0.5 border border-rose-500/50">
+                    Due: ₹{outstandingBalance.toFixed(0)}
+                  </span>
+                )}
+              </div>
               <kbd className={`hidden md:inline-flex items-center justify-center px-1 text-[8px] font-black rounded opacity-70 group-hover:opacity-100 ${customer ? 'bg-black/20 text-white' : 'bg-slate-100 border border-slate-200 text-slate-400'}`}>F9</kbd>
             </button>
           </div>

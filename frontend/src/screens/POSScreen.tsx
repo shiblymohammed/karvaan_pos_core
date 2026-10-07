@@ -24,6 +24,7 @@ import { MenuGrid } from '../components/pos/MenuGrid';
 import { FolioSidebar } from '../components/pos/FolioSidebar';
 import { CategorySidebar } from '../components/pos/CategorySidebar';
 import { useInventoryStore } from '../store/useInventoryStore';
+import { toast } from '../store/useToastStore';
 import { ReturnOrderModal, ReturnOrderData } from '../components/ReturnOrderModal';
 import { ManagerAuthModal } from '../components/ManagerAuthModal';
 import { emitSettleBill } from '../services/socket';
@@ -33,7 +34,7 @@ export const POSScreen: React.FC = () => {
   const { 
     items, selectedTableId, selectedTableName, selectedWaiter, 
     discount, heldOrders, customer, isOffline,
-    orderType, deliveryAddress, deliveryFee, deliveryStatus, collectedMethod,
+    orderType, deliveryAddress, deliveryFee, deliveryStatus, collectedMethod, currentOrderNumber,
     addItem, removeItemByIndex, updateQuantityByIndex, setTable, setWaiter, 
     holdCurrentOrder, resumeOrder, clearCart, updateItemNoteByIndex, sendKot,
     isMobileCartOpen, setIsMobileCartOpen,
@@ -60,7 +61,7 @@ export const POSScreen: React.FC = () => {
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '' });
 
-  const [receiptType, setReceiptType] = useState<'CHECKOUT' | 'PREBILL' | null>(null);
+  const [receiptType, setReceiptType] = useState<'CHECKOUT' | 'PREBILL' | 'KOT' | null>(null);
   const [lastBill, setLastBill] = useState<any>(null);
   const [customNoteModal, setCustomNoteModal] = useState<{ id: string; name: string; price: number } | null>(null);
   const [noteText, setNoteText] = useState('');
@@ -71,6 +72,7 @@ export const POSScreen: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [standaloneAddonModalOpen, setStandaloneAddonModalOpen] = useState(false);
   
   // Settlement state
   const [settleState, setSettleState] = useState<{ isOpen: boolean; method: PaymentMethod }>({
@@ -104,6 +106,7 @@ export const POSScreen: React.FC = () => {
         else if (showMapPicker) setShowMapPicker(false);
         else if (settleState.isOpen) setSettleState({ ...settleState, isOpen: false });
         else if (customNoteModal) setCustomNoteModal(null);
+        else if (standaloneAddonModalOpen) setStandaloneAddonModalOpen(false);
         else if (returnModalData) setReturnModalData(null);
         else if (managerAuthAction) setManagerAuthAction(null);
         else if (isMobileCartOpen) setIsMobileCartOpen(false);
@@ -293,7 +296,6 @@ export const POSScreen: React.FC = () => {
           const addonText = i.addons && i.addons.length > 0 
             ? ` [Add: ${Object.entries(i.addons.reduce((acc: any, addon: any) => { acc[addon.name] = (acc[addon.name] || 0) + 1; return acc; }, {})).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(', ')}]` 
             : '';
-            
           let comboText = '';
           if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
             const grouped = i.comboItems.reduce((acc: any, id: string) => {
@@ -402,7 +404,6 @@ export const POSScreen: React.FC = () => {
           const addonText = i.addons && i.addons.length > 0 
             ? ` [Add: ${Object.entries(i.addons.reduce((acc: any, addon: any) => { acc[addon.name] = (acc[addon.name] || 0) + 1; return acc; }, {})).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(', ')}]` 
             : '';
-            
           let comboText = '';
           if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
             const grouped = i.comboItems.reduce((acc: any, id: string) => {
@@ -494,6 +495,38 @@ export const POSScreen: React.FC = () => {
     };
     setLastBill(billData);
     setReceiptType('PREBILL');
+    
+    // Change table status to BILLED so it reflects on the floor plan
+    if (selectedTableId) {
+      setTableStatus(selectedTableId, 'BILLED', grandTotal);
+    }
+  };
+
+  const handleKdsAndPrint = () => {
+    const newItems = items.filter(i => i.status === 'NEW');
+    if (newItems.length === 0) return;
+
+    const kotData = {
+      orderNumber: currentOrderNumber || `${orderPrefix}-${Math.floor(Math.random() * 9000)}`,
+      billNumber: `KOT-${Date.now().toString().slice(-6)}`,
+      table: selectedTableName || 'Takeaway',
+      cashier: currentUser?.name || 'System',
+      waiter: selectedWaiter || 'Counter Staff',
+      items: newItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, addons: i.addons })),
+      subtotal: 0,
+      discount: 0,
+      cgst: 0,
+      sgst: 0,
+      grandTotal: 0,
+      method: 'KOT_PRINT',
+      time: new Date().toLocaleTimeString(),
+      date: new Date().toLocaleDateString(),
+    };
+
+    setLastBill(kotData);
+    setReceiptType('KOT');
+    
+    sendKot();
   };
 
   const handleAddNoteAndAddons = () => {
@@ -649,7 +682,16 @@ export const POSScreen: React.FC = () => {
                 <CategorySidebar activeCategory={activeCategory} onSelectCategory={setActiveCategory} />
               </div>
               
-              <div className="shrink-0 flex items-center justify-end relative z-50">
+              <div className="shrink-0 flex items-center justify-end gap-2 relative z-50">
+                <button
+                  onClick={() => {
+                    setSelectedAddons([]);
+                    setStandaloneAddonModalOpen(true);
+                  }}
+                  className="px-3 h-[44px] bg-amber-100 hover:bg-amber-200 text-amber-700 font-bold border border-amber-200 rounded-xl shadow-sm flex items-center justify-center transition-all active:scale-95 text-xs whitespace-nowrap"
+                >
+                  + Add-on
+                </button>
                 {isSearchExpanded ? (
                   <div className="relative w-48 md:w-80 animate-in slide-in-from-right-8 duration-300">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -769,6 +811,7 @@ export const POSScreen: React.FC = () => {
           });
         }}
         onPreBill={handlePrintPreBill}
+        onSendKotPrint={handleKdsAndPrint}
         onManagerAuthRequest={setManagerAuthAction}
         onDispatchDelivery={handleDispatchDelivery}
       />
@@ -791,14 +834,16 @@ export const POSScreen: React.FC = () => {
       {receiptType && lastBill && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-pos-card w-full max-w-sm rounded-2xl border border-pos-border p-6 shadow-2xl flex flex-col items-center text-center space-y-4">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center border ${receiptType === 'CHECKOUT' ? 'bg-pos-accent/10 text-emerald-500 border-pos-accent/30' : 'bg-pos-bg text-pos-text-muted border-pos-border'}`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center border ${receiptType === 'CHECKOUT' ? 'bg-pos-accent/10 text-emerald-500 border-pos-accent/30' : receiptType === 'KOT' ? 'bg-rose-100 text-rose-500 border-rose-300' : 'bg-pos-bg text-pos-text-muted border-pos-border'}`}>
               {receiptType === 'CHECKOUT' ? <CheckCircle2 className="h-7 w-7 shrink-0" /> : <Printer className="h-6 w-6 shrink-0" />}
             </div>
             <div>
               <h3 className="font-extrabold text-lg text-pos-text">
-                {receiptType === 'CHECKOUT' ? 'Bill Settled Successfully!' : 'Pre-Bill Preview'}
+                {receiptType === 'CHECKOUT' ? 'Bill Settled Successfully!' : receiptType === 'KOT' ? 'Kitchen Order Ticket' : 'Pre-Bill Preview'}
               </h3>
-              <p className="text-xs font-bold text-pos-text-muted">Invoice: {lastBill.billNumber} • {lastBill.time}</p>
+              <p className="text-xs font-bold text-pos-text-muted">
+                {receiptType === 'KOT' ? 'Order: ' : 'Invoice: '} {receiptType === 'KOT' ? lastBill.orderNumber : lastBill.billNumber} • {lastBill.time}
+              </p>
             </div>
 
             {/* Simulated ESC/POS Thermal Paper Preview */}
@@ -834,12 +879,22 @@ export const POSScreen: React.FC = () => {
                     <div key={idx} className="flex flex-col">
                       <div className="flex justify-between font-bold">
                         <span>{i.name} x{i.quantity}</span>
-                        <span>₹{lineTotal.toFixed(2)}</span>
+                        {receiptType !== 'KOT' && <span>₹{lineTotal.toFixed(2)}</span>}
                       </div>
-                      {i.addons && i.addons.map((addon: any, aIdx: number) => (
+                      {i.notes && (
+                        <div className="text-[10px] font-black text-rose-500 pl-2 uppercase italic">
+                          * NOTE: {i.notes}
+                        </div>
+                      )}
+                      {i.addons && Object.entries(
+                        i.addons.reduce((acc: any, addon: any) => {
+                          acc[addon.name] = { price: addon.price, qty: (acc[addon.name]?.qty || 0) + 1 };
+                          return acc;
+                        }, {})
+                      ).map(([name, data]: [string, any], aIdx: number) => (
                         <div key={aIdx} className="flex justify-between text-[10px] text-emerald-500 pl-2">
-                          <span>+ {addon.name}</span>
-                          <span>(₹{addon.price * i.quantity})</span>
+                          <span>{data.qty > 1 ? `${data.qty}x ` : '+ '}{name}</span>
+                          {receiptType !== 'KOT' && <span>(₹{data.price * data.qty * i.quantity})</span>}
                         </div>
                       ))}
                     </div>
@@ -847,20 +902,22 @@ export const POSScreen: React.FC = () => {
                 })}
               </div>
 
-              <div className="space-y-0.5 pt-1 font-bold">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>₹{lastBill.subtotal.toFixed(2)}</span>
+              {receiptType !== 'KOT' && (
+                <div className="space-y-0.5 pt-1 font-bold">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>₹{lastBill.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-pos-text-muted">
+                    <span>CGST + SGST (5%):</span>
+                    <span>₹{(lastBill.cgst + lastBill.sgst).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-base font-black border-t border-pos-border pt-1 mt-1">
+                    <span>GRAND TOTAL:</span>
+                    <span>₹{lastBill.grandTotal.toFixed(2)}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-[11px] text-pos-text-muted">
-                  <span>CGST + SGST (5%):</span>
-                  <span>₹{(lastBill.cgst + lastBill.sgst).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-base font-black border-t border-pos-border pt-1 mt-1">
-                  <span>GRAND TOTAL:</span>
-                  <span>₹{lastBill.grandTotal.toFixed(2)}</span>
-                </div>
-              </div>
+              )}
 
               <div className="text-center pt-2 text-[10px] font-bold text-pos-text-muted border-t border-pos-border">
                 <p>Thank you for dining with Karvaan!</p>
@@ -957,26 +1014,53 @@ export const POSScreen: React.FC = () => {
                 <label className="text-xs font-bold text-pos-text-muted mb-2 block">Paid Add-ons</label>
                 <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
                   {activeAddons.map(addon => {
-                    const isSelected = selectedAddons.some(a => a.id === addon.id);
+                    const qty = selectedAddons.filter(a => a.id === addon.id).length;
                     return (
-                      <button
+                      <div
                         key={addon.id}
-                        onClick={() => {
-                          if (isSelected) {
-                            setSelectedAddons(prev => prev.filter(a => a.id !== addon.id));
-                          } else {
-                            setSelectedAddons(prev => [...prev, addon]);
-                          }
-                        }}
-                        className={`flex items-center justify-between px-3 py-2 rounded-xl border text-left cursor-pointer transition-all ${
-                          isSelected 
-                            ? 'bg-pos-accent/10 border-pos-accent/50 text-emerald-500' 
-                            : 'bg-pos-bg border-pos-border text-pos-text hover:border-pos-accent/50'
+                        className={`flex items-center justify-between px-2.5 py-2 rounded-xl border transition-all ${
+                          qty > 0 
+                            ? 'bg-pos-accent/10 border-pos-accent/50' 
+                            : 'bg-pos-bg border-pos-border'
                         }`}
                       >
-                        <span className="text-xs font-bold truncate pr-2">{addon.name}</span>
-                        <span className="text-xs font-black shrink-0">+₹{addon.price}</span>
-                      </button>
+                        <div className="flex flex-col min-w-0 pr-2">
+                          <span className={`text-xs font-bold truncate ${qty > 0 ? 'text-emerald-500' : 'text-pos-text'}`}>{addon.name}</span>
+                          <span className="text-[10px] font-black text-pos-text-muted">+₹{addon.price}</span>
+                        </div>
+                        
+                        {qty === 0 ? (
+                          <button 
+                            onClick={() => setSelectedAddons(prev => [...prev, addon])}
+                            className="w-7 h-7 shrink-0 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 flex items-center justify-center font-bold active:scale-95 transition-colors border border-emerald-100"
+                          >
+                            <Plus className="w-4 h-4 stroke-[3]" />
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-1.5 bg-emerald-100 rounded-lg p-1 shrink-0 border border-emerald-200">
+                            <button 
+                              onClick={() => {
+                                const idx = selectedAddons.findIndex(a => a.id === addon.id);
+                                if(idx !== -1) {
+                                  const newArr = [...selectedAddons];
+                                  newArr.splice(idx, 1);
+                                  setSelectedAddons(newArr);
+                                }
+                              }}
+                              className="w-5 h-5 rounded bg-white text-emerald-700 flex items-center justify-center shadow-sm active:scale-95"
+                            >
+                              <Minus className="w-3 h-3 stroke-[3]" />
+                            </button>
+                            <span className="text-[11px] font-black text-emerald-800 w-3 text-center">{qty}</span>
+                            <button 
+                              onClick={() => setSelectedAddons(prev => [...prev, addon])}
+                              className="w-5 h-5 rounded bg-white text-emerald-700 flex items-center justify-center shadow-sm active:scale-95"
+                            >
+                              <Plus className="w-3 h-3 stroke-[3]" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -996,6 +1080,111 @@ export const POSScreen: React.FC = () => {
               <button
                 onClick={handleAddNoteAndAddons}
                 className="px-4 py-2 bg-gradient-to-r from-pos-accent to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-extrabold rounded-xl text-sm shadow-[0_4px_12px_rgba(16,185,129,0.3)] transition-transform active:scale-95 cursor-pointer"
+              >
+                Add to Cart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* NEW: Standalone Add-on Modal */}
+      {standaloneAddonModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setStandaloneAddonModalOpen(false)} />
+          <div className="bg-pos-card rounded-3xl shadow-2xl border border-pos-border w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 relative z-10 flex flex-col max-h-[85vh]">
+            <div className="p-4 border-b border-pos-border/50 flex items-center gap-3 bg-pos-bg/50">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-inner shrink-0">
+                <Plus className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-pos-text text-lg leading-tight">Standalone Add-ons</h3>
+                <p className="text-[11px] font-bold text-pos-text-muted">Add extras directly to cart</p>
+              </div>
+            </div>
+
+            <div className="p-4 overflow-y-auto">
+              <div className="grid grid-cols-1 gap-2">
+                {activeAddons.map(addon => {
+                  const qty = selectedAddons.filter(a => a.id === addon.id).length;
+                  return (
+                    <div
+                      key={addon.id}
+                      className={`flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all ${
+                        qty > 0 
+                          ? 'bg-amber-50 border-amber-200' 
+                          : 'bg-pos-bg border-pos-border hover:border-amber-200'
+                      }`}
+                    >
+                      <div className="flex flex-col min-w-0 pr-2">
+                        <span className={`text-sm font-bold truncate ${qty > 0 ? 'text-amber-700' : 'text-pos-text'}`}>{addon.name}</span>
+                        <span className="text-xs font-black text-pos-text-muted">₹{addon.price}</span>
+                      </div>
+                      
+                      {qty === 0 ? (
+                        <button 
+                          onClick={() => setSelectedAddons(prev => [...prev, addon])}
+                          className="w-8 h-8 shrink-0 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 flex items-center justify-center font-bold active:scale-95 transition-colors border border-amber-200/50"
+                        >
+                          <Plus className="w-4 h-4 stroke-[3]" />
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2 bg-amber-200 rounded-lg p-1 shrink-0 border border-amber-300">
+                          <button 
+                            onClick={() => {
+                              const idx = selectedAddons.findIndex(a => a.id === addon.id);
+                              if(idx !== -1) {
+                                const newArr = [...selectedAddons];
+                                newArr.splice(idx, 1);
+                                setSelectedAddons(newArr);
+                              }
+                            }}
+                            className="w-6 h-6 rounded bg-white text-amber-800 flex items-center justify-center shadow-sm active:scale-95"
+                          >
+                            <Minus className="w-3 h-3 stroke-[3]" />
+                          </button>
+                          <span className="text-xs font-black text-amber-900 w-4 text-center">{qty}</span>
+                          <button 
+                            onClick={() => setSelectedAddons(prev => [...prev, addon])}
+                            className="w-6 h-6 rounded bg-white text-amber-800 flex items-center justify-center shadow-sm active:scale-95"
+                          >
+                            <Plus className="w-3 h-3 stroke-[3]" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-pos-border bg-pos-bg/50 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setStandaloneAddonModalOpen(false);
+                  setSelectedAddons([]);
+                }}
+                className="px-4 py-2 bg-white text-slate-500 hover:text-slate-700 rounded-xl text-sm font-bold border border-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const groupedAddons = selectedAddons.reduce((acc: any, addon: any) => {
+                    if(!acc[addon.id]) acc[addon.id] = { ...addon, qty: 0 };
+                    acc[addon.id].qty += 1;
+                    return acc;
+                  }, {});
+                  
+                  Object.values(groupedAddons).forEach((addon: any) => {
+                    for(let i = 0; i < addon.qty; i++) {
+                      addItem({ id: `standalone-${addon.id}`, name: `+ ${addon.name}`, price: addon.price, category: 'ADD-ON' });
+                    }
+                  });
+                  setStandaloneAddonModalOpen(false);
+                  setSelectedAddons([]);
+                }}
+                disabled={selectedAddons.length === 0}
+                className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold rounded-xl text-sm shadow-md disabled:opacity-50 transition-all active:scale-95"
               >
                 Add to Cart
               </button>

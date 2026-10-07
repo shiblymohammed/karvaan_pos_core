@@ -3,6 +3,7 @@ import { LayoutDashboard, Menu as MenuIcon, Users, Settings, LogOut, Keyboard, B
 import { getQueueCount, getPendingActions, clearAction } from '../services/offlineQueue';
 import { socket, emitAction } from '../services/socket';
 import { motion } from 'framer-motion';
+import { toast } from '../store/useToastStore';
 
 import { AdminMenuManager } from './Admin/AdminMenuManager';
 import { AdminStaffManager } from './Admin/AdminStaffManager';
@@ -12,9 +13,10 @@ import { AdminInventoryScreen } from './Admin/AdminInventoryScreen';
 import { AdminTableManager } from './Admin/AdminTableManager';
 import { AdminPrinterSettings } from './Admin/AdminPrinterSettings';
 import { AdminComboStudio } from './Admin/AdminComboStudio';
-import { Printer, Utensils } from 'lucide-react';
+import { AdminOrderHistory } from './Admin/AdminOrderHistory';
+import { Printer, Utensils, History } from 'lucide-react';
 
-type AdminTab = 'MENU' | 'COMBOS' | 'STAFF' | 'QUICK_KEYS' | 'SETTINGS' | 'LEDGER' | 'INVENTORY' | 'TABLES' | 'PRINTER';
+type AdminTab = 'MENU' | 'COMBOS' | 'STAFF' | 'QUICK_KEYS' | 'SETTINGS' | 'LEDGER' | 'INVENTORY' | 'TABLES' | 'PRINTER' | 'HISTORY';
 
 export const AdminPortalScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
@@ -35,19 +37,19 @@ export const AdminPortalScreen: React.FC = () => {
 
   const handleForceSync = async () => {
     if (!socket.connected) {
-      alert("Cannot sync: No connection to server.");
+      toast.error("Cannot sync: No connection to server.");
       return;
     }
     const pending = await getPendingActions();
     if (pending.length === 0) {
-      alert("No pending actions to sync.");
+      toast.info("No pending actions to sync.");
       return;
     }
     for (const action of pending) {
       emitAction(action.type, action.payload);
       if (action.id) await clearAction(action.id);
     }
-    alert(`Successfully synced ${pending.length} actions.`);
+    toast.success(`Successfully synced ${pending.length} actions.`);
   };
 
   return (
@@ -70,6 +72,7 @@ export const AdminPortalScreen: React.FC = () => {
             { id: 'STAFF', label: 'Staff & Waiters', icon: Users },
             { id: 'INVENTORY', label: 'Inventory & Recipes', icon: Package },
             { id: 'LEDGER', label: 'Customer Ledger', icon: BookOpen },
+            { id: 'HISTORY', label: 'Order History', icon: History },
             { id: 'PRINTER', label: 'Label & Printers', icon: Printer },
             { id: 'SETTINGS', label: 'Settings', icon: Settings },
           ].map(({ id, label, icon: Icon }) => {
@@ -137,6 +140,7 @@ export const AdminPortalScreen: React.FC = () => {
         {activeTab === 'SETTINGS' && <AdminSettingsManager />}
         { activeTab === 'LEDGER' && <AdminCustomerLedger />}
         { activeTab === 'INVENTORY' && <AdminInventoryScreen />}
+        { activeTab === 'HISTORY' && <AdminOrderHistory />}
         { activeTab === 'PRINTER' && <AdminPrinterSettings />}
       </main>
     </div>
