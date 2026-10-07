@@ -164,6 +164,16 @@ export const KDSScreen: React.FC = () => {
                         <span className="flex-1">{item.notes}</span>
                       </div>
                     )}
+                    {item.subItems && item.subItems.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {item.subItems.map((sub: any, sIdx: number) => (
+                          <span key={sIdx} className="text-[10px] sm:text-[11px] font-bold text-emerald-800 bg-emerald-100/80 border border-emerald-200 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
+                            <Utensils className="w-3 h-3 opacity-60" />
+                            {sub.qty}x {sub.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

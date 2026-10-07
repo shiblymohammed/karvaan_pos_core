@@ -8,7 +8,7 @@ export interface KdsTicket {
   tableNumber: string;
   orderType?: 'DINE_IN' | 'PARCEL' | 'DELIVERY';
   customerName?: string;
-  items: Array<{ name: string; quantity: number; notes?: string; status: string }>;
+  items: Array<{ name: string; quantity: number; notes?: string; status: string; price?: number; productId?: string; category?: string; subItems?: { name: string; qty: number }[] }>;
   firedAt: string;
   status: 'RECEIVED' | 'COOKING' | 'READY' | 'SERVED';
   elapsedMinutes: number;

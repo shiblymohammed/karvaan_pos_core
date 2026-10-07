@@ -63,6 +63,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           quantity: i.quantity,
           notes: i.notes,
           status: i.status,
+          subItems: i.addons ? JSON.parse(i.addons) : undefined,
         })),
       }));
 
@@ -175,6 +176,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
                   quantity: i.quantity,
                   price: i.price,
                   notes: i.notes || null,
+                  addons: i.subItems ? JSON.stringify(i.subItems) : null,
                   status: 'SENT',
                 })),
               },

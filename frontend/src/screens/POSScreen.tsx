@@ -292,10 +292,12 @@ export const POSScreen: React.FC = () => {
           : (orderType === 'PARCEL' ? '📦 Parcel' : '🛵 Delivery'),
         orderType,
         customerName: customer?.name,
-        items: newItems.flatMap(i => {
+        items: newItems.map(i => {
           const addonText = i.addons && i.addons.length > 0 
             ? ` [Add: ${Object.entries(i.addons.reduce((acc: any, addon: any) => { acc[addon.name] = (acc[addon.name] || 0) + 1; return acc; }, {})).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(', ')}]` 
             : '';
+
+          let subItems: { name: string; qty: number }[] | undefined = undefined;
 
           if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
             const grouped = i.comboItems.reduce((acc: any, id: string) => {
@@ -307,26 +309,22 @@ export const POSScreen: React.FC = () => {
               return acc;
             }, {});
             
-            return Object.entries(grouped).map(([name, payload]: any) => ({
-              name: `${name} (Combo: ${i.name})`,
-              quantity: i.quantity * payload.qty,
-              notes: (i.notes || '') + addonText,
-              status: 'COOKING',
-              category: 'COMBO_ITEM',
-              price: 0,
-              productId: payload.id
+            subItems = Object.entries(grouped).map(([name, payload]: any) => ({
+              name,
+              qty: payload.qty
             }));
           }
 
-          return [{ 
+          return { 
             name: i.name, 
             quantity: i.quantity, 
             notes: (i.notes || '') + addonText, 
             status: 'COOKING',
             category: i.category,
             price: i.price || 0,
-            productId: i.productId || 'unknown'
-          }];
+            productId: i.productId || 'unknown',
+            subItems
+          };
         }),
         firedAt: new Date().toISOString()
       });
@@ -414,10 +412,12 @@ export const POSScreen: React.FC = () => {
         tableNumber: '🛵 Delivery',
         orderType: 'DELIVERY',
         customerName: customer?.name,
-        items: newItems.flatMap(i => {
+        items: newItems.map(i => {
           const addonText = i.addons && i.addons.length > 0 
             ? ` [Add: ${Object.entries(i.addons.reduce((acc: any, addon: any) => { acc[addon.name] = (acc[addon.name] || 0) + 1; return acc; }, {})).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(', ')}]` 
             : '';
+
+          let subItems: { name: string; qty: number }[] | undefined = undefined;
 
           if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
             const grouped = i.comboItems.reduce((acc: any, id: string) => {
@@ -429,26 +429,22 @@ export const POSScreen: React.FC = () => {
               return acc;
             }, {});
             
-            return Object.entries(grouped).map(([name, payload]: any) => ({
-              name: `${name} (Combo: ${i.name})`,
-              quantity: i.quantity * payload.qty,
-              notes: (i.notes || '') + addonText,
-              status: 'COOKING',
-              category: 'COMBO_ITEM',
-              price: 0,
-              productId: payload.id
+            subItems = Object.entries(grouped).map(([name, payload]: any) => ({
+              name,
+              qty: payload.qty
             }));
           }
 
-          return [{ 
+          return { 
             name: i.name, 
             quantity: i.quantity, 
             notes: (i.notes || '') + addonText, 
             status: 'COOKING',
             category: i.category,
             price: i.price || 0,
-            productId: i.productId || 'unknown'
-          }];
+            productId: i.productId || 'unknown',
+            subItems
+          };
         }),
         firedAt: new Date().toISOString()
       });
