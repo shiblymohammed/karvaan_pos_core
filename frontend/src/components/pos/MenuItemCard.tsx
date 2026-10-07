@@ -82,7 +82,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
                   if (name) acc[name] = (acc[name] || 0) + 1;
                   return acc;
                 }, {})
-              ).map(([name, qty]) => ((qty as number) > 1 ? `${qty}x ${name}` : name)).join(' • ')}
+              ).map(([name, qty]) => `${qty}x ${name}`).join(' • ')}
             </p>
           )}
         </div>

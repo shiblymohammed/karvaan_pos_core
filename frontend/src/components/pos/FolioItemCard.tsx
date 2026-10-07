@@ -164,7 +164,7 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
             }, {})
           ).map(([name, qty], cIdx) => (
             <span key={cIdx} className="text-[9px] md:text-[10px] font-semibold text-purple-700 bg-purple-50/80 border border-purple-200/60 px-1.5 py-0.5 rounded truncate">
-              • {(qty as number) > 1 ? `${qty}x ` : ''}{name}
+              • {qty}x {name}
             </span>
           ))}
         </div>
