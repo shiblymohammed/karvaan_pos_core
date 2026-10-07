@@ -25,3 +25,7 @@ backend/dist/
 backend/backups/
 backend/karvaan-pos.db
 backend/karvaan-pos.db-journal
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+backend/prisma/dev.db-shm
+backend/prisma/dev.db-wal
