@@ -300,16 +300,21 @@ export const POSScreen: React.FC = () => {
           if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
             const grouped = i.comboItems.reduce((acc: any, id: string) => {
               const pName = useMenuStore.getState().products.find(p => p.id === id)?.name || 'Unknown Item';
-              if (pName) acc[pName] = (acc[pName] || 0) + 1;
+              if (pName) {
+                if (!acc[pName]) acc[pName] = { qty: 0, id };
+                acc[pName].qty += 1;
+              }
               return acc;
             }, {});
             
-            return Object.entries(grouped).map(([name, qty]) => ({
+            return Object.entries(grouped).map(([name, payload]: any) => ({
               name: `${name} (Combo: ${i.name})`,
-              quantity: i.quantity * (qty as number),
+              quantity: i.quantity * payload.qty,
               notes: (i.notes || '') + addonText,
               status: 'COOKING',
-              category: 'COMBO_ITEM'
+              category: 'COMBO_ITEM',
+              price: 0,
+              productId: payload.id
             }));
           }
 
@@ -318,7 +323,9 @@ export const POSScreen: React.FC = () => {
             quantity: i.quantity, 
             notes: (i.notes || '') + addonText, 
             status: 'COOKING',
-            category: i.category
+            category: i.category,
+            price: i.price || 0,
+            productId: i.productId || 'unknown'
           }];
         }),
         firedAt: new Date().toISOString()
@@ -415,16 +422,21 @@ export const POSScreen: React.FC = () => {
           if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
             const grouped = i.comboItems.reduce((acc: any, id: string) => {
               const pName = useMenuStore.getState().products.find(p => p.id === id)?.name || 'Unknown Item';
-              if (pName) acc[pName] = (acc[pName] || 0) + 1;
+              if (pName) {
+                if (!acc[pName]) acc[pName] = { qty: 0, id };
+                acc[pName].qty += 1;
+              }
               return acc;
             }, {});
             
-            return Object.entries(grouped).map(([name, qty]) => ({
+            return Object.entries(grouped).map(([name, payload]: any) => ({
               name: `${name} (Combo: ${i.name})`,
-              quantity: i.quantity * (qty as number),
+              quantity: i.quantity * payload.qty,
               notes: (i.notes || '') + addonText,
               status: 'COOKING',
-              category: 'COMBO_ITEM'
+              category: 'COMBO_ITEM',
+              price: 0,
+              productId: payload.id
             }));
           }
 
@@ -433,7 +445,9 @@ export const POSScreen: React.FC = () => {
             quantity: i.quantity, 
             notes: (i.notes || '') + addonText, 
             status: 'COOKING',
-            category: i.category
+            category: i.category,
+            price: i.price || 0,
+            productId: i.productId || 'unknown'
           }];
         }),
         firedAt: new Date().toISOString()
