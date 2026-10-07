@@ -290,12 +290,26 @@ export const POSScreen: React.FC = () => {
         orderType,
         customerName: customer?.name,
         items: newItems.map(i => {
-          const addonText = i.addons && i.addons.length > 0 ? ` [Add: ${i.addons.map(a => a.name).join(', ')}]` : '';
+          const addonText = i.addons && i.addons.length > 0 
+            ? ` [Add: ${Object.entries(i.addons.reduce((acc: any, addon: any) => { acc[addon.name] = (acc[addon.name] || 0) + 1; return acc; }, {})).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(', ')}]` 
+            : '';
+            
+          let comboText = '';
+          if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
+            const grouped = i.comboItems.reduce((acc: any, id: string) => {
+              const pName = useMenuStore.getState().products.find(p => p.id === id)?.name;
+              if (pName) acc[pName] = (acc[pName] || 0) + 1;
+              return acc;
+            }, {});
+            comboText = ` [Combo: ${Object.entries(grouped).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(' • ')}]`;
+          }
+
           return { 
             name: i.name, 
             quantity: i.quantity, 
-            notes: (i.notes || '') + addonText, 
-            status: 'COOKING' 
+            notes: (i.notes || '') + addonText + comboText, 
+            status: 'COOKING',
+            category: i.category
           };
         }),
         firedAt: new Date().toISOString()
@@ -385,8 +399,27 @@ export const POSScreen: React.FC = () => {
         orderType: 'DELIVERY',
         customerName: customer?.name,
         items: newItems.map(i => {
-          const addonText = i.addons && i.addons.length > 0 ? ` [Add: ${i.addons.map(a => a.name).join(', ')}]` : '';
-          return { name: i.name, quantity: i.quantity, notes: (i.notes || '') + addonText, status: 'COOKING' };
+          const addonText = i.addons && i.addons.length > 0 
+            ? ` [Add: ${Object.entries(i.addons.reduce((acc: any, addon: any) => { acc[addon.name] = (acc[addon.name] || 0) + 1; return acc; }, {})).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(', ')}]` 
+            : '';
+            
+          let comboText = '';
+          if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
+            const grouped = i.comboItems.reduce((acc: any, id: string) => {
+              const pName = useMenuStore.getState().products.find(p => p.id === id)?.name;
+              if (pName) acc[pName] = (acc[pName] || 0) + 1;
+              return acc;
+            }, {});
+            comboText = ` [Combo: ${Object.entries(grouped).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(' • ')}]`;
+          }
+
+          return { 
+            name: i.name, 
+            quantity: i.quantity, 
+            notes: (i.notes || '') + addonText + comboText, 
+            status: 'COOKING',
+            category: i.category
+          };
         }),
         firedAt: new Date().toISOString()
       });

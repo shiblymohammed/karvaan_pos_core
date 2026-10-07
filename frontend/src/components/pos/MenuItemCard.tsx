@@ -76,7 +76,13 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
           </h3>
           {product.isCombo && product.comboItems && product.comboItems.length > 0 && (
             <p className="text-[10px] text-slate-500 font-semibold line-clamp-1 leading-tight tracking-tight">
-              {product.comboItems.map((cId: string) => useMenuStore.getState().products.find(p => p.id === cId)?.name).filter(Boolean).join(' • ')}
+              {Object.entries(
+                product.comboItems.reduce((acc: any, id: string) => {
+                  const name = useMenuStore.getState().products.find(p => p.id === id)?.name;
+                  if (name) acc[name] = (acc[name] || 0) + 1;
+                  return acc;
+                }, {})
+              ).map(([name, qty]) => ((qty as number) > 1 ? `${qty}x ${name}` : name)).join(' • ')}
             </p>
           )}
         </div>

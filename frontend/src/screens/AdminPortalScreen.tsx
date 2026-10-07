@@ -11,9 +11,10 @@ import { AdminCustomerLedger } from './Admin/AdminCustomerLedger';
 import { AdminInventoryScreen } from './Admin/AdminInventoryScreen';
 import { AdminTableManager } from './Admin/AdminTableManager';
 import { AdminPrinterSettings } from './Admin/AdminPrinterSettings';
-import { Printer } from 'lucide-react';
+import { AdminComboStudio } from './Admin/AdminComboStudio';
+import { Printer, Utensils } from 'lucide-react';
 
-type AdminTab = 'MENU' | 'STAFF' | 'QUICK_KEYS' | 'SETTINGS' | 'LEDGER' | 'INVENTORY' | 'TABLES' | 'PRINTER';
+type AdminTab = 'MENU' | 'COMBOS' | 'STAFF' | 'QUICK_KEYS' | 'SETTINGS' | 'LEDGER' | 'INVENTORY' | 'TABLES' | 'PRINTER';
 
 export const AdminPortalScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
@@ -64,6 +65,7 @@ export const AdminPortalScreen: React.FC = () => {
           
           {[
             { id: 'MENU', label: 'Menu Manager', icon: MenuIcon },
+            { id: 'COMBOS', label: 'Combo Studio', icon: Utensils },
             { id: 'TABLES', label: 'Tables & Floors', icon: LayoutGrid },
             { id: 'STAFF', label: 'Staff & Waiters', icon: Users },
             { id: 'INVENTORY', label: 'Inventory & Recipes', icon: Package },
@@ -129,6 +131,7 @@ export const AdminPortalScreen: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative bg-transparent flex flex-col">
         {activeTab === 'MENU' && <AdminMenuManager />}
+        {activeTab === 'COMBOS' && <AdminComboStudio />}
         {activeTab === 'TABLES' && <AdminTableManager />}
         {activeTab === 'STAFF' && <AdminStaffManager />}
         {activeTab === 'SETTINGS' && <AdminSettingsManager />}

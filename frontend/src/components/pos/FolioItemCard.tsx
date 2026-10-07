@@ -128,14 +128,17 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
               +{addon.name}
             </span>
           ))}
-          {product?.isCombo && product?.comboItems?.map((cId: string, cIdx: number) => {
-            const pName = useMenuStore.getState().products.find(p => p.id === cId)?.name;
-            return pName ? (
-              <span key={cIdx} className="text-[9px] md:text-[10px] font-semibold text-purple-700 bg-purple-50/80 border border-purple-200/60 px-1.5 py-0.5 rounded truncate">
-                • {pName}
-              </span>
-            ) : null;
-          })}
+          {product?.isCombo && Object.entries(
+            (product.comboItems || []).reduce((acc: any, id: string) => {
+              const pName = useMenuStore.getState().products.find(p => p.id === id)?.name;
+              if (pName) acc[pName] = (acc[pName] || 0) + 1;
+              return acc;
+            }, {})
+          ).map(([name, qty], cIdx) => (
+            <span key={cIdx} className="text-[9px] md:text-[10px] font-semibold text-purple-700 bg-purple-50/80 border border-purple-200/60 px-1.5 py-0.5 rounded truncate">
+              • {(qty as number) > 1 ? `${qty}x ` : ''}{name}
+            </span>
+          ))}
         </div>
       )}
     </div>
