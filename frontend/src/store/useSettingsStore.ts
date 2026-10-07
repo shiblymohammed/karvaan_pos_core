@@ -24,6 +24,9 @@ interface SettingsState {
   addDiscount: (discount: Omit<PredefinedDiscount, 'id'>) => void;
   deleteDiscount: (id: string) => void;
 
+  orderTvEnabled: boolean;
+  setOrderTvEnabled: (enabled: boolean) => void;
+
   orderTvShowPopup: boolean;
   toggleOrderTvPopup: () => void;
 
@@ -128,6 +131,7 @@ export const useSettingsStore = create<SettingsState>()(
       setDateFormat: (format) => set({ dateFormat: format }),
       operatingMode: 'FINE_DINING',
       setOperatingMode: (mode) => set({ operatingMode: mode }),
+      orderTvEnabled: true,
       orderTvShowPopup: true,
       orderTvPlayAudio: true,
       orderTvAudioTone: 'chime',
@@ -169,6 +173,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       deleteDiscount: (id) => set((state) => ({
         discounts: state.discounts.filter(d => d.id !== id)
+      })),
+
+      setOrderTvEnabled: (enabled) => set(() => ({
+        orderTvEnabled: enabled
       })),
 
       toggleOrderTvPopup: () => set((state) => ({ orderTvShowPopup: !state.orderTvShowPopup })),

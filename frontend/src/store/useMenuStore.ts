@@ -14,6 +14,8 @@ export interface Product {
   imageUrl?: string;   // Base64 or Cloudinary URL for product photo
   gstRate?: number;    // GST percentage e.g. 5.0
   isTopSelling?: boolean; // Flag for top selling items
+  isCombo?: boolean;
+  comboItems?: string[]; // Array of product IDs included in the combo
 }
 
 export interface Category {
@@ -51,6 +53,7 @@ const INITIAL_CATEGORIES: Category[] = [
   { id: 'cat-4', name: 'Wood-Fired Pizzas', sortOrder: 4, emoji: '🍕' },
   { id: 'cat-5', name: 'Main Course & Biryani', sortOrder: 5, emoji: '🍛' },
   { id: 'cat-6', name: 'Desserts & Bakery', sortOrder: 6, emoji: '🍰' },
+  { id: 'cat-combos', name: 'Combos', sortOrder: 7, emoji: '🍱' },
 ];
 
 const INITIAL_PRODUCTS: Product[] = [

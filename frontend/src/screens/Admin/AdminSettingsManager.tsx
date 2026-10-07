@@ -110,6 +110,7 @@ export const AdminSettingsManager: React.FC = () => {
   const [localDateFormat, setLocalDateFormat] = useState<'AUTO' | 'MANUAL'>(store.dateFormat || 'AUTO');
   const [localOperatingMode, setLocalOperatingMode] = useState<'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN'>(store.operatingMode || 'FINE_DINING');
 
+  const [localTvEnabled, setLocalTvEnabled] = useState(store.orderTvEnabled);
   const [localTvPopup, setLocalTvPopup] = useState(store.orderTvShowPopup);
   const [localTvAudio, setLocalTvAudio] = useState(store.orderTvPlayAudio);
   const [localTvAudioTone, setLocalTvAudioTone] = useState(store.orderTvAudioTone);
@@ -144,6 +145,7 @@ export const AdminSettingsManager: React.FC = () => {
     setLocalTimeFormat(store.timeFormat || '12h');
     setLocalDateFormat(store.dateFormat || 'AUTO');
     setLocalOperatingMode(store.operatingMode || 'FINE_DINING');
+    setLocalTvEnabled(store.orderTvEnabled);
     setLocalTvPopup(store.orderTvShowPopup);
     setLocalTvAudio(store.orderTvPlayAudio);
     setLocalTvAudioTone(store.orderTvAudioTone);
@@ -206,6 +208,7 @@ export const AdminSettingsManager: React.FC = () => {
     store.setTimeFormat(localTimeFormat as '12h' | '24h');
     store.setDateFormat(localDateFormat as 'AUTO' | 'MANUAL');
     store.setOperatingMode(localOperatingMode as 'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN');
+    store.setOrderTvEnabled(localTvEnabled);
     if (localTvPopup !== store.orderTvShowPopup) store.toggleOrderTvPopup();
     store.setOrderTvAudio(localTvAudio, localTvAudioTone, store.orderTvCustomAudioData);
     store.setOrderTvTts(localTvTtsEnabled, localTvTtsVoiceName);
@@ -385,6 +388,11 @@ export const AdminSettingsManager: React.FC = () => {
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <SettingsHeader title="Order TV Behaviors" description="Configure alerts, sounds, and animations for the customer-facing Order TV." />
       <SettingsSection>
+        <SettingsRow 
+          label="Enable Order TV Screen" 
+          description="Turn the customer-facing Order TV screen on or off entirely."
+          control={<Switch checked={localTvEnabled} onChange={() => setLocalTvEnabled(!localTvEnabled)} />} 
+        />
         <SettingsRow 
           label="Now Serving Popup" 
           description="Show a massive alert when an order is marked ready."

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Edit3, Minus, Plus, Trash2 } from 'lucide-react';
+import { useMenuStore } from '../../store/useMenuStore';
 
 interface FolioItemCardProps {
   item: any;
@@ -23,6 +24,7 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
   const isSent = item.status === 'SENT';
   const addonsTotal = item.addons?.reduce((sum: number, a: any) => sum + a.price, 0) || 0;
   const totalPrice = (item.price + addonsTotal) * item.quantity;
+  const product = useMenuStore.getState().products.find(p => p.id === item.productId);
 
   return (
     <div 
@@ -113,8 +115,8 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
 
       </div>
 
-      {/* Second Row: Notes & Addons (Only shown if present) */}
-      {(item.notes || (item.addons && item.addons.length > 0)) && (
+      {/* Second Row: Notes & Addons & Combos (Only shown if present) */}
+      {(item.notes || (item.addons && item.addons.length > 0) || (product?.isCombo && product?.comboItems?.length > 0)) && (
         <div className="flex flex-wrap gap-1 mt-1 pl-10 md:pl-12">
           {item.notes && (
             <span className="text-[9px] md:text-[10px] font-semibold text-amber-700 bg-amber-50/80 border border-amber-200/60 px-1.5 py-0.5 rounded truncate max-w-[150px]">
@@ -126,6 +128,14 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
               +{addon.name}
             </span>
           ))}
+          {product?.isCombo && product?.comboItems?.map((cId: string, cIdx: number) => {
+            const pName = useMenuStore.getState().products.find(p => p.id === cId)?.name;
+            return pName ? (
+              <span key={cIdx} className="text-[9px] md:text-[10px] font-semibold text-purple-700 bg-purple-50/80 border border-purple-200/60 px-1.5 py-0.5 rounded truncate">
+                • {pName}
+              </span>
+            ) : null;
+          })}
         </div>
       )}
     </div>

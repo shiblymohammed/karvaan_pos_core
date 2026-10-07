@@ -14,6 +14,8 @@ export interface CartItem {
   category?: string;
   addons?: { id: string; name: string; price: number }[];
   status: 'NEW' | 'SENT';
+  isCombo?: boolean;
+  comboItems?: string[];
 }
 
 export interface ParkedOrder {
@@ -136,6 +138,8 @@ export const useCartStore = create<CartState>()(
             category: product.category,
             addons,
             status: 'NEW',
+            isCombo: (product as any).isCombo,
+            comboItems: (product as any).comboItems,
           },
         ],
       };

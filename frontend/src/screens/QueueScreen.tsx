@@ -60,6 +60,7 @@ const PromoCarousel = ({ media, interval, bgColor, textOverlay, qrUrl }: { media
 export const QueueScreen: React.FC = () => {
   const { tickets, updateElapsedTimes } = useKdsStore();
   const { 
+    orderTvEnabled,
     orderTvShowPopup, orderTvPlayAudio, orderTvAudioTone, orderTvCustomAudioData, setOrderTvAudio,
     orderTvTickerEnabled, orderTvTickerMessage, orderTvConfettiEnabled, orderTvTtsEnabled, orderTvTtsVoiceName,
     orderTvWaterColor, orderTvWaterFillEnabled, orderTvReadyBadgeEnabled, orderTvTimeWaitingEnabled,
@@ -141,6 +142,8 @@ export const QueueScreen: React.FC = () => {
 
   // Simple logic to detect new "Ready" tickets to play a chime or flash
   useEffect(() => {
+    if (!orderTvEnabled) return;
+
     if (readyTickets.length > 0) {
       const newestReady = readyTickets[0]; // The one that just became ready
       if (newestReady.id !== lastReadyTicket) {
@@ -184,6 +187,15 @@ export const QueueScreen: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [showPopup.show]);
+
+  if (!orderTvEnabled) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-64px)] bg-kv-creme text-kv-muted font-bold text-xl">
+        <MonitorSpeaker className="h-16 w-16 mb-4 opacity-40 text-slate-400" />
+        Order TV Screen is Disabled
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="flex flex-col h-[calc(100vh-64px)] bg-kv-creme overflow-hidden transition-colors duration-300 relative">

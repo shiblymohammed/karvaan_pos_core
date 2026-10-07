@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Clock, MessageSquare, Plus } from 'lucide-react';
 import * as Icons from 'lucide-react';
-import { Product } from '../../store/useMenuStore';
+import { Product, useMenuStore } from '../../store/useMenuStore';
 import { motion } from 'framer-motion';
 
 interface MenuItemCardProps {
@@ -70,9 +70,16 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
       </div>
 
       <div className="p-2.5 md:p-3 md:px-3.5 flex flex-col justify-between flex-1 gap-1 min-w-0">
-        <h3 className="font-bold text-slate-800 line-clamp-2 leading-tight text-[13px] md:text-[14px] tracking-tight">
-          {product.name}
-        </h3>
+        <div className="flex flex-col gap-0.5">
+          <h3 className="font-bold text-slate-800 line-clamp-2 leading-tight text-[13px] md:text-[14px] tracking-tight">
+            {product.name}
+          </h3>
+          {product.isCombo && product.comboItems && product.comboItems.length > 0 && (
+            <p className="text-[10px] text-slate-500 font-semibold line-clamp-1 leading-tight tracking-tight">
+              {product.comboItems.map((cId: string) => useMenuStore.getState().products.find(p => p.id === cId)?.name).filter(Boolean).join(' • ')}
+            </p>
+          )}
+        </div>
 
         <div className="flex items-end justify-between mt-auto">
           <div className="flex flex-col gap-1">

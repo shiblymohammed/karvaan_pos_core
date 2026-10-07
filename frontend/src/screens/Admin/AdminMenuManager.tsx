@@ -57,15 +57,25 @@ const labelCls = 'block text-[11px] font-black text-slate-500 uppercase tracking
 interface ProductFormProps {
   initial?: Partial<Product>;
   categories: Category[];
+  products: Product[];
   onSave: (data: Omit<Product, 'id' | 'isAvailable'>) => void;
   onClose: () => void;
   title: string;
 }
-const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, onSave, onClose, title }) => {
+const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products, onSave, onClose, title }) => {
   const [form, setForm] = useState<Partial<Product>>({
     name: '', price: 0, category: categories[0]?.name || '', isAvailable: true,
-    prepTime: 5, gstRate: 5, imageEmoji: '', iconName: 'UtensilsCrossed', description: '', imageUrl: '', ...initial
+    prepTime: 5, gstRate: 5, imageEmoji: '', iconName: 'UtensilsCrossed', description: '', imageUrl: '', isCombo: false, comboItems: [], ...initial
   });
+  
+  const toggleComboItem = (productId: string) => {
+    const current = form.comboItems || [];
+    if (current.includes(productId)) {
+      setForm({ ...form, comboItems: current.filter(id => id !== productId) });
+    } else {
+      setForm({ ...form, comboItems: [...current, productId] });
+    }
+  };
   const [showIconPicker, setShowIconPicker] = useState(false);
   const nonAll = categories.filter(c => c.name !== 'All').sort((a, b) => a.sortOrder - b.sortOrder);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -205,14 +215,67 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, onSave, 
             </div>
           </div>
 
-          <div>
-            <label className={labelCls}>Category *</label>
-            <CustomSelect
-              value={form.category || (nonAll[0]?.name ?? '')}
-              onChange={val => setForm({ ...form, category: val as string })}
-              options={nonAll.map(cat => ({ value: cat.name, label: `${cat.emoji} ${cat.name}` }))}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Category *</label>
+              <CustomSelect
+                value={form.category || (nonAll[0]?.name ?? '')}
+                onChange={val => setForm({ ...form, category: val as string })}
+                options={nonAll.map(cat => ({ value: cat.name, label: `${cat.emoji} ${cat.name}` }))}
+              />
+            </div>
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={form.isCombo || false}
+                  onChange={e => {
+                    const isCombo = e.target.checked;
+                    setForm({ 
+                      ...form, 
+                      isCombo, 
+                      category: isCombo ? 'Combos' : form.category 
+                    });
+                  }}
+                  className="w-5 h-5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
+                />
+                <span className="text-sm font-bold text-slate-700">Is this a Combo?</span>
+              </label>
+            </div>
           </div>
+
+          {form.isCombo && (
+            <div className="border border-emerald-200 bg-emerald-50/50 rounded-2xl p-4">
+              <div className="flex justify-between items-end mb-2">
+                <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest">Select items included in this combo</label>
+                <div className="text-sm font-bold text-slate-600 bg-emerald-100/50 px-2 py-1 rounded-md">
+                  Normal Price: ₹{(form.comboItems || []).reduce((sum, id) => {
+                    const p = products.find(prod => prod.id === id);
+                    return sum + (p?.price || 0);
+                  }, 0)}
+                </div>
+              </div>
+              <div className="max-h-40 overflow-y-auto flex flex-col gap-2 pr-2 custom-scrollbar">
+                {products.filter(p => !p.isCombo).map(p => (
+                  <label key={p.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer transition-colors border border-transparent hover:border-emerald-200">
+                    <input 
+                      type="checkbox" 
+                      checked={(form.comboItems || []).includes(p.id)}
+                      onChange={() => toggleComboItem(p.id)}
+                      className="w-4 h-4 rounded text-emerald-500"
+                    />
+                    <div className="flex-1 flex justify-between items-center text-sm font-bold text-slate-700">
+                      <span>{p.imageEmoji} {p.name}</span>
+                      <span className="text-slate-400">₹{p.price}</span>
+                    </div>
+                  </label>
+                ))}
+                {products.filter(p => !p.isCombo).length === 0 && (
+                  <p className="text-sm text-slate-500 italic">No products available to create a combo.</p>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="pt-6 mt-2 flex gap-3 border-t border-slate-200/60">
             <button type="button" onClick={onClose}
@@ -684,6 +747,7 @@ export const AdminMenuManager: React.FC = () => {
         <ProductForm
           initial={productModal.editing}
           categories={categories}
+          products={products}
           title={productModal.editing ? 'Edit Menu Item' : 'Add New Menu Item'}
           onSave={handleProductSave}
           onClose={() => setProductModal({ open: false })}
