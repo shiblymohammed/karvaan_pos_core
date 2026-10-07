@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useMenuStore, Product, Category } from '../../store/useMenuStore';
 import {
   Plus, Edit3, Trash2, X, Check, PowerOff, ChevronUp, ChevronDown,
-  Search, LayoutGrid, UtensilsCrossed, Tag, Save, AlertCircle, ImagePlus, Trash
+  Search, LayoutGrid, UtensilsCrossed, Tag, Save, AlertCircle, ImagePlus, Trash, Star
 } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { IconPicker } from '../../components/IconPicker';
@@ -441,7 +441,7 @@ type Tab = 'products' | 'categories';
 export const AdminMenuManager: React.FC = () => {
   const {
     products, categories,
-    addProduct, updateProduct, deleteProduct, toggleAvailability,
+    addProduct, updateProduct, deleteProduct, toggleAvailability, toggleFavourite,
     addCategory, updateCategory, deleteCategory, reorderCategory
   } = useMenuStore();
 
@@ -640,8 +640,17 @@ export const AdminMenuManager: React.FC = () => {
                           </td>
                           <td className="py-3 px-4 text-right pr-6">
                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => toggleFavourite(prod.id)}
+                                title={prod.isFavourite ? "Remove from Favourites" : "Add to Favourites"}
+                                className={`p-2 border shadow-sm rounded-xl transition-all cursor-pointer ${
+                                  prod.isFavourite 
+                                    ? 'text-amber-500 bg-amber-50 border-amber-200 hover:bg-amber-100' 
+                                    : 'text-slate-400 bg-white border-slate-200 hover:text-amber-500 hover:border-amber-200 hover:bg-amber-50'
+                                }`}>
+                                <Star className={`h-4 w-4 ${prod.isFavourite ? 'fill-current' : ''}`} />
+                              </button>
                               <button onClick={() => setProductModal({ open: true, editing: prod })}
-                                className="p-2 text-slate-400 bg-white border border-slate-200 shadow-sm hover:text-amber-500 hover:border-amber-200 hover:bg-amber-50 rounded-xl transition-all cursor-pointer">
+                                className="p-2 text-slate-400 bg-white border border-slate-200 shadow-sm hover:text-blue-500 hover:border-blue-200 hover:bg-blue-50 rounded-xl transition-all cursor-pointer">
                                 <Edit3 className="h-4 w-4" />
                               </button>
                               <button onClick={() => setDeleteConfirm({ type: 'product', id: prod.id, name: prod.name })}

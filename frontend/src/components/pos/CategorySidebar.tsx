@@ -11,10 +11,15 @@ interface CategorySidebarProps {
 export const CategorySidebar: React.FC<CategorySidebarProps> = ({ activeCategory, onSelectCategory }) => {
   const { categories } = useMenuStore();
 
+  const displayCategories = [
+    { id: 'fav', name: 'Favourites', sortOrder: -1, emoji: '⭐', iconName: 'Star' },
+    ...[...categories].sort((a, b) => a.sortOrder - b.sortOrder)
+  ];
+
   return (
     <LayoutGroup id="category-sidebar">
       <div className="w-full h-auto flex flex-row items-center gap-2 overflow-x-auto scrollbar-none py-1.5 shrink-0 z-10 relative">
-        {[...categories].sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => {
+        {displayCategories.map((cat) => {
           const isActive = activeCategory === cat.name;
           return (
             <div key={cat.id} className="relative h-full shrink-0 group">

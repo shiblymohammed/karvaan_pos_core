@@ -21,6 +21,7 @@ export const MenuGrid: React.FC<MenuGridProps> = ({ activeCategory, searchQuery,
     if (!p.isAvailable) return false;
     const matchesCat = activeCategory === 'All' 
       ? true 
+      : activeCategory === 'Favourites' ? p.isFavourite
       : p.category === activeCategory;
     const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;

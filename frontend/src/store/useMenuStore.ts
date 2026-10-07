@@ -14,6 +14,7 @@ export interface Product {
   imageUrl?: string;   // Base64 or Cloudinary URL for product photo
   gstRate?: number;    // GST percentage e.g. 5.0
   isTopSelling?: boolean; // Flag for top selling items
+  isFavourite?: boolean; // Flag for user favourites
   isCombo?: boolean;
   comboItems?: string[]; // Array of product IDs included in the combo
 }
@@ -37,6 +38,7 @@ interface MenuState {
   updateProduct: (id: string, product: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
   toggleAvailability: (id: string) => void;
+  toggleFavourite: (id: string) => void;
 
   // Category actions
   addCategory: (category: Omit<Category, 'id' | 'sortOrder'>) => void;
@@ -106,6 +108,14 @@ export const useMenuStore = create<MenuState>()(
         set((state) => ({
           products: state.products.map((p) =>
             p.id === id ? { ...p, isAvailable: !p.isAvailable } : p
+          ),
+        }));
+      },
+
+      toggleFavourite: (id) => {
+        set((state) => ({
+          products: state.products.map((p) =>
+            p.id === id ? { ...p, isFavourite: !p.isFavourite } : p
           ),
         }));
       },
