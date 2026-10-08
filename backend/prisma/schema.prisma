@@ -47,6 +47,7 @@ model Restaurant {
   parkedOrders   ParkedOrder[]
   inventory      InventoryItem[]
   wasteLogs      WasteLog[]
+  returnRecords  ReturnRecord[]
   settings       SystemSetting[]
   backups        BackupLog[]
 }
@@ -359,11 +360,13 @@ model ReturnRecord {
   authorizedBy String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt @default(now())
-  syncedAt   DateTime?
+  syncedAt     DateTime?
 
-  // Note: For multi-tenant, technically we should link this to restaurant, 
-  // but let's add it to maintain isolation.
-  restaurantId String?
+  // Tenant isolation: required for multi-restaurant support
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, createdAt])
 }
 
 model BackupLog {

@@ -25,7 +25,7 @@ import { MenuGrid } from '../components/pos/MenuGrid';
 import { FolioSidebar } from '../components/pos/FolioSidebar';
 import { CategorySidebar } from '../components/pos/CategorySidebar';
 import { useInventoryStore } from '../store/useInventoryStore';
-import { toast } from '../store/useToastStore';
+
 import { ReturnOrderModal, ReturnOrderData } from '../components/ReturnOrderModal';
 import { ManagerAuthModal } from '../components/ManagerAuthModal';
 import { emitSettleBill } from '../services/socket';

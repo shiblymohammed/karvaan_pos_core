@@ -19,12 +19,18 @@ frontend/node_modules/
 frontend/android/
 frontend/ios/
 frontend/src-tauri/target/
+# Vite build cache artifacts
+frontend/*.mjs
+frontend/vite.config.ts.timestamp-*
 
 backend/node_modules/
 backend/dist/
 backend/backups/
+backend/uploads/
 backend/karvaan-pos.db
 backend/karvaan-pos.db-journal
+backend/karvaan-pos.db-shm
+backend/karvaan-pos.db-wal
 backend/prisma/dev.db
 backend/prisma/dev.db-journal
 backend/prisma/dev.db-shm

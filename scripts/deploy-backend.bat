@@ -12,7 +12,40 @@ echo.
 
 cd /d "%~dp0..\backend"
 
-echo [1/4] Building NestJS backend...
+REM ─── Check .env exists ───────────────────────────────────────
+if not exist ".env" (
+    echo.
+    echo  ERROR: .env file not found in backend\
+    echo  Please copy .env.example to .env and fill in:
+    echo    - RESTAURANT_ID  (run: node get-id.js after first db push^)
+    echo    - JWT_SECRET
+    echo    - CLOUDINARY_URL (optional^)
+    echo.
+    pause
+    exit /b 1
+)
+
+echo [1/6] Installing NPM dependencies...
+call npm install --legacy-peer-deps
+if %errorlevel% neq 0 (
+    echo ERROR: npm install failed. Check the output above.
+    pause
+    exit /b 1
+)
+echo       Done.
+
+echo.
+echo [2/6] Generating Prisma client...
+call npx prisma generate
+echo       Done.
+
+echo.
+echo [3/6] Pushing database schema (creates dev.db if missing)...
+call npx prisma db push
+echo       Done.
+
+echo.
+echo [4/6] Building NestJS backend...
 call npm run build
 if %errorlevel% neq 0 (
     echo ERROR: Build failed. Check the output above.
@@ -22,17 +55,14 @@ if %errorlevel% neq 0 (
 echo       Done.
 
 echo.
-echo [2/4] Installing PM2 globally (if not installed)...
+echo [5/6] Installing PM2 globally (if not installed)...
 call npm install -g pm2 2>nul
 echo       Done.
 
 echo.
-echo [3/4] Starting backend with PM2...
+echo [6/6] Starting backend with PM2...
+call pm2 delete karvaan-backend 2>nul
 call pm2 start ecosystem.config.js --env production
-echo       Done.
-
-echo.
-echo [4/4] Saving PM2 process list (auto-restart on reboot)...
 call pm2 save
 echo       Done.
 
@@ -54,5 +84,8 @@ for /f "tokens=2 delims=:" %%i in ('ipconfig ^| findstr /i "IPv4"') do (
     echo   http:%%i:3001
 )
 
+echo.
+echo  TIP: Cloud sync is disabled by default.
+echo  The system will run 100%% offline until you configure the VPS.
 echo.
 pause

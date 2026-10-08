@@ -5,13 +5,16 @@
  * It auto-restarts on crash and can start automatically on Windows boot.
  *
  * Usage:
- *   pm2 start ecosystem.config.js    → Start the backend
- *   pm2 save                          → Save current process list
- *   pm2 startup                       → Generate Windows startup command
- *   pm2 status                        → Check running status
- *   pm2 logs karvaan-backend          → View live logs
- *   pm2 restart karvaan-backend       → Restart after update
+ *   pm2 start ecosystem.config.js --env production  → Start the backend
+ *   pm2 save                                         → Save current process list
+ *   pm2 startup                                      → Generate Windows startup command
+ *   pm2 status                                       → Check running status
+ *   pm2 logs karvaan-backend                         → View live logs
+ *   pm2 restart karvaan-backend                      → Restart after update
  */
+
+// Load .env file so RESTAURANT_ID and other secrets are available to this config
+require('dotenv').config();
 
 module.exports = {
   apps: [
@@ -42,6 +45,19 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3001,
+      },
+      env_production: {
+        NODE_ENV:             'production',
+        PORT:                 process.env.PORT                || '3001',
+        JWT_SECRET:           process.env.JWT_SECRET          || 'CHANGE_ME',
+        DATABASE_URL:         process.env.DATABASE_URL        || 'file:./prisma/dev.db',
+        IS_CLOUD:             process.env.IS_CLOUD            || 'false',
+        RESTAURANT_ID:        process.env.RESTAURANT_ID       || '',
+        VPS_SYNC_URL:         process.env.VPS_SYNC_URL        || '',
+        CLOUD_SYNC_API_KEY:   process.env.CLOUD_SYNC_API_KEY  || '',
+        CLOUDINARY_URL:       process.env.CLOUDINARY_URL      || '',
+        SUPER_ADMIN_USERNAME: process.env.SUPER_ADMIN_USERNAME || 'admin',
+        SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD || 'password123',
       },
       env_development: {
         NODE_ENV: 'development',
