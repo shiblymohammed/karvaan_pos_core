@@ -893,11 +893,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
               <div className="px-6 pb-6 w-full grid grid-cols-2 gap-3">
                 <button
                   onClick={() => {
-<<<<<<< HEAD
                     useToastStore.getState().addToast('🖨️ ESC/POS Thermal Print command dispatched to USB/Serial port!', 'SUCCESS');
-=======
-                    showToast('🖨️ ESC/POS Thermal Print command dispatched to USB/Serial port!', 'success');
->>>>>>> b03a8a1eea7ab69dd47ee0a815b5404cec6e5c2e
                   }}
                   className="flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-xs rounded-2xl shadow-md shadow-emerald-200 transition-all active:scale-95 cursor-pointer">
                   <Printer className="h-4 w-4" /> Confirm & Print
