@@ -16,7 +16,8 @@ import {
   PackagePlus, 
   Settings2,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  Database
 } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useAddonStore } from '../../store/useAddonStore';
@@ -139,6 +140,26 @@ export const AdminSettingsManager: React.FC = () => {
   const [newDiscount, setNewDiscount] = useState({ label: '', amount: '', type: 'PERCENTAGE' as 'PERCENTAGE' | 'FLAT' });
   const [newAddon, setNewAddon] = useState({ name: '', price: '' });
 
+  // Backup Settings
+  const [backupEnabled, setBackupEnabled] = useState(true);
+  const [backupTime, setBackupTime] = useState('03:00');
+  const [backupLocation, setBackupLocation] = useState('../../backups');
+  const [isBackupSaving, setIsBackupSaving] = useState(false);
+  const [backupSaveMsg, setBackupSaveMsg] = useState('');
+
+  useEffect(() => {
+    fetch(`http://${window.location.hostname}:3001/backup/settings`)
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setBackupEnabled(data.enabled ?? true);
+          setBackupTime(data.time ?? '03:00');
+          setBackupLocation(data.location ?? '../../backups');
+        }
+      })
+      .catch(console.error);
+  }, []);
+
   useEffect(() => {
     setLocalOrderPrefix(store.orderPrefix);
     setLocalParcelCharge(store.parcelChargeAmount || 0);
@@ -226,6 +247,26 @@ export const AdminSettingsManager: React.FC = () => {
     store.setOrderTvPromoText(localTvPromoText);
     store.setOrderTvPromoQrUrl(localTvPromoQrUrl);
     store.setOrderTvPromoBgColor(localTvPromoBgColor);
+  };
+
+  const applyBackupSettings = async () => {
+    setIsBackupSaving(true);
+    try {
+      const response = await fetch(`http://${window.location.hostname}:3001/backup/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: backupEnabled, time: backupTime, location: backupLocation })
+      });
+      if (response.ok) {
+        setBackupSaveMsg('Backup settings saved successfully!');
+      } else {
+        setBackupSaveMsg('Failed to save settings.');
+      }
+    } catch (error) {
+      setBackupSaveMsg('Error saving settings.');
+    }
+    setIsBackupSaving(false);
+    setTimeout(() => setBackupSaveMsg(''), 5000);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -730,6 +771,41 @@ export const AdminSettingsManager: React.FC = () => {
     </div>
   );
 
+  const renderBackupSettings = () => (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <SettingsHeader title="Automated Backup" description="Configure scheduled database backups." />
+      <SettingsSection>
+        <SettingsRow 
+          label="Enable Automated Backup" 
+          description="Runs a daily backup of your data."
+          control={<Switch checked={backupEnabled} onChange={() => setBackupEnabled(!backupEnabled)} />} 
+        />
+        {backupEnabled && (
+          <>
+            <SettingsRow 
+              label="Backup Time" 
+              stackOnMobile
+              description="Time of day when the automated backup runs."
+              control={<Input type="time" value={backupTime} onChange={e => setBackupTime(e.target.value)} className="w-full sm:max-w-[150px]" />} 
+            />
+            <SettingsRow 
+              label="Backup Location" 
+              stackOnMobile
+              description="Path to store backup files (relative to backend folder or absolute path)."
+              control={<Input type="text" value={backupLocation} onChange={e => setBackupLocation(e.target.value)} placeholder="../../backups" className="w-full sm:max-w-sm" />} 
+            />
+          </>
+        )}
+      </SettingsSection>
+      <div className="flex justify-end mt-6 items-center gap-3">
+        {backupSaveMsg && <span className="text-sm font-bold text-emerald-600">{backupSaveMsg}</span>}
+        <Button onClick={applyBackupSettings} disabled={isBackupSaving}>
+          {isBackupSaving ? 'Saving...' : 'Save Settings'}
+        </Button>
+      </div>
+    </div>
+  );
+
   const renderNavButton = (id: string, label: string, Icon: any) => (
     <button
       key={id}
@@ -766,7 +842,8 @@ export const AdminSettingsManager: React.FC = () => {
             { id: 'tv-behaviors', label: 'TV Behaviors', icon: MonitorSpeaker },
             { id: 'tv-layout', label: 'TV Layout', icon: LayoutTemplate },
             { id: 'tv-media', label: 'Promo Media', icon: Play },
-            { id: 'pos-config', label: 'POS Config', icon: MessageSquare }
+            { id: 'pos-config', label: 'POS Config', icon: MessageSquare },
+            { id: 'backup', label: 'Backup', icon: Database }
           ].map(tab => {
             const isActive = activeTab === tab.id;
             const Icon = tab.icon;
@@ -808,6 +885,7 @@ export const AdminSettingsManager: React.FC = () => {
               {renderNavButton('general-network', 'Network & Sync', Wifi)}
               {renderNavButton('general-workspace', 'Workspace', LayoutDashboard)}
               {renderNavButton('hardware', 'Hardware & Printers', Printer)}
+              {renderNavButton('backup', 'Backup & Restore', Database)}
             </div>
           </div>
           <div>
@@ -837,6 +915,7 @@ export const AdminSettingsManager: React.FC = () => {
           {activeTab === 'tv-layout' && renderTvLayout()}
           {activeTab === 'tv-media' && renderTvMedia()}
           {activeTab === 'pos-config' && renderPosConfig()}
+          {activeTab === 'backup' && renderBackupSettings()}
         </div>
       </main>
     </div>

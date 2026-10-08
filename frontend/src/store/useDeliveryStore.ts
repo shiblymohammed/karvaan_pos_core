@@ -40,6 +40,7 @@ interface DeliveryState {
   collectPayment: (id: string, method: 'CASH' | 'UPI' | 'CARD' | 'SPLIT' | 'PREPAID', amount: number) => void;
   assignDeliveryBoy: (orderId: string, deliveryBoyId: string, deliveryBoyName?: string) => void;
   removeOrder: (id: string) => void;
+  removeOrders: (ids: string[]) => void;
 }
 
 export const useDeliveryStore = create<DeliveryState>()(
@@ -131,6 +132,11 @@ export const useDeliveryStore = create<DeliveryState>()(
 
       removeOrder: (id) => {
         set((state) => ({ orders: state.orders.filter((o) => o.id !== id) }));
+        emitAction('sync_delivery_orders', get().orders);
+      },
+
+      removeOrders: (ids) => {
+        set((state) => ({ orders: state.orders.filter((o) => !ids.includes(o.id)) }));
         emitAction('sync_delivery_orders', get().orders);
       },
     }),

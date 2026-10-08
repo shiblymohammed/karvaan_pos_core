@@ -4,6 +4,7 @@ import { tenantStorage } from './tenantStorage';
 import { useTableStore } from './useTableStore';
 import { useKdsStore } from './useKdsStore';
 import { useSettingsStore } from './useSettingsStore';
+import { useMenuStore } from './useMenuStore';
 import { socket, emitAction } from '../services/socket';
 
 export interface CartItem {
@@ -112,17 +113,28 @@ export const useCartStore = create<CartState>()(
 
       addItem: (product, notes, addons) => {
     set((state) => {
+      let finalNotes = notes || '';
+      if ((product as any).isCombo && (product as any).comboItems && (product as any).comboItems.length > 0) {
+        const allProducts = useMenuStore.getState().products;
+        const comboNames = (product as any).comboItems.map((id: string) => {
+          const found = allProducts.find((p) => p.id === id);
+          return found ? found.name : 'Unknown Item';
+        });
+        const comboStr = `[Combo: ${comboNames.join(', ')}]`;
+        finalNotes = finalNotes ? `${finalNotes} | ${comboStr}` : comboStr;
+      }
+
       // If there are notes or addons, we treat it as a unique line item so they don't stack directly with standard items
-      const hasCustomizations = !!notes || (addons && addons.length > 0);
+      const hasCustomizations = !!finalNotes || (addons && addons.length > 0);
       
       const existing = state.items.find(
-        (i) => i.productId === product.id && i.notes === notes && JSON.stringify(i.addons) === JSON.stringify(addons) && i.status === 'NEW'
+        (i) => i.productId === product.id && i.notes === finalNotes && JSON.stringify(i.addons) === JSON.stringify(addons) && i.status === 'NEW'
       );
 
       if (existing) {
         return {
           items: state.items.map((i) =>
-            i.productId === product.id && i.notes === notes && JSON.stringify(i.addons) === JSON.stringify(addons) && i.status === 'NEW'
+            i.productId === product.id && i.notes === finalNotes && JSON.stringify(i.addons) === JSON.stringify(addons) && i.status === 'NEW'
               ? { ...i, quantity: i.quantity + 1 }
               : i
           ),
@@ -136,7 +148,7 @@ export const useCartStore = create<CartState>()(
             name: product.name,
             price: product.price,
             quantity: 1,
-            notes,
+            notes: finalNotes || undefined,
             category: product.category,
             addons,
             status: 'NEW',

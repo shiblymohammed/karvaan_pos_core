@@ -245,7 +245,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export const DeliveryDispatchScreen: React.FC = () => {
-  const { orders, collectPayment, assignDeliveryBoy, removeOrder } = useDeliveryStore();
+  const { orders, collectPayment, assignDeliveryBoy, removeOrder, removeOrders } = useDeliveryStore();
   const { getDeliveryRiders } = useStaffStore();
   const { currentUser } = useAuthStore();
   const { tickets: kdsTickets } = useKdsStore();
@@ -686,7 +686,9 @@ export const DeliveryDispatchScreen: React.FC = () => {
                         Cancel
                       </button>
                       <button onClick={() => {
-                        showToast("Shift closed!", 'success');
+                        const orderIds = riderOrders.map(o => o.id);
+                        removeOrders(orderIds);
+                        showToast("Shift closed and orders cleared!", 'success');
                         setSelectedRiderSummary(null);
                       }} className="flex-[2] py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-sm rounded-2xl shadow-md shadow-orange-200 transition-all active:scale-95 cursor-pointer">
                         Confirm Remittance
@@ -891,7 +893,11 @@ export const DeliveryDispatchScreen: React.FC = () => {
               <div className="px-6 pb-6 w-full grid grid-cols-2 gap-3">
                 <button
                   onClick={() => {
+<<<<<<< HEAD
                     useToastStore.getState().addToast('🖨️ ESC/POS Thermal Print command dispatched to USB/Serial port!', 'SUCCESS');
+=======
+                    showToast('🖨️ ESC/POS Thermal Print command dispatched to USB/Serial port!', 'success');
+>>>>>>> b03a8a1eea7ab69dd47ee0a815b5404cec6e5c2e
                   }}
                   className="flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-xs rounded-2xl shadow-md shadow-emerald-200 transition-all active:scale-95 cursor-pointer">
                   <Printer className="h-4 w-4" /> Confirm & Print

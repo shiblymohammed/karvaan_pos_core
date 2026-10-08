@@ -24,15 +24,7 @@ export const AdminPrinterSettings: React.FC = () => {
   const [labelPrinter, setLabelPrinter] = useState<any>({ CUP: {}, BAG: {}, KOT: {} });
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const toggleLabelSetting = (type: 'CUP' | 'BAG' | 'KOT', setting: string) => {
-    setLabelPrinter(prev => ({
-      ...prev,
-      [type]: {
-        ...prev[type],
-        [setting]: !(prev[type] as any)[setting]
-      }
-    }));
-  };
+
 
   const addPrinter = () => {
     setPrinters([

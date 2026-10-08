@@ -1,4 +1,4 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post, Body } from '@nestjs/common';
 import { BackupService } from './backup.service';
 
 @Controller('backup')
@@ -30,5 +30,22 @@ export class BackupController {
   @Get('logs')
   async getBackupLogs() {
     return this.backupService.getBackupLogs();
+  }
+  /**
+   * GET /backup/settings
+   * Returns current backup settings
+   */
+  @Get('settings')
+  async getSettings() {
+    return this.backupService.getSettings();
+  }
+
+  /**
+   * POST /backup/settings
+   * Updates backup settings
+   */
+  @Post('settings')
+  async updateSettings(@Body() settings: any) {
+    return this.backupService.updateSettings(settings);
   }
 }

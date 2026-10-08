@@ -98,12 +98,19 @@ export const useKdsStore = create<KdsState>()(
     set((state) => {
       const now = new Date();
       return {
-        tickets: state.tickets.map((t) => {
-          if (t.status === 'READY' || t.status === 'SERVED') return t;
-          const fired = new Date(t.firedAt);
-          const elapsed = Math.floor((now.getTime() - fired.getTime()) / 60000);
-          return { ...t, elapsedMinutes: elapsed };
-        }),
+        tickets: state.tickets
+          .map((t) => {
+            if (t.status === 'READY' || t.status === 'SERVED') return t;
+            const fired = new Date(t.firedAt);
+            const elapsed = Math.floor((now.getTime() - fired.getTime()) / 60000);
+            return { ...t, elapsedMinutes: elapsed };
+          })
+          .filter((t) => {
+            // Prune tickets older than 24 hours to prevent localStorage memory leaks
+            const fired = new Date(t.firedAt);
+            const ageHours = (now.getTime() - fired.getTime()) / (1000 * 60 * 60);
+            return ageHours < 24;
+          }),
       };
     });
   },

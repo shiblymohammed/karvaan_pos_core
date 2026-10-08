@@ -15,6 +15,7 @@ import { useTableStore } from '../store/useTableStore';
 import { useKdsStore } from '../store/useKdsStore';
 import { useStaffStore } from '../store/useStaffStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { toast } from '../store/useToastStore';
 import { useAddonStore, PaidAddon } from '../store/useAddonStore';
 import { useDeliveryStore } from '../store/useDeliveryStore';
 import { CustomerSelectModal } from '../components/CustomerSelectModal';

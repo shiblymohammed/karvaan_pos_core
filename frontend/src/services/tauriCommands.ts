@@ -197,7 +197,7 @@ export function buildBillReceipt(params: {
   billNumber: string;
   orderType: string;
   tableName?: string;
-  items: { name: string; qty: number; price: number }[];
+  items: { name: string; qty: number; price: number; notes?: string }[];
   subtotal: number;
   discount: number;
   gst: number;
@@ -243,6 +243,9 @@ export function buildBillReceipt(params: {
     const qty = String(item.qty).padStart(3);
     const amt = `${(item.qty * item.price).toFixed(0)}`.padStart(8);
     esc.text(`${name}${qty}${amt}`).newline();
+    if (item.notes) {
+      esc.text(`  ** ${item.notes.substring(0, 27)}`).newline();
+    }
   });
 
   esc
