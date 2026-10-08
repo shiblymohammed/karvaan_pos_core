@@ -107,6 +107,7 @@ model Category {
   sortOrder Int     @default(0)
   iconName  String?
   imageUrl  String?
+  updatedAt DateTime @updatedAt @default(now())
 
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
@@ -218,6 +219,7 @@ model Bill {
   customerPhone String?
   waiterName    String?
   settledAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt @default(now())
   syncedAt      DateTime?
 
   restaurantId String
@@ -304,6 +306,7 @@ model StockLog {
   orderId        String?
   notes          String?
   createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt @default(now())
   syncedAt       DateTime?
 
   item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
@@ -319,6 +322,8 @@ model WasteLog {
   billNumber String?
   loggedBy   String?
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt @default(now())
+  syncedAt   DateTime?
 
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
@@ -333,6 +338,8 @@ model LedgerEntry {
   billNumber   String?
   notes        String?
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt @default(now())
+  syncedAt   DateTime?
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
@@ -348,6 +355,8 @@ model ReturnRecord {
   items        String // JSON string of returned items
   authorizedBy String?
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt @default(now())
+  syncedAt   DateTime?
 
   // Note: For multi-tenant, technically we should link this to restaurant, 
   // but let's add it to maintain isolation.
@@ -384,6 +393,8 @@ model RecipeIngredient {
   inventoryItemId String
   quantity        Float    // the amount to deduct from stock
   unit            String   // the unit of measurement (must match InventoryItem)
+  updatedAt       DateTime @updatedAt @default(now())
+  syncedAt        DateTime?
   
   product         Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)

@@ -15,6 +15,14 @@ export class AuthController {
     return this.authService.login(body.username, body.password, body.pin);
   }
 
+  @Post('unlock')
+  async unlock(@Body() body: { pin: string; userId: string }) {
+    if (!body.pin || !body.userId) {
+      throw new UnauthorizedException('PIN and User ID are required');
+    }
+    return this.authService.unlock(body.userId, body.pin);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async me(@GetUser() user: any) {

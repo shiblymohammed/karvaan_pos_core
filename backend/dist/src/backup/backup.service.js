@@ -27,6 +27,7 @@ let BackupService = BackupService_1 = class BackupService {
         this.DB_PATH = path.resolve(__dirname, '../../prisma/dev.db');
         this.BACKUP_DIR = path.resolve(__dirname, '../../backups');
         this.MAX_BACKUPS = 30;
+        this.restaurantId = process.env.RESTAURANT_ID || 'demo-restaurant-001';
         if (!fs.existsSync(this.BACKUP_DIR)) {
             fs.mkdirSync(this.BACKUP_DIR, { recursive: true });
             this.logger.log(`📁 Created backup directory: ${this.BACKUP_DIR}`);
@@ -56,7 +57,7 @@ let BackupService = BackupService_1 = class BackupService {
             const sizeKb = Math.round(stats.size / 1024);
             this.logger.log(`✅ Backup complete: ${filename} (${sizeKb} KB)`);
             await this.prisma.backupLog.create({
-                data: { filename, sizeBytes: stats.size, status: 'SUCCESS' },
+                data: { filename, sizeBytes: stats.size, status: 'SUCCESS', restaurantId: this.restaurantId },
             });
             await this.pruneOldBackups();
             return { success: true, filename, sizeKb };
@@ -65,7 +66,7 @@ let BackupService = BackupService_1 = class BackupService {
             this.logger.error(`❌ Backup FAILED: ${err.message}`);
             try {
                 await this.prisma.backupLog.create({
-                    data: { filename, status: 'FAILED', error: err.message },
+                    data: { filename, status: 'FAILED', error: err.message, restaurantId: this.restaurantId },
                 });
             }
             catch (_) { }

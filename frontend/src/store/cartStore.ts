@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { tenantStorage } from './tenantStorage';
 import { useTableStore } from './useTableStore';
 import { useKdsStore } from './useKdsStore';
 import { useSettingsStore } from './useSettingsStore';
@@ -259,7 +260,8 @@ export const useCartStore = create<CartState>()(
 
     let orderNum = state.currentOrderNumber;
     if (!orderNum) {
-      orderNum = `${useSettingsStore.getState().orderPrefix}-${Math.floor(Math.random() * 9000)}`;
+      const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
+      orderNum = `${useSettingsStore.getState().orderPrefix}-${Date.now().toString().slice(-4)}-${uniqueId}`;
       set({ currentOrderNumber: orderNum });
     }
 
@@ -343,7 +345,7 @@ export const useCartStore = create<CartState>()(
   setCustomer: (customer) => {
     set({ customer });
   },
-}), { name: 'pos-cart-storage' }));
+}), { name: 'pos-cart-storage', storage: createJSONStorage(() => tenantStorage) }));
 
 // Listen to browser network changes for automatic offline mode toggling
 if (typeof window !== 'undefined') {

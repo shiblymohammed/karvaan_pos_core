@@ -1,10 +1,14 @@
 import { OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
+import { JwtService } from '@nestjs/jwt';
 export declare class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly prisma;
+    private readonly billingService;
+    private readonly jwtService;
     server: Server;
-    constructor(prisma: PrismaService);
+    constructor(prisma: PrismaService, billingService: BillingService, jwtService: JwtService);
     private activeTickets;
     private tableStatuses;
     handleConnection(client: Socket): Promise<void>;
@@ -31,6 +35,8 @@ export declare class KdsGateway implements OnGatewayConnection, OnGatewayDisconn
         tableId: string;
         status: string;
         subtotal?: number;
+        mergedWith?: string[];
+        mergedInto?: string | null;
     }): Promise<{
         status: string;
     }>;
@@ -43,13 +49,13 @@ export declare class KdsGateway implements OnGatewayConnection, OnGatewayDisconn
     handleSyncInventory(inventory: any[], client: Socket): Promise<{
         status: string;
     }>;
-    handleSyncRecipes(recipes: any[]): {
+    handleSyncRecipes(recipes: any[], client: Socket): Promise<{
         status: string;
-    };
+    }>;
     handleSyncWaste(wasteLogs: any[], client: Socket): Promise<{
         status: string;
     }>;
-    handleSettleBill(billData: any): Promise<{
+    handleSettleBill(billData: any, client: Socket): Promise<{
         status: string;
     }>;
     private getOrCreateOrderId;

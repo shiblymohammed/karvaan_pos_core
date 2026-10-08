@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { tenantStorage } from './tenantStorage';
 
 export interface LedgerEntry {
   id: string;
@@ -49,5 +50,5 @@ export const useLedgerStore = create<LedgerState>()(
       .reduce((sum, e) => sum + e.amount, 0);
   }
 }),
-  { name: 'pos-ledger-storage' }
+  { name: 'pos-ledger-storage', storage: createJSONStorage(() => tenantStorage) }
 ));

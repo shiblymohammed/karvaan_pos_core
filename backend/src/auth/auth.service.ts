@@ -66,4 +66,34 @@ export class AuthService {
       }
     };
   }
+
+  async unlock(userId: string, pin: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.pin) {
+       throw new UnauthorizedException('No PIN set for this user');
+    }
+
+    let isPinValid = false;
+    if (user.pin.startsWith('$2b$') || user.pin.startsWith('$2a$')) {
+      isPinValid = await bcrypt.compare(pin, user.pin);
+    } else {
+      // Transparent migration for existing plaintext PINs
+      isPinValid = (pin === user.pin);
+      if (isPinValid) {
+        const newHash = await bcrypt.hash(pin, 10);
+        await this.prisma.user.update({ where: { id: user.id }, data: { pin: newHash } });
+      }
+    }
+
+    if (!isPinValid) throw new UnauthorizedException('Invalid PIN');
+    
+    return { success: true };
+  }
 }

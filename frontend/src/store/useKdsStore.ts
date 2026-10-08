@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { tenantStorage } from './tenantStorage';
 import { socket, emitAction } from '../services/socket';
 
 export interface KdsTicket {
@@ -128,5 +129,5 @@ export const useKdsStore = create<KdsState>()(
     }));
     emitAction('transfer_kds_table', { fromTableName, toTableName });
   },
-}), { name: 'pos-kds-storage' }));
+}), { name: 'pos-kds-storage', storage: createJSONStorage(() => tenantStorage) }));
 

@@ -1,12 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { KdsGateway } from '../kds/kds.gateway';
+import { getBusinessDayBounds } from '../utils/date.util';
 
 @Injectable()
 export class BillingService {
   constructor(
     private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => KdsGateway))
     private readonly kdsGateway: KdsGateway,
   ) {}
 
@@ -225,21 +227,147 @@ export class BillingService {
     return settledBill;
   }
 
-  // 4. Get Today's Dashboard Sales Summary
-  async getDailyDashboardSummary(restaurantId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  // Unified Checkout Path for WebSockets
+  async processDirectCheckout(billData: any, restaurantId: string) {
+    const settledBill = await this.prisma.$transaction(async (tx) => {
+      // 1. Create or Find Order
+      let orderId = null;
+      let existingOrder = await tx.order.findUnique({
+         where: { restaurantId_orderNumber: { restaurantId, orderNumber: billData.orderNumber } }
+      });
 
-    const billsToday = await this.prisma.bill.findMany({
-      where: { restaurantId, settledAt: { gte: today } },
+      if (existingOrder) {
+        orderId = existingOrder.id;
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: 'SERVED', discount: billData.discount || 0 }
+        });
+      } else {
+        const orderItemsData = [];
+        let totalAmount = 0.0;
+        
+        if (billData.items) {
+          for (const item of billData.items) {
+             if (item.productId && item.productId !== 'unknown') {
+                const product = await tx.product.findUnique({ where: { id: item.productId }});
+                if (product) {
+                  totalAmount += (product.price * item.quantity);
+                  orderItemsData.push({
+                     productId: product.id,
+                     quantity: item.quantity,
+                     price: product.price,
+                     notes: item.notes || null,
+                  });
+                }
+             }
+          }
+        }
+        
+        const newOrder = await tx.order.create({
+           data: {
+             orderNumber: billData.orderNumber,
+             restaurantId,
+             totalAmount: Number((billData.subtotal || totalAmount).toFixed(2)),
+             status: 'SERVED',
+             orderType: billData.orderType || 'DINE_IN',
+             items: { create: orderItemsData }
+           }
+        });
+        orderId = newOrder.id;
+      }
+      
+      // 2. Create the Bill
+      const bill = await tx.bill.upsert({
+        where: { restaurantId_billNumber: { restaurantId, billNumber: billData.billNumber } },
+        update: {},
+        create: {
+          billNumber: billData.billNumber,
+          orderId,
+          orderType: billData.orderType || 'DINE_IN',
+          subtotal: Number((billData.subtotal || 0).toFixed(2)),
+          cgst: Number((billData.cgst || 0).toFixed(2)),
+          sgst: Number((billData.sgst || 0).toFixed(2)),
+          discount: Number((billData.discount || 0).toFixed(2)),
+          deliveryFee: Number((billData.deliveryFee || 0).toFixed(2)),
+          grandTotal: Number((billData.grandTotal || 0).toFixed(2)),
+          paymentMethod: billData.method || billData.paymentMethod || 'CASH',
+          customerName: billData.customerName || null,
+          customerPhone: billData.customerPhone || null,
+          waiterName: billData.waiter || null,
+          settledAt: new Date(),
+          restaurantId,
+        }
+      });
+
+      // 3. Inventory Deduction
+      const orderWithItems = await tx.order.findUnique({
+         where: { id: orderId },
+         include: { items: { include: { product: { include: { recipeItems: true } } } } }
+      });
+      
+      if (orderWithItems) {
+        for (const item of orderWithItems.items) {
+          if (!item.product.recipeItems || item.product.recipeItems.length === 0) continue;
+          
+          for (const recipeItem of item.product.recipeItems) {
+            const deductQty = item.quantity * recipeItem.quantity;
+            const invItem = await tx.inventoryItem.findUnique({ where: { id: recipeItem.inventoryItemId } });
+            if (invItem) {
+              const newStock = Math.max(0, invItem.currentStock - deductQty);
+              await tx.inventoryItem.update({
+                where: { id: recipeItem.inventoryItemId },
+                data: { currentStock: newStock },
+              });
+              
+              await tx.stockLog.create({
+                data: {
+                  itemId: recipeItem.inventoryItemId,
+                  type: 'OUT',
+                  quantityChange: -deductQty,
+                  notes: `POS Checkout #${bill.billNumber} (${item.quantity}x ${item.product.name})`,
+                },
+              });
+            }
+          }
+        }
+      }
+      
+      return bill;
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
 
-    const grossRevenue = billsToday.reduce((sum, b) => sum + b.grandTotal, 0);
-    const totalOrders = billsToday.length;
+    const updatedInventory = await this.prisma.inventoryItem.findMany({ where: { restaurantId }});
+    this.kdsGateway.server.emit('inventory_updated', updatedInventory);
 
-    const cashRevenue = billsToday.filter((b) => b.paymentMethod === 'CASH').reduce((s, b) => s + b.grandTotal, 0);
-    const cardRevenue = billsToday.filter((b) => b.paymentMethod === 'CARD').reduce((s, b) => s + b.grandTotal, 0);
-    const upiRevenue = billsToday.filter((b) => b.paymentMethod === 'UPI').reduce((s, b) => s + b.grandTotal, 0);
+    return settledBill;
+  }
+
+  // 4. Get Today's Dashboard Sales Summary
+  async getDailyDashboardSummary(restaurantId: string) {
+    const { start, end } = getBusinessDayBounds();
+
+    const aggregate = await this.prisma.bill.aggregate({
+      where: { restaurantId, settledAt: { gte: start, lte: end } },
+      _sum: { grandTotal: true },
+      _count: { id: true }
+    });
+
+    const grossRevenue = aggregate._sum.grandTotal || 0;
+    const totalOrders = aggregate._count.id;
+
+    const paymentGroups = await this.prisma.bill.groupBy({
+      by: ['paymentMethod'],
+      where: { restaurantId, settledAt: { gte: start, lte: end } },
+      _sum: { grandTotal: true }
+    });
+
+    let cashRevenue = 0, cardRevenue = 0, upiRevenue = 0;
+    for (const group of paymentGroups) {
+      if (group.paymentMethod === 'CASH') cashRevenue = group._sum.grandTotal || 0;
+      if (group.paymentMethod === 'CARD') cardRevenue = group._sum.grandTotal || 0;
+      if (group.paymentMethod === 'UPI') upiRevenue = group._sum.grandTotal || 0;
+    }
 
     const activeOrdersCount = await this.prisma.order.count({
       where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } },
@@ -267,12 +395,12 @@ export class BillingService {
     const whereClause: any = { restaurantId };
     
     if (startDate && endDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
+      const start = getBusinessDayBounds(startDate).start;
+      const end = getBusinessDayBounds(endDate).end;
       
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      
+      whereClause.settledAt = { gte: start, lte: end };
+    } else {
+      const { start, end } = getBusinessDayBounds();
       whereClause.settledAt = { gte: start, lte: end };
     }
 

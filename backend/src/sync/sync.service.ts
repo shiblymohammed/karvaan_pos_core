@@ -20,13 +20,22 @@ export class SyncService {
     private readonly settingsService: SettingsService
   ) {}
 
-  // Run every minute to flush local changes to VPS
+  // Run every minute, but only execute if enabled in UI settings
   @Cron(CronExpression.EVERY_MINUTE)
   async handleCronSync() {
     if (this.isSyncing) return;
+    // Safety check: The central cloud server should never run the local push/pull cron job
+    if (process.env.IS_CLOUD === 'true') return;
+
     this.isSyncing = true;
 
     try {
+      // Check if Cloud Sync is toggled ON in the frontend settings
+      const settings = await this.settingsService.getSettings(this.restaurantId);
+      if (!settings?.cloudSyncEnabled) {
+        return; // Silently skip if disabled
+      }
+
       await this.pushUnsyncedData();
       await this.pullUpdatesFromCloud();
     } catch (error) {
@@ -37,6 +46,7 @@ export class SyncService {
   }
 
   async triggerManualSync() {
+    if (process.env.IS_CLOUD === 'true') return { status: 'error', message: 'Cloud servers cannot trigger local syncs' };
     if (this.isSyncing) return { status: 'already_running', message: 'Sync is already in progress' };
     this.isSyncing = true;
     
@@ -52,78 +62,162 @@ export class SyncService {
     }
   }
 
-  private async pushUnsyncedData() {
-    // 1. Gather all unsynced data
-    const unsyncedBills = await this.prisma.bill.findMany({ where: { syncedAt: null } });
-    const unsyncedOrders = await this.prisma.order.findMany({ where: { syncedAt: null } });
-    const unsyncedCustomers = await this.prisma.customer.findMany({ where: { syncedAt: null } });
-    
-    // Delivery and stock logs
-    const unsyncedDeliveries = await this.prisma.deliveryOrder.findMany({ where: { syncedAt: null } });
-    const unsyncedStockLogs = await this.prisma.stockLog.findMany({ where: { syncedAt: null } });
-
-    const totalItems = unsyncedBills.length + unsyncedOrders.length + unsyncedCustomers.length + unsyncedDeliveries.length + unsyncedStockLogs.length;
-
-    if (totalItems === 0) {
-      return; // Nothing to sync
+  private async getSyncState() {
+    const raw = await this.prisma.systemSetting.findUnique({
+      where: { restaurantId_settingKey: { restaurantId: this.restaurantId, settingKey: 'sync_state' } }
+    });
+    if (!raw) return { lastPushTime: new Date(0), lastPullTime: new Date(0) };
+    try {
+      const data = JSON.parse(raw.data);
+      return { 
+        lastPushTime: data.lastPushTime ? new Date(data.lastPushTime) : new Date(0),
+        lastPullTime: data.lastPullTime ? new Date(data.lastPullTime) : new Date(0)
+      };
+    } catch {
+      return { lastPushTime: new Date(0), lastPullTime: new Date(0) };
     }
+  }
 
-    this.logger.log(`Found ${totalItems} unsynced records. Pushing to VPS...`);
+  private async saveSyncState(state: { lastPushTime?: Date, lastPullTime?: Date }) {
+    const current = await this.getSyncState();
+    const newState = {
+      lastPushTime: state.lastPushTime || current.lastPushTime,
+      lastPullTime: state.lastPullTime || current.lastPullTime
+    };
+    await this.prisma.systemSetting.upsert({
+      where: { restaurantId_settingKey: { restaurantId: this.restaurantId, settingKey: 'sync_state' } },
+      update: { data: JSON.stringify(newState) },
+      create: { restaurantId: this.restaurantId, settingKey: 'sync_state', data: JSON.stringify(newState) }
+    });
+  }
+
+  private async pushUnsyncedData() {
+    const syncState = await this.getSyncState();
+    const pushThreshold = syncState.lastPushTime;
+    const syncStart = new Date();
+
+    // 1. Gather all data updated since last push
+    const bills = await this.prisma.bill.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const orders = await this.prisma.order.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const customers = await this.prisma.customer.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const deliveries = await this.prisma.deliveryOrder.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const stockLogs = await this.prisma.stockLog.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const wasteLogs = await this.prisma.wasteLog.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const returns = await this.prisma.returnRecord.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const ledgers = await this.prisma.ledgerEntry.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    
+    // Also push up master config changes made locally
+    const products = await this.prisma.product.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const inventoryItems = await this.prisma.inventoryItem.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+    const recipes = await this.prisma.recipeIngredient.findMany({ where: { updatedAt: { gt: pushThreshold } } });
+
+    const totalItems = bills.length + orders.length + customers.length + deliveries.length + stockLogs.length + wasteLogs.length + returns.length + ledgers.length + products.length + inventoryItems.length + recipes.length;
+
+    if (totalItems === 0) return;
+
+    this.logger.log(`Found ${totalItems} modified records. Pushing Delta to VPS...`);
 
     const payload = {
       restaurantId: this.restaurantId,
-      timestamp: new Date().toISOString(),
+      timestamp: syncStart.toISOString(),
       data: {
-        bills: unsyncedBills,
-        orders: unsyncedOrders,
-        customers: unsyncedCustomers,
-        deliveries: unsyncedDeliveries,
-        stockLogs: unsyncedStockLogs
+        bills, orders, customers, deliveries, stockLogs, wasteLogs, returns, ledgers, products, inventoryItems, recipes
       }
     };
 
-    // 2. Transmit to VPS
-    // (In a real implementation, we use fetch or axios. Using fetch for now)
     const response = await fetch(this.vpsUrl, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.cloudSyncApiKey}`
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.cloudSyncApiKey}` },
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+    if (!response.ok) throw new Error(`Server returned ${response.status}: ${await response.text()}`);
+
+    // Update last push time
+    await this.saveSyncState({ lastPushTime: syncStart });
+    this.logger.log(`✅ Successfully pushed ${totalItems} records to VPS.`);
+  }
+
+  async receiveSyncData(payload: any) {
+    const { restaurantId, data } = payload;
+    if (!restaurantId || !data) return { status: 'error', message: 'Invalid payload' };
+
+    const { bills = [], orders = [], customers = [], deliveries = [], stockLogs = [], wasteLogs = [], returns = [], ledgers = [], products = [], inventoryItems = [], recipes = [] } = data;
+    let recordsUpserted = 0;
+
+    this.logger.log(`📥 [Cloud Receiver] Incoming Delta sync from restaurant: ${restaurantId}`);
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Master Data First (Foreign Keys)
+        for (const item of inventoryItems) {
+          await tx.inventoryItem.upsert({ where: { id: item.id }, update: { ...item }, create: { ...item } }); recordsUpserted++;
+        }
+        for (const prod of products) {
+          await tx.product.upsert({ where: { id: prod.id }, update: { ...prod }, create: { ...prod } }); recordsUpserted++;
+        }
+        for (const rec of recipes) {
+          await tx.recipeIngredient.upsert({ where: { id: rec.id }, update: { ...rec }, create: { ...rec } }); recordsUpserted++;
+        }
+        for (const customer of customers) {
+          await tx.customer.upsert({ where: { id: customer.id }, update: { ...customer }, create: { ...customer } }); recordsUpserted++;
+        }
+        for (const order of orders) {
+          await tx.order.upsert({ where: { id: order.id }, update: { ...order }, create: { ...order } }); recordsUpserted++;
+        }
+        for (const bill of bills) {
+          await tx.bill.upsert({ where: { id: bill.id }, update: { ...bill }, create: { ...bill } }); recordsUpserted++;
+        }
+        for (const delivery of deliveries) {
+          await tx.deliveryOrder.upsert({ where: { id: delivery.id }, update: { ...delivery }, create: { ...delivery } }); recordsUpserted++;
+        }
+        for (const log of stockLogs) {
+          await tx.stockLog.upsert({ where: { id: log.id }, update: { ...log }, create: { ...log } }); recordsUpserted++;
+        }
+        for (const log of wasteLogs) {
+          await tx.wasteLog.upsert({ where: { id: log.id }, update: { ...log }, create: { ...log } }); recordsUpserted++;
+        }
+        for (const ret of returns) {
+          await tx.returnRecord.upsert({ where: { id: ret.id }, update: { ...ret }, create: { ...ret } }); recordsUpserted++;
+        }
+        for (const ledger of ledgers) {
+          await tx.ledgerEntry.upsert({ where: { id: ledger.id }, update: { ...ledger }, create: { ...ledger } }); recordsUpserted++;
+        }
+      });
+      
+      this.logger.log(`✅ [Cloud Receiver] Successfully saved ${recordsUpserted} delta records.`);
+      return { status: 'success', recordsSaved: recordsUpserted };
+      
+    } catch (e) {
+      this.logger.error(`❌ [Cloud Receiver] Save failed: ${e.message}`);
+      throw e;
+    }
+  }
+
+  async provideCloudUpdates(restaurantId: string, pullThresholdStr: string) {
+    if (!restaurantId) return {};
+    
+    const pullThreshold = pullThresholdStr ? new Date(pullThresholdStr) : new Date(0);
+
+    const products = await this.prisma.product.findMany({ where: { restaurantId, updatedAt: { gt: pullThreshold } } });
+    const categories = await this.prisma.category.findMany({ where: { restaurantId, updatedAt: { gt: pullThreshold } } });
+    const users = await this.prisma.user.findMany({ where: { restaurantId, updatedAt: { gt: pullThreshold } } });
+    const inventoryItems = await this.prisma.inventoryItem.findMany({ where: { restaurantId, updatedAt: { gt: pullThreshold } } });
+    const recipes = await this.prisma.recipeIngredient.findMany({ where: { product: { restaurantId }, updatedAt: { gt: pullThreshold } } });
+    
+    const settingsRaw = await this.prisma.systemSetting.findUnique({ 
+      where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } } 
+    });
+
+    let settings = null;
+    // Always provide settings for now, it's lightweight
+    if (settingsRaw) {
+      try { settings = JSON.parse(settingsRaw.data); } catch {}
     }
 
-    const now = new Date();
-
-    // 3. Mark as synced locally using transactions
-    await this.prisma.$transaction([
-      this.prisma.bill.updateMany({
-        where: { id: { in: unsyncedBills.map(b => b.id) } },
-        data: { syncedAt: now }
-      }),
-      this.prisma.order.updateMany({
-        where: { id: { in: unsyncedOrders.map(o => o.id) } },
-        data: { syncedAt: now }
-      }),
-      this.prisma.customer.updateMany({
-        where: { id: { in: unsyncedCustomers.map(c => c.id) } },
-        data: { syncedAt: now }
-      }),
-      this.prisma.deliveryOrder.updateMany({
-        where: { id: { in: unsyncedDeliveries.map(d => d.id) } },
-        data: { syncedAt: now }
-      }),
-      this.prisma.stockLog.updateMany({
-        where: { id: { in: unsyncedStockLogs.map(l => l.id) } },
-        data: { syncedAt: now }
-      })
-    ]);
-
-    this.logger.log(`✅ Successfully synced ${totalItems} records to VPS.`);
+    return {
+      products, categories, users, inventoryItems, recipes, settings
+    };
   }
 
   private async downloadAndCacheMedia(url: string): Promise<string> {
@@ -163,9 +257,11 @@ export class SyncService {
   private async pullUpdatesFromCloud() {
     this.logger.log(`Checking for latest updates from VPS...`);
     try {
-      // In a real implementation, you'd track the last sync timestamp
-      // to only pull delta changes. For now, we simulate pulling changes.
-      const response = await fetch(`${this.vpsUrl}/pull?restaurantId=${this.restaurantId}`, {
+      const syncState = await this.getSyncState();
+      const pullThreshold = syncState.lastPullTime;
+      const pullStart = new Date();
+
+      const response = await fetch(`${this.vpsUrl}/pull?restaurantId=${this.restaurantId}&since=${pullThreshold.toISOString()}`, {
         headers: {
           'Authorization': `Bearer ${this.cloudSyncApiKey}`
         }
@@ -184,7 +280,7 @@ export class SyncService {
         return; // Nothing to update
       }
 
-      const { products = [], categories = [], users = [], settings = null } = data;
+      const { products = [], categories = [], users = [], inventoryItems = [], recipes = [], settings = null } = data;
 
       // 1. Process Settings & Download Media
       if (settings) {
@@ -207,8 +303,8 @@ export class SyncService {
         for (const cat of categories) {
           await tx.category.upsert({
             where: { id: cat.id },
-            update: { name: cat.name, sortOrder: cat.sortOrder },
-            create: { id: cat.id, name: cat.name, sortOrder: cat.sortOrder, restaurantId: this.restaurantId }
+            update: { ...cat },
+            create: { ...cat }
           });
           updateCount++;
         }
@@ -216,15 +312,8 @@ export class SyncService {
         for (const prod of products) {
           await tx.product.upsert({
             where: { id: prod.id },
-            update: { 
-              name: prod.name, price: prod.price, categoryId: prod.categoryId, 
-              isAvailable: prod.isAvailable, imageUrl: prod.imageUrl 
-            },
-            create: { 
-              id: prod.id, name: prod.name, price: prod.price, 
-              categoryId: prod.categoryId, isAvailable: prod.isAvailable, imageUrl: prod.imageUrl,
-              restaurantId: this.restaurantId
-            }
+            update: { ...prod },
+            create: { ...prod }
           });
           updateCount++;
         }
@@ -232,15 +321,34 @@ export class SyncService {
         for (const user of users) {
           await tx.user.upsert({
             where: { id: user.id },
-            update: { name: user.name, role: user.role, pin: user.pin, isActive: user.isActive },
-            create: { id: user.id, name: user.name, role: user.role, pin: user.pin, isActive: user.isActive }
+            update: { ...user },
+            create: { ...user }
+          });
+          updateCount++;
+        }
+
+        for (const item of inventoryItems) {
+          await tx.inventoryItem.upsert({
+            where: { id: item.id },
+            update: { ...item },
+            create: { ...item }
+          });
+          updateCount++;
+        }
+
+        for (const rec of recipes) {
+          await tx.recipeIngredient.upsert({
+            where: { id: rec.id },
+            update: { ...rec },
+            create: { ...rec }
           });
           updateCount++;
         }
       });
 
       if (updateCount > 0) {
-        this.logger.log(`✅ Successfully pulled and updated ${updateCount} configuration records from VPS.`);
+        await this.saveSyncState({ lastPullTime: pullStart });
+        this.logger.log(`✅ Successfully pulled and updated ${updateCount} delta records from VPS.`);
       }
     } catch (error) {
       // Don't throw, just log so it doesn't break the cron job or manual trigger if cloud is offline

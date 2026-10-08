@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { getBusinessDayBounds } from '../utils/date.util';
 
 @Injectable()
 export class HistoryService {
@@ -17,12 +18,16 @@ export class HistoryService {
     const page = options.page || 1;
     const limit = Math.min(options.limit || 50, 200);
     const skip = (page - 1) * limit;
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    const startDate = options.startDate ? new Date(options.startDate) : startOfToday;
-    const endDate = options.endDate
-      ? new Date(new Date(options.endDate).setHours(23, 59, 59, 999))
-      : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    let startDate, endDate;
+    if (options.startDate && options.endDate) {
+      startDate = getBusinessDayBounds(options.startDate).start;
+      endDate = getBusinessDayBounds(options.endDate).end;
+    } else {
+      const bounds = getBusinessDayBounds();
+      startDate = bounds.start;
+      endDate = bounds.end;
+    }
 
     const where: any = {
       restaurantId: options.restaurantId,
@@ -66,33 +71,38 @@ export class HistoryService {
   }
 
   async getDailySummary(restaurantId: string, date?: string) {
-    const targetDate = date ? new Date(date) : new Date();
-    const start = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0);
-    const end = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
+    const { start, end } = getBusinessDayBounds(date);
 
-    const bills = await this.prisma.bill.findMany({
+    const aggregate = await this.prisma.bill.aggregate({
       where: { restaurantId, settledAt: { gte: start, lte: end } },
+      _sum: { grandTotal: true, discount: true, cgst: true, sgst: true },
+      _count: { id: true }
     });
 
     const deliveryOrders = await this.prisma.deliveryOrder.count({
       where: { restaurantId, createdAt: { gte: start, lte: end }, status: 'DELIVERED' },
     });
 
-    const grossRevenue = bills.reduce((s, b) => s + b.grandTotal, 0);
-    const totalDiscount = bills.reduce((s, b) => s + b.discount, 0);
-    const totalGst = bills.reduce((s, b) => s + b.cgst + b.sgst, 0);
+    const grossRevenue = aggregate._sum.grandTotal || 0;
+    const totalDiscount = aggregate._sum.discount || 0;
+    const totalGst = (aggregate._sum.cgst || 0) + (aggregate._sum.sgst || 0);
+
+    const paymentGroups = await this.prisma.bill.groupBy({
+      by: ['paymentMethod'],
+      where: { restaurantId, settledAt: { gte: start, lte: end } },
+      _sum: { grandTotal: true }
+    });
 
     const byPayment: Record<string, number> = {};
-    const byOrderType: Record<string, number> = {};
-
-    for (const b of bills) {
-      byPayment[b.paymentMethod] = (byPayment[b.paymentMethod] || 0) + b.grandTotal;
-      // Assuming orderType is accessible from bill or order in real schema, but ignoring for now.
+    for (const group of paymentGroups) {
+      byPayment[group.paymentMethod] = group._sum.grandTotal || 0;
     }
+
+    const byOrderType: Record<string, number> = {};
 
     return {
       date: start.toDateString(),
-      totalBills: bills.length,
+      totalBills: aggregate._count.id,
       grossRevenue: Number(grossRevenue.toFixed(2)),
       totalDiscount: Number(totalDiscount.toFixed(2)),
       totalGst: Number(totalGst.toFixed(2)),
@@ -104,8 +114,16 @@ export class HistoryService {
   }
 
   async getTopSellingItems(restaurantId: string, startDate?: string, endDate?: string, limit = 10) {
-    const start = startDate ? new Date(startDate) : new Date(new Date().setDate(new Date().getDate() - 30));
-    const end = endDate ? new Date(new Date(endDate).setHours(23, 59, 59, 999)) : new Date();
+    let start, end;
+    if (startDate && endDate) {
+      start = getBusinessDayBounds(startDate).start;
+      end = getBusinessDayBounds(endDate).end;
+    } else {
+      const bounds = getBusinessDayBounds();
+      end = bounds.end;
+      // Default to 30 business days ago
+      start = new Date(bounds.start.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
 
     const items = await this.prisma.orderItem.groupBy({
       by: ['productId'],
@@ -130,15 +148,20 @@ export class HistoryService {
     const page = options.page || 1;
     const limit = Math.min(options.limit || 50, 200);
     const skip = (page - 1) * limit;
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    let start, end;
+    if (options.startDate && options.endDate) {
+      start = getBusinessDayBounds(options.startDate).start;
+      end = getBusinessDayBounds(options.endDate).end;
+    } else {
+      const bounds = getBusinessDayBounds();
+      start = bounds.start;
+      end = bounds.end;
+    }
 
     const where: any = {
       restaurantId: options.restaurantId,
-      createdAt: {
-        gte: options.startDate ? new Date(options.startDate) : startOfToday,
-        lte: options.endDate ? new Date(new Date(options.endDate).setHours(23, 59, 59, 999)) : new Date(),
-      },
+      createdAt: { gte: start, lte: end },
     };
 
     if (options.riderId) where.riderId = options.riderId;
@@ -153,14 +176,28 @@ export class HistoryService {
   }
 
   async getWasteLogs(restaurantId: string, startDate?: string, endDate?: string) {
-    const start = startDate ? new Date(startDate) : new Date(new Date().setDate(new Date().getDate() - 30));
-    const end = endDate ? new Date(new Date(endDate).setHours(23, 59, 59, 999)) : new Date();
+    let start, end;
+    if (startDate && endDate) {
+      start = getBusinessDayBounds(startDate).start;
+      end = getBusinessDayBounds(endDate).end;
+    } else {
+      const bounds = getBusinessDayBounds();
+      end = bounds.end;
+      start = new Date(bounds.start.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
     return this.prisma.wasteLog.findMany({ where: { restaurantId, createdAt: { gte: start, lte: end } }, orderBy: { createdAt: 'desc' } });
   }
 
   async getReturnRecords(restaurantId: string, startDate?: string, endDate?: string) {
-    const start = startDate ? new Date(startDate) : new Date(new Date().setDate(new Date().getDate() - 30));
-    const end = endDate ? new Date(new Date(endDate).setHours(23, 59, 59, 999)) : new Date();
+    let start, end;
+    if (startDate && endDate) {
+      start = getBusinessDayBounds(startDate).start;
+      end = getBusinessDayBounds(endDate).end;
+    } else {
+      const bounds = getBusinessDayBounds();
+      end = bounds.end;
+      start = new Date(bounds.start.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
     return this.prisma.returnRecord.findMany({ where: { restaurantId, createdAt: { gte: start, lte: end } }, orderBy: { createdAt: 'desc' } });
   }
 }

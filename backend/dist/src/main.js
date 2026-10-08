@@ -4,6 +4,7 @@ const core_1 = require("@nestjs/core");
 const app_module_1 = require("./app.module");
 const path_1 = require("path");
 const express_1 = require("express");
+const global_exception_filter_1 = require("./common/filters/global-exception.filter");
 const os = require("os");
 function getLocalIPs() {
     const interfaces = os.networkInterfaces();
@@ -25,9 +26,11 @@ async function bootstrap() {
     app.enableCors({
         origin: '*',
         methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+        allowedHeaders: ['Content-Type', 'Authorization', 'Bypass-Tunnel-Reminder'],
     });
     app.use((0, express_1.json)({ limit: '500mb' }));
     app.use((0, express_1.urlencoded)({ extended: true, limit: '500mb' }));
+    app.useGlobalFilters(new global_exception_filter_1.GlobalExceptionFilter());
     const httpAdapter = app.getHttpAdapter();
     httpAdapter.get('/health', (_req, res) => {
         res.status(200).json({

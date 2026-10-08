@@ -3,13 +3,65 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
 async function main() {
-    console.log('🌱 Seeding Karvaan POS Database...');
+    console.log('🌱 Seeding Karvaan POS Database (Multi-Tenant)...');
+    const adminUsername = process.env.SUPER_ADMIN_USERNAME || 'admin';
+    const adminPassword = process.env.SUPER_ADMIN_PASSWORD || 'password123';
+    const superAdmin = await prisma.user.create({
+        data: {
+            name: 'System Admin',
+            username: adminUsername,
+            password: adminPassword,
+            role: 'SUPER_ADMIN',
+        }
+    });
+    console.log(`Created Super Admin: ${adminUsername} / ${adminPassword}`);
+    const owner = await prisma.user.create({
+        data: {
+            name: 'Restaurant Group Owner',
+            username: 'owner',
+            password: 'password123',
+            role: 'OWNER',
+        }
+    });
+    console.log('Created Owner: owner / password123');
+    const restaurant = await prisma.restaurant.create({
+        data: {
+            name: 'The Great Indian Cafe',
+            address: '123 Food Street, Foodville',
+            phone: '9876543210',
+            ownerId: owner.id,
+        }
+    });
+    console.log('Created Demo Restaurant:', restaurant.name);
+    await prisma.user.create({
+        data: {
+            name: 'Cafe Manager',
+            username: 'manager',
+            password: 'password123',
+            pin: '1234',
+            role: 'REST_ADMIN',
+            restaurantId: restaurant.id
+        }
+    });
+    await prisma.user.create({
+        data: {
+            name: 'Cashier Alice',
+            username: 'cashier',
+            password: 'password123',
+            pin: '1111',
+            role: 'CASHIER',
+            restaurantId: restaurant.id
+        }
+    });
     const tables = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'VIP-1', 'VIP-2'];
     for (const t of tables) {
-        await prisma.table.upsert({
-            where: { tableNumber: t },
-            update: {},
-            create: { tableNumber: t, capacity: t.startsWith('VIP') ? 6 : 4, status: 'AVAILABLE' },
+        await prisma.table.create({
+            data: {
+                tableNumber: t,
+                capacity: t.startsWith('VIP') ? 6 : 4,
+                status: 'AVAILABLE',
+                restaurantId: restaurant.id
+            },
         });
     }
     const categoriesData = [
@@ -22,10 +74,8 @@ async function main() {
     ];
     const catMap = {};
     for (const c of categoriesData) {
-        const cat = await prisma.category.upsert({
-            where: { name: c.name },
-            update: {},
-            create: c,
+        const cat = await prisma.category.create({
+            data: { ...c, restaurantId: restaurant.id },
         });
         catMap[c.name] = cat.id;
     }
@@ -45,7 +95,7 @@ async function main() {
     ];
     for (const p of products) {
         await prisma.product.create({
-            data: { ...p, isAvailable: true, gstRate: 5.0 },
+            data: { ...p, isAvailable: true, gstRate: 5.0, restaurantId: restaurant.id },
         });
     }
     const invItems = [
@@ -56,10 +106,8 @@ async function main() {
         { name: 'Paneer Cubes', category: 'Dairy', currentStock: 18.0, unit: 'kg', minThreshold: 5.0 },
     ];
     for (const i of invItems) {
-        await prisma.inventoryItem.upsert({
-            where: { name: i.name },
-            update: {},
-            create: i,
+        await prisma.inventoryItem.create({
+            data: { ...i, restaurantId: restaurant.id },
         });
     }
     console.log('✅ Seeding completed successfully.');

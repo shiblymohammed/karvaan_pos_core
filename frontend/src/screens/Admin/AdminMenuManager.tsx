@@ -8,6 +8,7 @@ import {
 import * as Icons from 'lucide-react';
 import { IconPicker } from '../../components/IconPicker';
 import CustomSelect from '../../components/shared/CustomSelect';
+import { emitAction } from '../../services/socket';
 
 // ─── Image Compress Helper ──────────────────────────────────────────────────────
 function compressImage(file: File, maxSize = 200, quality = 0.7): Promise<string> {
@@ -385,6 +386,13 @@ export const AdminMenuManager: React.FC = () => {
     addCategory, updateCategory, deleteCategory, reorderCategory
   } = useMenuStore();
 
+  const triggerMenuSync = () => {
+    setTimeout(() => {
+      const state = useMenuStore.getState();
+      emitAction('sync_menu', { categories: state.categories, products: state.products });
+    }, 0);
+  };
+
   const [activeTab, setActiveTab] = useState<Tab>('products');
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState('All');
@@ -420,6 +428,7 @@ export const AdminMenuManager: React.FC = () => {
     } else {
       addProduct(data);
     }
+    triggerMenuSync();
     setProductModal({ open: false });
   };
 
@@ -429,6 +438,7 @@ export const AdminMenuManager: React.FC = () => {
     } else {
       addCategory(data);
     }
+    triggerMenuSync();
     setCatModal({ open: false });
   };
 
@@ -436,6 +446,7 @@ export const AdminMenuManager: React.FC = () => {
     if (!deleteConfirm) return;
     if (deleteConfirm.type === 'product') deleteProduct(deleteConfirm.id);
     else deleteCategory(deleteConfirm.id);
+    triggerMenuSync();
     setDeleteConfirm(null);
   };
 
@@ -569,7 +580,7 @@ export const AdminMenuManager: React.FC = () => {
                           <td className="py-3 px-4 text-xs font-bold text-slate-400">{prod.gstRate ?? 5}%</td>
                           <td className="py-3 px-4 text-xs font-bold text-slate-400">{prod.prepTime}m</td>
                           <td className="py-3 px-4 text-center">
-                            <button onClick={() => toggleAvailability(prod.id)}
+                            <button onClick={() => { toggleAvailability(prod.id); triggerMenuSync(); }}
                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border shadow-sm ${
                                 prod.isAvailable
                                   ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
@@ -580,7 +591,7 @@ export const AdminMenuManager: React.FC = () => {
                           </td>
                           <td className="py-3 px-4 text-right pr-6">
                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => toggleFavourite(prod.id)}
+                              <button onClick={() => { toggleFavourite(prod.id); triggerMenuSync(); }}
                                 title={prod.isFavourite ? "Remove from Favourites" : "Add to Favourites"}
                                 className={`p-2 border shadow-sm rounded-xl transition-all cursor-pointer ${
                                   prod.isFavourite 

@@ -162,7 +162,7 @@ export const FolioItemCard: React.FC<FolioItemCardProps> = ({
               if (pName) acc[pName] = (acc[pName] || 0) + 1;
               return acc;
             }, {})
-          ).map(([name, qty], cIdx) => (
+          ).map(([name, qty]: [string, any], cIdx: number) => (
             <span key={cIdx} className="text-[9px] md:text-[10px] font-semibold text-purple-700 bg-purple-50/80 border border-purple-200/60 px-1.5 py-0.5 rounded truncate">
               • {qty}x {name}
             </span>

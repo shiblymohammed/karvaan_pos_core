@@ -9,6 +9,7 @@ export declare class BillingService {
         waiterId?: string;
         customerId?: string;
         notes?: string;
+        restaurantId: string;
         items: Array<{
             productId: string;
             quantity: number;
@@ -17,9 +18,10 @@ export declare class BillingService {
     }): Promise<{
         table: {
             id: string;
-            status: string;
             createdAt: Date;
             updatedAt: Date;
+            restaurantId: string;
+            status: string;
             tableNumber: string;
             capacity: number;
             currentOrderId: string | null;
@@ -28,44 +30,47 @@ export declare class BillingService {
             product: {
                 id: string;
                 name: string;
-                createdAt: Date;
-                updatedAt: Date;
                 description: string | null;
                 price: number;
                 gstRate: number;
                 categoryId: string;
                 isAvailable: boolean;
                 prepTimeMinutes: number;
+                imageEmoji: string | null;
                 imageUrl: string | null;
+                createdAt: Date;
+                updatedAt: Date;
+                restaurantId: string;
             };
         } & {
             id: string;
-            orderId: string;
-            status: string;
-            notes: string | null;
+            price: number;
             createdAt: Date;
             updatedAt: Date;
-            price: number;
-            productId: string;
+            status: string;
+            notes: string | null;
             quantity: number;
             addons: string | null;
+            productId: string;
+            orderId: string;
         })[];
     } & {
         id: string;
-        orderType: string;
-        discount: number;
-        syncedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
+        restaurantId: string;
         orderNumber: string;
+        orderType: string;
+        status: string;
+        totalAmount: number;
+        discount: number;
+        notes: string | null;
+        syncedAt: Date | null;
         tableId: string | null;
         waiterId: string | null;
         customerId: string | null;
-        status: string;
-        totalAmount: number;
-        notes: string | null;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
-    calculateBillPreview(orderId: string, discountAmount?: number): Promise<{
+    calculateBillPreview(orderId: string, restaurantId: string, discountAmount?: number): Promise<{
         orderId: string;
         orderNumber: string;
         subtotal: number;
@@ -78,80 +83,116 @@ export declare class BillingService {
         orderId: string;
         paymentMethod: 'CASH' | 'CARD' | 'UPI' | 'SPLIT';
         discount?: number;
-        cashierId?: string;
-    }): Promise<{
+    }, restaurantId: string, cashierId?: string): Promise<{
         bill: {
             id: string;
-            billNumber: string;
-            orderId: string;
+            updatedAt: Date;
+            restaurantId: string;
             orderType: string;
+            discount: number;
+            syncedAt: Date | null;
+            orderId: string;
+            billNumber: string;
             subtotal: number;
             cgst: number;
             sgst: number;
-            discount: number;
             deliveryFee: number;
             grandTotal: number;
             paymentMethod: string;
-            cashierId: string | null;
             customerName: string | null;
             customerPhone: string | null;
             waiterName: string | null;
             settledAt: Date;
-            syncedAt: Date | null;
+            cashierId: string | null;
         };
         order: {
             table: {
                 id: string;
-                status: string;
                 createdAt: Date;
                 updatedAt: Date;
+                restaurantId: string;
+                status: string;
                 tableNumber: string;
                 capacity: number;
                 currentOrderId: string | null;
             };
             items: ({
                 product: {
+                    recipeItems: {
+                        id: string;
+                        updatedAt: Date;
+                        syncedAt: Date | null;
+                        quantity: number;
+                        productId: string;
+                        unit: string;
+                        inventoryItemId: string;
+                    }[];
+                } & {
                     id: string;
                     name: string;
-                    createdAt: Date;
-                    updatedAt: Date;
                     description: string | null;
                     price: number;
                     gstRate: number;
                     categoryId: string;
                     isAvailable: boolean;
                     prepTimeMinutes: number;
+                    imageEmoji: string | null;
                     imageUrl: string | null;
+                    createdAt: Date;
+                    updatedAt: Date;
+                    restaurantId: string;
                 };
             } & {
                 id: string;
-                orderId: string;
-                status: string;
-                notes: string | null;
+                price: number;
                 createdAt: Date;
                 updatedAt: Date;
-                price: number;
-                productId: string;
+                status: string;
+                notes: string | null;
                 quantity: number;
                 addons: string | null;
+                productId: string;
+                orderId: string;
             })[];
         } & {
             id: string;
-            orderType: string;
-            discount: number;
-            syncedAt: Date | null;
+            createdAt: Date;
+            updatedAt: Date;
+            restaurantId: string;
             orderNumber: string;
+            orderType: string;
+            status: string;
+            totalAmount: number;
+            discount: number;
+            notes: string | null;
+            syncedAt: Date | null;
             tableId: string | null;
             waiterId: string | null;
             customerId: string | null;
-            status: string;
-            totalAmount: number;
-            notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
         };
     }>;
-    getDailyDashboardSummary(): Promise<{
+    processDirectCheckout(billData: any, restaurantId: string): Promise<{
+        id: string;
+        updatedAt: Date;
+        restaurantId: string;
+        orderType: string;
+        discount: number;
+        syncedAt: Date | null;
+        orderId: string;
+        billNumber: string;
+        subtotal: number;
+        cgst: number;
+        sgst: number;
+        deliveryFee: number;
+        grandTotal: number;
+        paymentMethod: string;
+        customerName: string | null;
+        customerPhone: string | null;
+        waiterName: string | null;
+        settledAt: Date;
+        cashierId: string | null;
+    }>;
+    getDailyDashboardSummary(restaurantId: string): Promise<{
         grossRevenue: number;
         totalOrders: number;
         averageOrderValue: number;
@@ -163,4 +204,80 @@ export declare class BillingService {
             upi: number;
         };
     }>;
+    getOrderHistory(restaurantId: string, startDate?: string, endDate?: string): Promise<({
+        order: {
+            table: {
+                tableNumber: string;
+            };
+            waiter: {
+                name: string;
+            };
+            items: ({
+                product: {
+                    id: string;
+                    name: string;
+                    description: string | null;
+                    price: number;
+                    gstRate: number;
+                    categoryId: string;
+                    isAvailable: boolean;
+                    prepTimeMinutes: number;
+                    imageEmoji: string | null;
+                    imageUrl: string | null;
+                    createdAt: Date;
+                    updatedAt: Date;
+                    restaurantId: string;
+                };
+            } & {
+                id: string;
+                price: number;
+                createdAt: Date;
+                updatedAt: Date;
+                status: string;
+                notes: string | null;
+                quantity: number;
+                addons: string | null;
+                productId: string;
+                orderId: string;
+            })[];
+        } & {
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            restaurantId: string;
+            orderNumber: string;
+            orderType: string;
+            status: string;
+            totalAmount: number;
+            discount: number;
+            notes: string | null;
+            syncedAt: Date | null;
+            tableId: string | null;
+            waiterId: string | null;
+            customerId: string | null;
+        };
+        cashier: {
+            name: string;
+        };
+    } & {
+        id: string;
+        updatedAt: Date;
+        restaurantId: string;
+        orderType: string;
+        discount: number;
+        syncedAt: Date | null;
+        orderId: string;
+        billNumber: string;
+        subtotal: number;
+        cgst: number;
+        sgst: number;
+        deliveryFee: number;
+        grandTotal: number;
+        paymentMethod: string;
+        customerName: string | null;
+        customerPhone: string | null;
+        waiterName: string | null;
+        settledAt: Date;
+        cashierId: string | null;
+    })[]>;
 }

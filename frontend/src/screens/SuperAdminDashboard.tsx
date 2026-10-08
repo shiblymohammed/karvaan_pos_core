@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../store/useAuthStore';
-import { LogOut, Building, Users, Plus, ShieldCheck, ChevronRight, Activity, DollarSign, AlertTriangle, ChevronLeft, Lock, Edit2, RefreshCw, X, ArrowUpRight } from 'lucide-react';
+import { LogOut, Building, Users, Plus, ShieldCheck, ChevronRight, Activity, DollarSign, AlertTriangle, ChevronLeft, Lock, Edit2, RefreshCw, X, ArrowUpRight, Save } from 'lucide-react';
+import { toast } from '../store/useToastStore';
 import { apiClient } from '../services/apiClient';
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
@@ -35,8 +36,12 @@ export const SuperAdminDashboard: React.FC = () => {
   const [selectedRestaurant, setSelectedRestaurant] = useState<any | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   
+  const [selectedOwner, setSelectedOwner] = useState<any | null>(null);
+  const [isManageOwnerModalOpen, setIsManageOwnerModalOpen] = useState(false);
+  
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newFormData, setNewFormData] = useState<any>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -79,6 +84,26 @@ export const SuperAdminDashboard: React.FC = () => {
       setIsManageModalOpen(false);
     } catch (e) {
       console.error('Failed to update subscription', e);
+    }
+  };
+
+  const handleOwnerUpdate = async () => {
+    setIsSaving(true);
+    try {
+      const payload: any = {};
+      if (newFormData.name) payload.name = newFormData.name;
+      if (newFormData.username) payload.username = newFormData.username;
+      if (newFormData.password) payload.password = newFormData.password;
+      if (newFormData.isActive !== undefined) payload.isActive = newFormData.isActive;
+      
+      await apiClient.put(`/tenant/owners/${selectedOwner.id}`, payload);
+      toast.success('Owner profile updated!');
+      setIsManageOwnerModalOpen(false);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Error updating owner');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -362,7 +387,13 @@ export const SuperAdminDashboard: React.FC = () => {
                             </span>
                           </td>
                           <td className="p-3 sm:p-4 text-right pr-4 sm:pr-6">
-                            <button className="text-slate-600 hover:text-slate-900 bg-white/80 hover:bg-white shadow-sm px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl font-bold text-[10px] sm:text-xs transition-all border border-slate-200 active:scale-95 flex items-center gap-1 sm:gap-1.5 ml-auto">
+                            <button 
+                              onClick={() => {
+                                setSelectedOwner(owner);
+                                setNewFormData({ name: owner.name, username: owner.username, isActive: owner.isActive });
+                                setIsManageOwnerModalOpen(true);
+                              }}
+                              className="text-slate-600 hover:text-slate-900 bg-white/80 hover:bg-white shadow-sm px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl font-bold text-[10px] sm:text-xs transition-all border border-slate-200 active:scale-95 flex items-center gap-1 sm:gap-1.5 ml-auto">
                               <Edit2 className="h-3 w-3" /> <span className="hidden sm:inline">Manage</span>
                             </button>
                           </td>
@@ -632,6 +663,56 @@ export const SuperAdminDashboard: React.FC = () => {
               </button>
             </div>
           </motion.div>
+        </div>
+      )}
+
+      {/* MANAGE OWNER MODAL */}
+      {isManageOwnerModalOpen && selectedOwner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsManageOwnerModalOpen(false)}></div>
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl relative z-10 overflow-hidden flex flex-col border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50/50">
+              <div>
+                <h3 className="font-black text-slate-800 text-lg">Edit Platform Owner</h3>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{selectedOwner.name}</p>
+              </div>
+              <button onClick={() => setIsManageOwnerModalOpen(false)} className="p-2 bg-white hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-xl transition-colors border border-slate-200">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-5 bg-white">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">Owner Name</label>
+                  <input type="text" value={newFormData.name || ''} onChange={e => setNewFormData({...newFormData, name: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">Username</label>
+                  <input type="text" value={newFormData.username || ''} onChange={e => setNewFormData({...newFormData, username: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">New Password (Optional)</label>
+                  <input type="password" placeholder="Leave blank to keep current" value={newFormData.password || ''} onChange={e => setNewFormData({...newFormData, password: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">Account Status</label>
+                  <select value={newFormData.isActive ? 'active' : 'suspended'} onChange={e => setNewFormData({...newFormData, isActive: e.target.value === 'active'})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-5 border-t border-slate-100 bg-slate-50 flex gap-3">
+              <button onClick={() => setIsManageOwnerModalOpen(false)} className="flex-1 py-3 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors border border-slate-200">Cancel</button>
+              <button disabled={isSaving} onClick={handleOwnerUpdate} className="flex-1 py-3 bg-[#b5ef85] hover:bg-[#a2db74] disabled:opacity-70 disabled:cursor-not-allowed text-[#0d212b] font-black rounded-xl transition-colors border border-[#b5ef85]/50 flex items-center justify-center gap-2">
+                {isSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} 
+                {isSaving ? 'Saving...' : 'Save Profile'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

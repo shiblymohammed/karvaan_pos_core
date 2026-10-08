@@ -30,11 +30,39 @@ export class TenantService {
     });
   }
 
+  async updateOwner(id: string, data: { name?: string; username?: string; password?: string; isActive?: boolean }) {
+    const owner = await this.prisma.user.findUnique({ where: { id, role: 'OWNER' } });
+    if (!owner) throw new NotFoundException('Owner not found');
+
+    const updateData: any = {};
+    if (data.name) updateData.name = data.name;
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    
+    if (data.username && data.username !== owner.username) {
+      const existing = await this.prisma.user.findUnique({ where: { username: data.username } });
+      if (existing) throw new ConflictException('Username already taken');
+      updateData.username = data.username;
+    }
+
+    if (data.password) {
+      updateData.password = await bcrypt.hash(data.password, 10);
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: { id: true, name: true, username: true, isActive: true },
+    });
+  }
+
   async getAllRestaurants(ownerId?: string) {
     const whereClause = ownerId ? { ownerId } : {};
     return this.prisma.restaurant.findMany({
       where: whereClause,
-      include: { owner: { select: { name: true } } },
+      include: { 
+        owner: { select: { name: true } },
+        users: { where: { role: 'ADMIN' }, select: { id: true, name: true, username: true } }
+      },
     });
   }
 
@@ -57,6 +85,34 @@ export class TenantService {
       },
       select: { id: true, name: true, username: true, role: true }
     });
+  }
+
+  async updateAdminForRestaurant(adminId: string, data: { name?: string; password?: string }, ownerId: string) {
+    const admin = await this.prisma.user.findUnique({ where: { id: adminId }, include: { restaurant: true } });
+    if (!admin || admin.restaurant?.ownerId !== ownerId || admin.role !== 'ADMIN') {
+      throw new UnauthorizedException('Not authorized to edit this admin');
+    }
+
+    const updateData: any = {};
+    if (data.name) updateData.name = data.name;
+    if (data.password) {
+      updateData.password = await bcrypt.hash(data.password, 10);
+    }
+
+    return this.prisma.user.update({
+      where: { id: adminId },
+      data: updateData,
+      select: { id: true, name: true, username: true }
+    });
+  }
+
+  async deleteAdminForRestaurant(adminId: string, ownerId: string) {
+    const admin = await this.prisma.user.findUnique({ where: { id: adminId }, include: { restaurant: true } });
+    if (!admin || admin.restaurant?.ownerId !== ownerId || admin.role !== 'ADMIN') {
+      throw new UnauthorizedException('Not authorized to delete this admin');
+    }
+
+    return this.prisma.user.delete({ where: { id: adminId } });
   }
 
   async createRestaurant(data: { name: string; address?: string; phone?: string; ownerId: string }) {

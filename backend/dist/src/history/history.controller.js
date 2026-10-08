@@ -15,12 +15,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.HistoryController = void 0;
 const common_1 = require("@nestjs/common");
 const history_service_1 = require("./history.service");
+const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const get_user_decorator_1 = require("../auth/get-user.decorator");
 let HistoryController = class HistoryController {
     constructor(historyService) {
         this.historyService = historyService;
     }
-    async getBillHistory(startDate, endDate, page, limit, orderType, paymentMethod) {
+    async getBillHistory(startDate, endDate, page, limit, orderType, paymentMethod, user) {
+        if (!user.restaurantId)
+            throw new common_1.UnauthorizedException('No restaurant context');
         return this.historyService.getBillHistory({
+            restaurantId: user.restaurantId,
             startDate,
             endDate,
             page: page ? parseInt(page) : 1,
@@ -29,14 +34,21 @@ let HistoryController = class HistoryController {
             paymentMethod,
         });
     }
-    async getDailySummary(date) {
-        return this.historyService.getDailySummary(date);
+    async getDailySummary(date, user) {
+        if (!user.restaurantId)
+            throw new common_1.UnauthorizedException('No restaurant context');
+        return this.historyService.getDailySummary(user.restaurantId, date);
     }
-    async getTopItems(startDate, endDate, limit) {
-        return this.historyService.getTopSellingItems(startDate, endDate, limit ? parseInt(limit) : 10);
+    async getTopItems(startDate, endDate, limit, user) {
+        if (!user.restaurantId)
+            throw new common_1.UnauthorizedException('No restaurant context');
+        return this.historyService.getTopSellingItems(user.restaurantId, startDate, endDate, limit ? parseInt(limit) : 10);
     }
-    async getDeliveryHistory(startDate, endDate, page, limit, riderId, status) {
+    async getDeliveryHistory(startDate, endDate, page, limit, riderId, status, user) {
+        if (!user.restaurantId)
+            throw new common_1.UnauthorizedException('No restaurant context');
         return this.historyService.getDeliveryHistory({
+            restaurantId: user.restaurantId,
             startDate,
             endDate,
             page: page ? parseInt(page) : 1,
@@ -45,11 +57,15 @@ let HistoryController = class HistoryController {
             status,
         });
     }
-    async getWasteLogs(startDate, endDate) {
-        return this.historyService.getWasteLogs(startDate, endDate);
+    async getWasteLogs(startDate, endDate, user) {
+        if (!user.restaurantId)
+            throw new common_1.UnauthorizedException('No restaurant context');
+        return this.historyService.getWasteLogs(user.restaurantId, startDate, endDate);
     }
-    async getReturnRecords(startDate, endDate) {
-        return this.historyService.getReturnRecords(startDate, endDate);
+    async getReturnRecords(startDate, endDate, user) {
+        if (!user.restaurantId)
+            throw new common_1.UnauthorizedException('No restaurant context');
+        return this.historyService.getReturnRecords(user.restaurantId, startDate, endDate);
     }
 };
 exports.HistoryController = HistoryController;
@@ -61,15 +77,17 @@ __decorate([
     __param(3, (0, common_1.Query)('limit')),
     __param(4, (0, common_1.Query)('orderType')),
     __param(5, (0, common_1.Query)('paymentMethod')),
+    __param(6, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, Object]),
     __metadata("design:returntype", Promise)
 ], HistoryController.prototype, "getBillHistory", null);
 __decorate([
     (0, common_1.Get)('daily-summary'),
     __param(0, (0, common_1.Query)('date')),
+    __param(1, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], HistoryController.prototype, "getDailySummary", null);
 __decorate([
@@ -77,8 +95,9 @@ __decorate([
     __param(0, (0, common_1.Query)('startDate')),
     __param(1, (0, common_1.Query)('endDate')),
     __param(2, (0, common_1.Query)('limit')),
+    __param(3, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, Object]),
     __metadata("design:returntype", Promise)
 ], HistoryController.prototype, "getTopItems", null);
 __decorate([
@@ -89,27 +108,31 @@ __decorate([
     __param(3, (0, common_1.Query)('limit')),
     __param(4, (0, common_1.Query)('riderId')),
     __param(5, (0, common_1.Query)('status')),
+    __param(6, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, Object]),
     __metadata("design:returntype", Promise)
 ], HistoryController.prototype, "getDeliveryHistory", null);
 __decorate([
     (0, common_1.Get)('waste'),
     __param(0, (0, common_1.Query)('startDate')),
     __param(1, (0, common_1.Query)('endDate')),
+    __param(2, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [String, String, Object]),
     __metadata("design:returntype", Promise)
 ], HistoryController.prototype, "getWasteLogs", null);
 __decorate([
     (0, common_1.Get)('returns'),
     __param(0, (0, common_1.Query)('startDate')),
     __param(1, (0, common_1.Query)('endDate')),
+    __param(2, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [String, String, Object]),
     __metadata("design:returntype", Promise)
 ], HistoryController.prototype, "getReturnRecords", null);
 exports.HistoryController = HistoryController = __decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Controller)('history'),
     __metadata("design:paramtypes", [history_service_1.HistoryService])
 ], HistoryController);

@@ -13,20 +13,40 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KdsGateway = void 0;
+const common_1 = require("@nestjs/common");
 const websockets_1 = require("@nestjs/websockets");
 const socket_io_1 = require("socket.io");
 const prisma_service_1 = require("../prisma/prisma.service");
+const billing_service_1 = require("../billing/billing.service");
+const jwt_1 = require("@nestjs/jwt");
 let KdsGateway = class KdsGateway {
-    constructor(prisma) {
+    constructor(prisma, billingService, jwtService) {
         this.prisma = prisma;
+        this.billingService = billingService;
+        this.jwtService = jwtService;
         this.activeTickets = [];
         this.tableStatuses = {};
     }
     async handleConnection(client) {
         console.log(`📡 [WebSocket] Terminal Connected: ${client.id}`);
+        const restaurantId = client.handshake.query.restaurantId;
+        const token = client.handshake.query.token;
+        if (!restaurantId || !token) {
+            console.log(`📡 [WebSocket] Connection rejected: Missing restaurantId or token for ${client.id}`);
+            client.disconnect();
+            return;
+        }
+        try {
+            this.jwtService.verify(token);
+        }
+        catch (e) {
+            console.log(`📡 [WebSocket] Connection rejected: Invalid token for ${client.id}`);
+            client.disconnect();
+            return;
+        }
         try {
             const activeOrders = await this.prisma.order.findMany({
-                where: { status: { in: ['RECEIVED', 'COOKING', 'READY'] } },
+                where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } },
                 include: {
                     items: { include: { product: true } },
                     table: true,
@@ -47,10 +67,12 @@ let KdsGateway = class KdsGateway {
                     quantity: i.quantity,
                     notes: i.notes,
                     status: i.status,
+                    subItems: i.addons ? JSON.parse(i.addons) : undefined,
                 })),
             }));
             this.activeTickets = kdsTickets;
             const parkedRaw = await this.prisma.parkedOrder.findMany({
+                where: { restaurantId },
                 orderBy: { heldAt: 'desc' },
                 take: 50,
             });
@@ -63,24 +85,41 @@ let KdsGateway = class KdsGateway {
                 }
             }).filter(Boolean);
             const deliveryOrders = await this.prisma.deliveryOrder.findMany({
-                where: { status: { in: ['RECEIVED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'] } },
+                where: { restaurantId, status: { in: ['RECEIVED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'] } },
                 orderBy: { createdAt: 'desc' },
                 take: 100,
                 include: { rider: { select: { id: true, name: true, phone: true } } },
             });
             const staffMembers = await this.prisma.user.findMany({
-                where: { isActive: true },
-                select: { id: true, name: true, username: true, password: true, role: true, phone: true, isActive: true, permissions: true, pin: true },
+                where: { restaurantId, isActive: true },
+                select: { id: true, name: true, username: true, role: true, phone: true, isActive: true, permissions: true, pin: true },
             });
             const inventoryStock = await this.prisma.inventoryItem.findMany({
+                where: { restaurantId },
                 orderBy: { name: 'asc' },
             });
-            const tables = await this.prisma.table.findMany();
+            const tables = await this.prisma.table.findMany({ where: { restaurantId }, orderBy: { tableNumber: 'asc' } });
+            const categories = await this.prisma.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: 'asc' } });
+            const products = await this.prisma.product.findMany({ where: { restaurantId }, orderBy: { name: 'asc' } });
             const tableStatusMap = {};
             for (const t of tables) {
                 tableStatusMap[t.id] = { status: t.status, subtotal: null, tableId: t.id, tableNumber: t.tableNumber };
             }
             this.tableStatuses = tableStatusMap;
+            const rawRecipes = await this.prisma.recipeIngredient.findMany({
+                where: { product: { restaurantId } }
+            });
+            const recipeMap = new Map();
+            for (const r of rawRecipes) {
+                if (!recipeMap.has(r.productId)) {
+                    recipeMap.set(r.productId, { menuItemId: r.productId, ingredients: [] });
+                }
+                recipeMap.get(r.productId).ingredients.push({
+                    ingredientId: r.inventoryItemId,
+                    quantity: r.quantity
+                });
+            }
+            const recipes = Array.from(recipeMap.values());
             client.emit('sync_master_state', {
                 kdsTickets,
                 parkedOrders,
@@ -88,7 +127,10 @@ let KdsGateway = class KdsGateway {
                 staffMembers,
                 inventoryStock,
                 tableStatuses: tableStatusMap,
-                recipes: [],
+                tables,
+                categories,
+                products,
+                recipes,
                 wasteLogs: [],
             });
             console.log(`✅ [WebSocket] Synced DB state to terminal ${client.id}: ${activeOrders.length} tickets, ${deliveryOrders.length} deliveries, ${staffMembers.length} staff`);
@@ -105,6 +147,9 @@ let KdsGateway = class KdsGateway {
         console.log(`🔌 [WebSocket] Terminal Disconnected: ${client.id}`);
     }
     async handleFireOrder(orderData, client) {
+        const restaurantId = client.handshake.query.restaurantId;
+        if (!restaurantId)
+            return { status: 'OK' };
         console.log(`🍳 [KDS Gateway] Fired KOT Order #${orderData.orderNumber} to Kitchen.`);
         const newTicket = {
             ...orderData,
@@ -113,12 +158,13 @@ let KdsGateway = class KdsGateway {
         };
         try {
             if (orderData.items && Array.isArray(orderData.items)) {
-                const existing = await this.prisma.order.findUnique({
-                    where: { orderNumber: orderData.orderNumber },
+                const existing = await this.prisma.order.findFirst({
+                    where: { restaurantId, orderNumber: orderData.orderNumber },
                 }).catch(() => null);
                 if (!existing && orderData.orderType !== 'DELIVERY') {
                     await this.prisma.order.create({
                         data: {
+                            restaurantId,
                             orderNumber: orderData.orderNumber,
                             orderType: orderData.orderType || 'DINE_IN',
                             status: 'RECEIVED',
@@ -130,6 +176,7 @@ let KdsGateway = class KdsGateway {
                                     quantity: i.quantity,
                                     price: i.price,
                                     notes: i.notes || null,
+                                    addons: i.subItems ? JSON.stringify(i.subItems) : null,
                                     status: 'SENT',
                                 })),
                             },
@@ -173,23 +220,30 @@ let KdsGateway = class KdsGateway {
         return { status: 'OK' };
     }
     async handleSyncParkedOrders(orders, client) {
-        console.log(`🛒 [Parked Orders] Sync from terminal ${client.id}: ${orders?.length || 0} orders`);
-        if (!Array.isArray(orders)) {
+        const restaurantId = client.handshake.query.restaurantId;
+        if (!restaurantId || !Array.isArray(orders))
             return { status: 'OK' };
-        }
+        console.log(`🛒 [Parked Orders] Sync from terminal ${client.id}: ${orders.length} orders`);
         try {
             for (const order of orders) {
                 if (!order?.id)
                     continue;
-                await this.prisma.parkedOrder.upsert({
-                    where: { orderId: order.id },
-                    update: { data: JSON.stringify(order), updatedAt: new Date() },
-                    create: { orderId: order.id, data: JSON.stringify(order) },
-                });
+                const existing = await this.prisma.parkedOrder.findUnique({ where: { orderId: order.id } }).catch(() => null);
+                if (existing) {
+                    await this.prisma.parkedOrder.update({
+                        where: { id: existing.id },
+                        data: { data: JSON.stringify(order), updatedAt: new Date() }
+                    });
+                }
+                else {
+                    await this.prisma.parkedOrder.create({
+                        data: { orderId: order.id, restaurantId, data: JSON.stringify(order) }
+                    });
+                }
             }
             const activeIds = orders.map((o) => o.id).filter(Boolean);
             await this.prisma.parkedOrder.deleteMany({
-                where: { orderId: { notIn: activeIds } },
+                where: { restaurantId, orderId: { notIn: activeIds } },
             });
         }
         catch (e) {
@@ -212,42 +266,52 @@ let KdsGateway = class KdsGateway {
         return { status: 'OK' };
     }
     async handleSyncDeliveryOrders(orders, client) {
-        console.log(`🛵 [Delivery Gateway] Sync from ${client.id}: ${orders?.length || 0} orders`);
-        if (!Array.isArray(orders)) {
+        const restaurantId = client.handshake.query.restaurantId;
+        if (!restaurantId || !Array.isArray(orders))
             return { status: 'OK' };
-        }
+        console.log(`🛵 [Delivery Gateway] Sync from ${client.id}: ${orders.length} orders`);
         try {
             for (const order of orders) {
                 if (!order?.id)
                     continue;
-                await this.prisma.deliveryOrder.upsert({
-                    where: { orderNumber: order.orderNumber || order.id },
-                    update: {
-                        status: order.status,
-                        riderId: order.deliveryBoyId || null,
-                        riderName: order.deliveryBoyName || null,
-                        paymentStatus: order.paymentStatus || 'PENDING',
-                        paymentMethod: order.paymentMethod || 'CASH',
-                        collectedAmount: order.collectedAmount || null,
-                        deliveredAt: order.status === 'DELIVERED' ? new Date() : null,
-                        updatedAt: new Date(),
-                    },
-                    create: {
-                        orderNumber: order.orderNumber || order.id,
-                        customerName: order.customerName || 'Customer',
-                        customerPhone: order.customerPhone || null,
-                        deliveryAddress: order.deliveryAddress || null,
-                        riderId: order.deliveryBoyId || null,
-                        riderName: order.deliveryBoyName || null,
-                        status: order.status || 'RECEIVED',
-                        paymentMethod: order.paymentMethod || 'CASH',
-                        paymentStatus: order.paymentStatus || 'PENDING',
-                        grandTotal: order.grandTotal || 0,
-                        deliveryFee: order.deliveryFee || 0,
-                        items: JSON.stringify(order.items || []),
-                        notes: order.notes || null,
-                    },
-                }).catch((e) => console.warn('[Delivery] Upsert skip:', e.message));
+                const existing = await this.prisma.deliveryOrder.findFirst({
+                    where: { restaurantId, orderNumber: order.orderNumber || order.id },
+                }).catch(() => null);
+                if (existing) {
+                    await this.prisma.deliveryOrder.update({
+                        where: { id: existing.id },
+                        data: {
+                            status: order.status,
+                            riderId: order.deliveryBoyId || null,
+                            riderName: order.deliveryBoyName || null,
+                            paymentStatus: order.paymentStatus || 'PENDING',
+                            paymentMethod: order.paymentMethod || 'CASH',
+                            collectedAmount: order.collectedAmount || null,
+                            deliveredAt: order.status === 'DELIVERED' ? new Date() : null,
+                            updatedAt: new Date(),
+                        }
+                    });
+                }
+                else {
+                    await this.prisma.deliveryOrder.create({
+                        data: {
+                            restaurantId,
+                            orderNumber: order.orderNumber || order.id,
+                            customerName: order.customerName || 'Customer',
+                            customerPhone: order.customerPhone || null,
+                            deliveryAddress: order.deliveryAddress || null,
+                            riderId: order.deliveryBoyId || null,
+                            riderName: order.deliveryBoyName || null,
+                            status: order.status || 'RECEIVED',
+                            paymentMethod: order.paymentMethod || 'CASH',
+                            paymentStatus: order.paymentStatus || 'PENDING',
+                            grandTotal: order.grandTotal || 0,
+                            deliveryFee: order.deliveryFee || 0,
+                            items: JSON.stringify(order.items || []),
+                            notes: order.notes || null,
+                        }
+                    });
+                }
             }
         }
         catch (e) {
@@ -257,6 +321,9 @@ let KdsGateway = class KdsGateway {
         return { status: 'OK' };
     }
     async handleSyncStaff(staff, client) {
+        const restaurantId = client.handshake.query.restaurantId;
+        if (!restaurantId)
+            return { status: 'ERROR' };
         console.log(`👥 [Staff Gateway] Sync from ${client.id}: ${staff?.length || 0} members`);
         if (!Array.isArray(staff)) {
             return { status: 'OK' };
@@ -266,7 +333,7 @@ let KdsGateway = class KdsGateway {
                 if (!member?.id || !member?.name || !member?.pin)
                     continue;
                 await this.prisma.user.upsert({
-                    where: { pin: member.pin },
+                    where: { id: member.id },
                     update: {
                         name: member.name,
                         username: member.username || null,
@@ -286,8 +353,9 @@ let KdsGateway = class KdsGateway {
                         phone: member.phone || null,
                         isActive: member.isActive !== false,
                         permissions: member.permissions ? JSON.stringify(member.permissions) : null,
+                        restaurantId,
                     },
-                }).catch((e) => console.warn('[Staff] Upsert skip (duplicate PIN?):', e.message));
+                }).catch((e) => console.warn('[Staff] Upsert skip:', e.message));
             }
         }
         catch (e) {
@@ -297,6 +365,9 @@ let KdsGateway = class KdsGateway {
         return { status: 'OK' };
     }
     async handleSyncInventory(inventory, client) {
+        const restaurantId = client.handshake.query.restaurantId;
+        if (!restaurantId)
+            return { status: 'ERROR' };
         console.log(`📦 [Inventory Gateway] Sync from ${client.id}: ${inventory?.length || 0} items`);
         if (!Array.isArray(inventory)) {
             return { status: 'OK' };
@@ -306,7 +377,7 @@ let KdsGateway = class KdsGateway {
                 if (!item?.name)
                     continue;
                 await this.prisma.inventoryItem.upsert({
-                    where: { name: item.name },
+                    where: { restaurantId_name: { restaurantId, name: item.name } },
                     update: {
                         currentStock: item.currentStock ?? item.currentQty ?? 0,
                         category: item.category || 'General',
@@ -321,6 +392,7 @@ let KdsGateway = class KdsGateway {
                         unit: item.unit || 'pcs',
                         minThreshold: item.minThreshold || item.minLevel || 5,
                         costPrice: item.costPrice || 0,
+                        restaurantId,
                     },
                 }).catch((e) => console.warn('[Inventory] Upsert skip:', e.message));
             }
@@ -331,13 +403,54 @@ let KdsGateway = class KdsGateway {
         this.server.emit('inventory_updated', inventory);
         return { status: 'OK' };
     }
-    handleSyncRecipes(recipes) {
-        if (Array.isArray(recipes)) {
-            this.server.emit('recipes_updated', recipes);
+    async handleSyncRecipes(recipes, client) {
+        const restaurantId = client.handshake.query.restaurantId;
+        if (!restaurantId || !Array.isArray(recipes))
+            return { status: 'ERROR' };
+        console.log(`📜 [Recipe Gateway] Sync from ${client.id}: ${recipes.length} recipes`);
+        try {
+            for (const recipe of recipes) {
+                if (!recipe?.menuItemId || !Array.isArray(recipe.ingredients))
+                    continue;
+                const productId = recipe.menuItemId;
+                const product = await this.prisma.product.findUnique({ where: { id: productId } }).catch(() => null);
+                if (!product)
+                    continue;
+                await this.prisma.$transaction(async (tx) => {
+                    await tx.recipeIngredient.deleteMany({ where: { productId } });
+                    for (const item of recipe.ingredients) {
+                        if (!item.ingredientId)
+                            continue;
+                        const invItem = await tx.inventoryItem.findFirst({
+                            where: {
+                                OR: [{ id: item.ingredientId }, { name: item.ingredientId }],
+                                restaurantId
+                            }
+                        });
+                        if (invItem) {
+                            await tx.recipeIngredient.create({
+                                data: {
+                                    productId,
+                                    inventoryItemId: invItem.id,
+                                    quantity: item.quantity,
+                                    unit: invItem.unit || 'pcs'
+                                }
+                            });
+                        }
+                    }
+                });
+            }
         }
+        catch (e) {
+            console.warn('[Recipes] Persist error (non-fatal):', e.message);
+        }
+        this.server.emit('recipes_updated', recipes);
         return { status: 'OK' };
     }
     async handleSyncWaste(wasteLogs, client) {
+        const restaurantId = client.handshake.query.restaurantId;
+        if (!restaurantId)
+            return { status: 'ERROR' };
         console.log(`🗑️ [Waste Gateway] Sync from ${client.id}: ${wasteLogs?.length || 0} logs`);
         if (!Array.isArray(wasteLogs)) {
             return { status: 'OK' };
@@ -348,6 +461,7 @@ let KdsGateway = class KdsGateway {
                     continue;
                 const existing = await this.prisma.wasteLog.findFirst({
                     where: {
+                        restaurantId,
                         itemName: log.itemName,
                         createdAt: { gte: new Date(Date.now() - 5000) }
                     },
@@ -362,6 +476,7 @@ let KdsGateway = class KdsGateway {
                             orderId: log.orderId || null,
                             billNumber: log.billNumber || null,
                             loggedBy: log.loggedBy || null,
+                            restaurantId,
                         },
                     }).catch((e) => console.warn('[Waste] Create skip:', e.message));
                 }
@@ -373,40 +488,13 @@ let KdsGateway = class KdsGateway {
         this.server.emit('waste_updated', wasteLogs);
         return { status: 'OK' };
     }
-    async handleSettleBill(billData) {
+    async handleSettleBill(billData, client) {
+        const restaurantId = client.handshake.query.restaurantId;
+        if (!restaurantId)
+            return { status: 'ERROR' };
         console.log(`💳 [Gateway] Bill settled: ${billData.billNumber}`);
         try {
-            let orderId;
-            const existing = await this.prisma.order.findUnique({
-                where: { orderNumber: billData.orderNumber },
-            }).catch(() => null);
-            if (existing) {
-                orderId = existing.id;
-                await this.prisma.order.update({
-                    where: { id: orderId },
-                    data: { status: 'SERVED', discount: billData.discount || 0 },
-                }).catch(() => { });
-            }
-            await this.prisma.bill.upsert({
-                where: { billNumber: billData.billNumber },
-                update: {},
-                create: {
-                    billNumber: billData.billNumber,
-                    orderId: orderId || await this.getOrCreateOrderId(billData),
-                    orderType: billData.orderType || 'DINE_IN',
-                    subtotal: billData.subtotal || 0,
-                    cgst: billData.cgst || 0,
-                    sgst: billData.sgst || 0,
-                    discount: billData.discount || 0,
-                    deliveryFee: billData.deliveryFee || 0,
-                    grandTotal: billData.grandTotal || 0,
-                    paymentMethod: billData.method || billData.paymentMethod || 'CASH',
-                    customerName: billData.customerName || null,
-                    customerPhone: billData.customerPhone || null,
-                    waiterName: billData.waiter || null,
-                    settledAt: new Date(),
-                },
-            }).catch((e) => console.warn('[Bill] Persist skip:', e.message));
+            await this.billingService.processDirectCheckout(billData, restaurantId);
         }
         catch (e) {
             console.warn('[Bill] Persist error (non-fatal):', e.message);
@@ -414,10 +502,10 @@ let KdsGateway = class KdsGateway {
         this.server.emit('bill_settled', billData);
         return { status: 'OK' };
     }
-    async getOrCreateOrderId(billData) {
+    async getOrCreateOrderId(billData, restaurantId) {
         const orderNumber = billData.orderNumber || `KORD-${Date.now()}`;
         const order = await this.prisma.order.upsert({
-            where: { orderNumber },
+            where: { restaurantId_orderNumber: { restaurantId, orderNumber } },
             update: { status: 'SERVED' },
             create: {
                 orderNumber,
@@ -425,6 +513,7 @@ let KdsGateway = class KdsGateway {
                 status: 'SERVED',
                 totalAmount: billData.subtotal || 0,
                 discount: billData.discount || 0,
+                restaurantId,
             },
         });
         return order.id;
@@ -499,9 +588,10 @@ __decorate([
 __decorate([
     (0, websockets_1.SubscribeMessage)('sync_recipes'),
     __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Array]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [Array, socket_io_1.Socket]),
+    __metadata("design:returntype", Promise)
 ], KdsGateway.prototype, "handleSyncRecipes", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)('sync_waste'),
@@ -514,8 +604,9 @@ __decorate([
 __decorate([
     (0, websockets_1.SubscribeMessage)('settle_bill'),
     __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", Promise)
 ], KdsGateway.prototype, "handleSettleBill", null);
 exports.KdsGateway = KdsGateway = __decorate([
@@ -524,6 +615,9 @@ exports.KdsGateway = KdsGateway = __decorate([
             origin: '*',
         },
     }),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => billing_service_1.BillingService))),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        billing_service_1.BillingService,
+        jwt_1.JwtService])
 ], KdsGateway);
 //# sourceMappingURL=kds.gateway.js.map

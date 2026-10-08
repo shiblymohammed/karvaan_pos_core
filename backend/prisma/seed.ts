@@ -6,15 +6,18 @@ async function main() {
   console.log('🌱 Seeding Karvaan POS Database (Multi-Tenant)...');
 
   // 1. Create Super Admin
+  const adminUsername = process.env.SUPER_ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.SUPER_ADMIN_PASSWORD || 'password123';
+  
   const superAdmin = await prisma.user.create({
     data: {
       name: 'System Admin',
-      username: 'admin',
-      password: 'password123',
+      username: adminUsername,
+      password: adminPassword,
       role: 'SUPER_ADMIN',
     }
   });
-  console.log('Created Super Admin: admin / password123');
+  console.log(`Created Super Admin: ${adminUsername} / ${adminPassword}`);
 
   // 2. Create Owner
   const owner = await prisma.user.create({

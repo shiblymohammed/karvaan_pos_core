@@ -72,6 +72,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         set({ currentUser: null, accessToken: null, isLocked: false, loginTime: null });
+        window.location.href = '/';
       },
 
       validateToken: async () => {

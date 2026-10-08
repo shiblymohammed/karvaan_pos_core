@@ -75,9 +75,10 @@ export const POSScreen: React.FC = () => {
   const [standaloneAddonModalOpen, setStandaloneAddonModalOpen] = useState(false);
   
   // Settlement state
-  const [settleState, setSettleState] = useState<{ isOpen: boolean; method: PaymentMethod }>({
+  const [settleState, setSettleState] = useState<{ isOpen: boolean; method: PaymentMethod; isProcessing?: boolean }>({
     isOpen: false,
-    method: 'CASH'
+    method: 'CASH',
+    isProcessing: false
   });
 
   const { products, categories } = useMenuStore();
@@ -161,10 +162,10 @@ export const POSScreen: React.FC = () => {
   }
 
   const appliedParcelCharge = orderType === 'PARCEL' ? (parcelChargeAmount || 0) : 0;
-  const totalGst = (subtotal - discount + floorSurcharge + appliedParcelCharge) * 0.05;
-  const cgst = totalGst / 2;
-  const sgst = totalGst / 2;
-  const grandTotal = Math.max(0, subtotal - discount + floorSurcharge + appliedParcelCharge + cgst + sgst);
+  const totalGst = Number(((subtotal - discount + floorSurcharge + appliedParcelCharge) * 0.05).toFixed(2));
+  const cgst = Number((totalGst / 2).toFixed(2));
+  const sgst = Number((totalGst / 2).toFixed(2));
+  const grandTotal = Number(Math.max(0, subtotal - discount + floorSurcharge + appliedParcelCharge + cgst + sgst).toFixed(2));
 
   // Helper to dynamically check kitchen status — supports DINE_IN, PARCEL, DELIVERY
   const getKitchenStatusBadge = (tableName: string | null, orderType?: string) => {
@@ -233,6 +234,9 @@ export const POSScreen: React.FC = () => {
 
   const handleCheckout = async (tenders: TenderState) => {
     if (items.length === 0) return;
+    if (settleState.isProcessing) return;
+
+    setSettleState(prev => ({ ...prev, isProcessing: true }));
     
     // Determine primary method label: SPLIT when multiple methods are used
     const usedMethods = Object.entries(tenders).filter(([, amt]) => amt > 0);
@@ -245,9 +249,11 @@ export const POSScreen: React.FC = () => {
       primaryMethod = 'CASH';
     }
 
+    const uniqueId = Math.random().toString(36).substring(2, 8).toUpperCase();
+
     const billData = {
       orderNumber: `${orderPrefix}-${Math.floor(Math.random() * 10000)}`,
-      billNumber: `INV-${Date.now().toString().slice(-6)}`,
+      billNumber: `INV-${Date.now().toString().slice(-4)}-${uniqueId}`,
       table: selectedTableName || 'Takeaway',
       cashier: currentUser?.name || 'System',
       waiter: selectedWaiter || 'Counter Staff',
@@ -357,10 +363,10 @@ export const POSScreen: React.FC = () => {
     }
 
     // Automatically deplete inventory and packaging
-    depleteForOrder(items, orderType);
+    // Removed: Backend REST API now automatically deducts inventory safely within an ACID transaction
 
     setLastBill(billData);
-    setSettleState({ isOpen: false, method: 'CASH' });
+    setSettleState({ isOpen: false, method: 'CASH', isProcessing: false });
     setReceiptType('CHECKOUT');
     useKdsStore.getState().clearTableTickets(selectedTableName || 'Takeaway');
     clearCart();
@@ -820,7 +826,7 @@ export const POSScreen: React.FC = () => {
       <FolioSidebar 
         isMobileCartOpen={isMobileCartOpen} 
         setIsMobileCartOpen={setIsMobileCartOpen}
-        onSettle={(method) => setSettleState({ isOpen: true, method })}
+        onSettle={(method) => setSettleState({ isOpen: true, method, isProcessing: false })}
         onShowCustomerModal={setShowCustomerModal}
         onShowMapPicker={setShowMapPicker}
         onReturnFolio={() => {
@@ -843,13 +849,13 @@ export const POSScreen: React.FC = () => {
 
       <SettlementModal 
         isOpen={settleState.isOpen}
-        onClose={() => setSettleState({ ...settleState, isOpen: false })}
+        onClose={() => setSettleState({ ...settleState, isOpen: false, isProcessing: false })}
         onConfirm={handleCheckout}
         totalAmount={grandTotal}
         initialMethod={settleState.method}
         hasCustomer={!!customer}
         onRequestCustomer={() => {
-          setSettleState({ ...settleState, isOpen: false });
+          setSettleState({ ...settleState, isOpen: false, isProcessing: false });
           setShowCustomerModal(true);
         }}
       />

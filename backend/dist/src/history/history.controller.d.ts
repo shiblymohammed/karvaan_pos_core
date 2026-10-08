@@ -2,18 +2,18 @@ import { HistoryService } from './history.service';
 export declare class HistoryController {
     private readonly historyService;
     constructor(historyService: HistoryService);
-    getBillHistory(startDate?: string, endDate?: string, page?: string, limit?: string, orderType?: string, paymentMethod?: string): Promise<{
+    getBillHistory(startDate?: string, endDate?: string, page?: string, limit?: string, orderType?: string, paymentMethod?: string, user?: any): Promise<{
         data: ({
             order: {
-                orderType: string;
                 orderNumber: string;
+                orderType: string;
                 notes: string;
                 items: {
-                    notes: string;
                     product: {
                         name: string;
                     };
                     price: number;
+                    notes: string;
                     quantity: number;
                 }[];
             };
@@ -23,22 +23,24 @@ export declare class HistoryController {
             };
         } & {
             id: string;
-            billNumber: string;
-            orderId: string;
+            updatedAt: Date;
+            restaurantId: string;
             orderType: string;
+            discount: number;
+            syncedAt: Date | null;
+            orderId: string;
+            billNumber: string;
             subtotal: number;
             cgst: number;
             sgst: number;
-            discount: number;
             deliveryFee: number;
             grandTotal: number;
             paymentMethod: string;
-            cashierId: string | null;
             customerName: string | null;
             customerPhone: string | null;
             waiterName: string | null;
             settledAt: Date;
-            syncedAt: Date | null;
+            cashierId: string | null;
         })[];
         pagination: {
             total: number;
@@ -48,13 +50,13 @@ export declare class HistoryController {
             hasMore: boolean;
         };
         summary: {
-            startDate: string;
-            endDate: string;
+            startDate: any;
+            endDate: any;
             totalRevenue: number;
             totalBills: number;
         };
     }>;
-    getDailySummary(date?: string): Promise<{
+    getDailySummary(date?: string, user?: any): Promise<{
         date: string;
         totalBills: number;
         grossRevenue: number;
@@ -65,30 +67,31 @@ export declare class HistoryController {
         paymentBreakdown: Record<string, number>;
         orderTypeBreakdown: Record<string, number>;
     }>;
-    getTopItems(startDate?: string, endDate?: string, limit?: string): Promise<{
+    getTopItems(startDate?: string, endDate?: string, limit?: string, user?: any): Promise<{
         productId: string;
         productName: string;
         totalSold: number;
     }[]>;
-    getDeliveryHistory(startDate?: string, endDate?: string, page?: string, limit?: string, riderId?: string, status?: string): Promise<{
+    getDeliveryHistory(startDate?: string, endDate?: string, page?: string, limit?: string, riderId?: string, status?: string, user?: any): Promise<{
         data: ({
             rider: {
                 name: string;
             };
         } & {
             id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            restaurantId: string;
+            orderNumber: string;
+            status: string;
+            notes: string | null;
+            syncedAt: Date | null;
+            items: string;
             deliveryFee: number;
             grandTotal: number;
             paymentMethod: string;
             customerName: string;
             customerPhone: string | null;
-            syncedAt: Date | null;
-            orderNumber: string;
-            status: string;
-            notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
-            items: string;
             deliveryAddress: string | null;
             deliveryLat: number | null;
             deliveryLng: number | null;
@@ -106,23 +109,29 @@ export declare class HistoryController {
             totalPages: number;
         };
     }>;
-    getWasteLogs(startDate?: string, endDate?: string): Promise<{
+    getWasteLogs(startDate?: string, endDate?: string, user?: any): Promise<{
         id: string;
-        billNumber: string | null;
-        orderId: string | null;
         createdAt: Date;
-        reason: string;
+        updatedAt: Date;
+        restaurantId: string;
+        syncedAt: Date | null;
         quantity: number;
+        orderId: string | null;
+        billNumber: string | null;
         unit: string;
+        reason: string;
         itemName: string;
         loggedBy: string | null;
     }[]>;
-    getReturnRecords(startDate?: string, endDate?: string): Promise<{
+    getReturnRecords(startDate?: string, endDate?: string, user?: any): Promise<{
         id: string;
-        billNumber: string;
-        orderType: string;
         createdAt: Date;
+        updatedAt: Date;
+        restaurantId: string | null;
+        orderType: string;
+        syncedAt: Date | null;
         items: string;
+        billNumber: string;
         reason: string;
         action: string;
         refundDest: string;

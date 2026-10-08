@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { tenantStorage } from './tenantStorage';
 import { socket, emitAction } from '../services/socket';
 
 export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'BILLED';
@@ -381,6 +382,6 @@ export const useTableStore = create<TableState>()(
     });
   },
 }),
-  { name: 'pos-table-storage' }
+  { name: 'pos-table-storage', storage: createJSONStorage(() => tenantStorage) }
 ));
 

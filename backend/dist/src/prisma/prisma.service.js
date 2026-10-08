@@ -12,7 +12,8 @@ const client_1 = require("@prisma/client");
 let PrismaService = class PrismaService extends client_1.PrismaClient {
     async onModuleInit() {
         await this.$connect();
-        console.log('✅ [PrismaService] Connected to POS Database successfully.');
+        await this.$queryRawUnsafe(`PRAGMA journal_mode = WAL;`);
+        console.log('✅ [PrismaService] Connected to POS Database successfully (WAL mode enabled).');
     }
     async onModuleDestroy() {
         await this.$disconnect();

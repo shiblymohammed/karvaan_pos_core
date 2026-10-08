@@ -307,13 +307,33 @@ export const AdminSettingsManager: React.FC = () => {
             }
           />
         )}
+        <SettingsRow 
+          label="Connect New Devices" 
+          stackOnMobile
+          description="Scan this QR code with a tablet or phone to instantly connect it to the network." 
+          control={
+            <div className="flex justify-end w-full">
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(networkUrl)}`} alt="Network QR" className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl border border-slate-200 shadow-sm" />
+            </div>
+          } 
+        />
       </SettingsSection>
 
       <SettingsSection>
         <SettingsRow 
-          label="Cloud Sync" 
+          label="Enable Cloud Sync" 
+          description="Automatically push sales and sync menus with the central Master Cloud Node."
+          control={
+            <Switch 
+              checked={store.cloudSyncEnabled} 
+              onChange={() => store.setCloudSyncEnabled(!store.cloudSyncEnabled)} 
+            />
+          }
+        />
+        <SettingsRow 
+          label="Manual Cloud Sync" 
           stackOnMobile
-          description="Manually trigger a sync with the cloud database. Sync happens automatically in the background."
+          description="Force a manual sync with the cloud database immediately."
           control={
             <div className="flex items-center gap-4 w-full justify-end">
               {syncMessage && <span className="text-[13px] text-slate-500">{syncMessage}</span>}

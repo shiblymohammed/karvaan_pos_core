@@ -122,6 +122,11 @@ socket.on('disconnect', () => {
 // These listeners are set up AFTER all modules have loaded
 
 export function initSocketListeners() {
+  socket.on('connect', () => {
+    // Give stores a moment to load, then push local menu to server if the server is empty
+    
+  });
+
   // Lazy-load stores to avoid circular dep at module parse time
   import('../store/useKdsStore').then(({ useKdsStore }) => {
     import('../store/useTableStore').then(({ useTableStore }) => {
@@ -129,6 +134,7 @@ export function initSocketListeners() {
         import('../store/useDeliveryStore').then(({ useDeliveryStore }) => {
           import('../store/useStaffStore').then(({ useStaffStore }) => {
             import('../store/useInventoryStore').then(({ useInventoryStore }) => {
+              import('../store/useMenuStore').then(({ useMenuStore }) => {
 
         // --- On connect: receive master state snapshot ---
         socket.on('sync_master_state', (masterState: any) => {
@@ -162,20 +168,34 @@ export function initSocketListeners() {
             useInventoryStore.setState({ wasteLogs: masterState.wasteLogs });
           }
 
-          if (masterState.tableStatuses) {
+          if (masterState.categories) {
+            
+            useMenuStore.setState({ categories: masterState.categories });
+            
+          }
+
+          if (masterState.products) {
+            
+            useMenuStore.setState({ products: masterState.products });
+            
+          }
+
+          if (masterState.tables && masterState.tables.length > 0) {
+            useTableStore.setState({ tables: masterState.tables });
+          } else if (masterState.tableStatuses) {
             const currentTables = useTableStore.getState().tables;
             const updatedTables = currentTables.map(t => {
               const statusData = masterState.tableStatuses[t.id];
               if (statusData) {
                 return { ...t, status: statusData.status, currentBill: statusData.subtotal };
               }
-              // If not found in master state, reset it to AVAILABLE (in case it was occupied in old restaurant state)
               return { ...t, status: 'AVAILABLE', currentBill: null };
             });
             useTableStore.setState({ tables: updatedTables });
           }
         });
 
+        
         // --- KDS Ticket created on another terminal ---
         socket.on('kds_new_ticket', (ticket: any) => {
           const currentTickets = useKdsStore.getState().tickets;
@@ -278,6 +298,7 @@ export function initSocketListeners() {
           console.log(`✅ [POS] Bill ${billData.billNumber} acknowledged by backend DB.`);
         });
 
+              });
             });
           });
         });

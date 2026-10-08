@@ -5,6 +5,7 @@ export declare class BackupService {
     private readonly DB_PATH;
     private readonly BACKUP_DIR;
     private readonly MAX_BACKUPS;
+    private readonly restaurantId;
     constructor(prisma: PrismaService);
     runDailyBackup(): Promise<void>;
     triggerManualBackup(): Promise<{
@@ -22,8 +23,9 @@ export declare class BackupService {
     getBackupLogs(): Promise<{
         error: string | null;
         id: string;
-        status: string;
         createdAt: Date;
+        restaurantId: string;
+        status: string;
         filename: string;
         sizeBytes: number | null;
     }[]>;

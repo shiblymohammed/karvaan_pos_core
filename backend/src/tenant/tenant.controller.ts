@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { TenantService } from './tenant.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GetUser } from '../auth/get-user.decorator';
@@ -20,6 +20,12 @@ export class TenantController {
     return this.tenantService.createOwner(body);
   }
 
+  @Put('owners/:id')
+  async updateOwner(@Param('id') id: string, @Body() body: any, @GetUser() user: any) {
+    if (user.role !== 'SUPER_ADMIN') throw new UnauthorizedException('Super Admin only');
+    return this.tenantService.updateOwner(id, body);
+  }
+
   @Get('restaurants')
   async getRestaurants(@GetUser() user: any) {
     if (user.role !== 'SUPER_ADMIN' && user.role !== 'OWNER') {
@@ -33,6 +39,18 @@ export class TenantController {
   async createAdmin(@Param('id') restaurantId: string, @Body() body: any, @GetUser() user: any) {
     if (user.role !== 'OWNER') throw new UnauthorizedException('Only owners can create admins for their restaurants');
     return this.tenantService.createAdminForRestaurant(restaurantId, body, user.id);
+  }
+
+  @Put('restaurants/admin/:adminId')
+  async updateAdmin(@Param('adminId') adminId: string, @Body() body: any, @GetUser() user: any) {
+    if (user.role !== 'OWNER') throw new UnauthorizedException('Only owners can edit admins');
+    return this.tenantService.updateAdminForRestaurant(adminId, body, user.id);
+  }
+
+  @Delete('restaurants/admin/:adminId')
+  async deleteAdmin(@Param('adminId') adminId: string, @GetUser() user: any) {
+    if (user.role !== 'OWNER') throw new UnauthorizedException('Only owners can delete admins');
+    return this.tenantService.deleteAdminForRestaurant(adminId, user.id);
   }
 
   @Post('restaurants')

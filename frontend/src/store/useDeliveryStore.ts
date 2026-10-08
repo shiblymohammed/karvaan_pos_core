@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { tenantStorage } from './tenantStorage';
 import { socket, emitAction } from '../services/socket';
 import { useSettingsStore } from './useSettingsStore';
 
@@ -133,7 +134,7 @@ export const useDeliveryStore = create<DeliveryState>()(
         emitAction('sync_delivery_orders', get().orders);
       },
     }),
-    { name: 'pos-delivery-storage' }
+    { name: 'pos-delivery-storage', storage: createJSONStorage(() => tenantStorage) }
   )
 );
 

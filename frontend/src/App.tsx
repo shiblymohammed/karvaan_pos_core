@@ -102,7 +102,8 @@ export const App: React.FC = () => {
   // Sync WebSocket connection with user's restaurant session
   useEffect(() => {
     if (currentUser?.restaurantId) {
-      socket.io.opts.query = { restaurantId: currentUser.restaurantId };
+      const token = useAuthStore.getState().accessToken;
+      socket.io.opts.query = { restaurantId: currentUser.restaurantId, token };
       socket.connect();
     } else {
       socket.disconnect();

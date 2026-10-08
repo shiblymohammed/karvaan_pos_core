@@ -1,13 +1,20 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { KdsGateway } from '../kds/kds.gateway'; // To broadcast settings updates
 
 @Injectable()
-export class SettingsService {
+export class SettingsService implements OnModuleInit {
+  private gateway: KdsGateway;
+
   constructor(
     private prisma: PrismaService,
-    private gateway: KdsGateway
+    private moduleRef: ModuleRef
   ) {}
+
+  onModuleInit() {
+    this.gateway = this.moduleRef.get(KdsGateway, { strict: false });
+  }
 
   async getSettings(restaurantId: string) {
     if (!restaurantId) throw new UnauthorizedException('No restaurant context');

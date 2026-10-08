@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { tenantStorage } from './tenantStorage';
 import { socket, emitAction } from '../services/socket';
 
 export interface Ingredient {
@@ -438,7 +439,7 @@ export const useInventoryStore = create<InventoryState>()(
         return ((sellingPrice - cost) / sellingPrice) * 100;
       },
     }),
-    { name: 'pos-inventory-storage' }
+    { name: 'pos-inventory-storage', storage: createJSONStorage(() => tenantStorage) }
   )
 );
 

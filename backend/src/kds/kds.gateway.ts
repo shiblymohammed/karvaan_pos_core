@@ -1,3 +1,4 @@
+import { forwardRef, Inject } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -9,6 +10,8 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
+import { BillingService } from '../billing/billing.service';
+import { JwtService } from '@nestjs/jwt';
 
 @WebSocketGateway({
   cors: {
@@ -19,7 +22,12 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => BillingService))
+    private readonly billingService: BillingService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   // ─── In-Memory Hot Cache (for <50ms real-time broadcast performance) ───────────
   // This is NOT the source of truth — that's the SQLite database via Prisma.
@@ -31,8 +39,20 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`📡 [WebSocket] Terminal Connected: ${client.id}`);
     
     const restaurantId = client.handshake.query.restaurantId as string;
-    if (!restaurantId) {
-      console.log(`📡 [WebSocket] Connection rejected: No restaurantId for ${client.id}`);
+    const token = client.handshake.query.token as string;
+    client.join(restaurantId);
+    
+    if (!restaurantId || !token) {
+      console.log(`📡 [WebSocket] Connection rejected: Missing restaurantId or token for ${client.id}`);
+      client.disconnect();
+      return;
+    }
+
+    try {
+      this.jwtService.verify(token);
+    } catch (e) {
+      console.log(`📡 [WebSocket] Connection rejected: Invalid token for ${client.id}`);
+      client.disconnect();
       return;
     }
 
@@ -91,7 +111,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // 4. Staff members: ACTIVE only
       const staffMembers = await this.prisma.user.findMany({
         where: { restaurantId, isActive: true },
-        select: { id: true, name: true, username: true, password: true, role: true, phone: true, isActive: true, permissions: true, pin: true },
+        select: { id: true, name: true, username: true, role: true, phone: true, isActive: true, permissions: true, pin: true },
       });
 
       // 5. Inventory items (current stock levels)
@@ -100,15 +120,33 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         orderBy: { name: 'asc' },
       });
 
-      // 6. Table statuses
-      const tables = await this.prisma.table.findMany({
-        where: { restaurantId }
-      });
+      // 6. Tables, Categories, and Products
+      const tables = await this.prisma.table.findMany({ where: { restaurantId }, orderBy: { tableNumber: 'asc' } });
+      const categories = await this.prisma.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: 'asc' } });
+      const rawProducts = await this.prisma.product.findMany({ where: { restaurantId }, orderBy: { name: 'asc' }, include: { category: true } });
+      const products = rawProducts.map(p => ({ ...p, category: p.category?.name || 'All' }));
+
       const tableStatusMap: Record<string, any> = {};
       for (const t of tables) {
         tableStatusMap[t.id] = { status: t.status, subtotal: null, tableId: t.id, tableNumber: t.tableNumber };
       }
       this.tableStatuses = tableStatusMap;
+
+      // 7. Recipes
+      const rawRecipes = await this.prisma.recipeIngredient.findMany({
+        where: { product: { restaurantId } }
+      });
+      const recipeMap = new Map<string, any>();
+      for (const r of rawRecipes) {
+        if (!recipeMap.has(r.productId)) {
+          recipeMap.set(r.productId, { menuItemId: r.productId, ingredients: [] });
+        }
+        recipeMap.get(r.productId).ingredients.push({
+          ingredientId: r.inventoryItemId,
+          quantity: r.quantity
+        });
+      }
+      const recipes = Array.from(recipeMap.values());
 
       // ── Send consolidated master state to this terminal ─────────────────────
       client.emit('sync_master_state', {
@@ -118,7 +156,10 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         staffMembers,
         inventoryStock,
         tableStatuses: tableStatusMap,
-        recipes: [],   // Recipes managed by frontend inventory store
+        tables,
+        categories,
+        products,
+        recipes,
         wasteLogs: [], // Fetched on demand via /history/waste
       });
 
@@ -190,12 +231,14 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // ── Always update hot cache and broadcast ───────────────────────────────
     this.activeTickets.push(newTicket);
-    this.server.emit('kds_new_ticket', newTicket);
+    this.server.to(restaurantId).emit('kds_new_ticket', newTicket);
     return { status: 'OK' };
   }
 
   @SubscribeMessage('update_kds_status')
-  async handleStatusUpdate(@MessageBody() payload: { orderId: string; status: string; itemId?: string }) {
+  async handleStatusUpdate(@MessageBody() payload: { orderId: string; status: string; itemId?: string }, @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'ERROR' };
     console.log(`🔔 [KDS Gateway] Order ${payload.orderId} → ${payload.status}`);
 
     // Update hot cache
@@ -212,12 +255,14 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }).catch(() => {}); // Non-fatal if order ID is frontend-only
     } catch (_) {}
 
-    this.server.emit('kds_status_changed', payload);
+    this.server.to(restaurantId).emit('kds_status_changed', payload);
     return { status: 'OK' };
   }
 
   @SubscribeMessage('clear_table_tickets')
-  async handleClearTableTickets(@MessageBody() payload: { tableName: string }) {
+  async handleClearTableTickets(@MessageBody() payload: { tableName: string }, @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'ERROR' };
     console.log(`🧹 [KDS Gateway] Clearing KDS tickets for table: ${payload.tableName}`);
 
     this.activeTickets = this.activeTickets.filter((t) => {
@@ -227,7 +272,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return t.tableNumber !== payload.tableName;
     });
 
-    this.server.emit('table_tickets_cleared', payload);
+    this.server.to(restaurantId).emit('table_tickets_cleared', payload);
     return { status: 'OK' };
   }
 
@@ -265,14 +310,16 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.warn('[Parked] Persist error (non-fatal):', e.message);
     }
 
-    this.server.emit('parked_orders_updated', orders);
+    this.server.to(restaurantId).emit('parked_orders_updated', orders);
     return { status: 'OK' };
   }
 
   // ─── TABLE STATUS — PERSIST TO DATABASE ─────────────────────────────────────
 
   @SubscribeMessage('table_status_change')
-  async handleTableStatus(@MessageBody() payload: { tableId: string; status: string; subtotal?: number; mergedWith?: string[]; mergedInto?: string | null }) {
+  async handleTableStatus(@MessageBody() payload: { tableId: string; status: string; subtotal?: number; mergedWith?: string[]; mergedInto?: string | null }, @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'ERROR' };
     console.log(`🪑 [Table Gateway] Table ${payload.tableId} → ${payload.status}`);
 
     this.tableStatuses[payload.tableId] = { status: payload.status, subtotal: payload.subtotal };
@@ -284,7 +331,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }).catch(() => {}); // Non-fatal if table ID is frontend-only
     } catch (_) {}
 
-    this.server.emit('table_updated', payload);
+    this.server.to(restaurantId).emit('table_updated', payload);
     return { status: 'OK' };
   }
 
@@ -342,7 +389,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.warn('[Delivery] Persist error (non-fatal):', e.message);
     }
 
-    this.server.emit('delivery_orders_updated', orders);
+    this.server.to(restaurantId).emit('delivery_orders_updated', orders);
     return { status: 'OK' };
   }
 
@@ -387,7 +434,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.warn('[Staff] Persist error (non-fatal):', e.message);
     }
 
-    this.server.emit('staff_updated', staff);
+    this.server.to(restaurantId).emit('staff_updated', staff);
     return { status: 'OK' };
   }
 
@@ -427,17 +474,105 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.warn('[Inventory] Persist error (non-fatal):', e.message);
     }
 
-    this.server.emit('inventory_updated', inventory);
+    this.server.to(restaurantId).emit('inventory_updated', inventory);
     return { status: 'OK' };
   }
 
-  // ─── RECIPES & WASTE — BROADCAST ONLY (managed by frontend store) ────────────
+  // ─── RECIPES — PERSIST TO DATABASE ──────────────────────────────────────────
 
   @SubscribeMessage('sync_recipes')
-  handleSyncRecipes(@MessageBody() recipes: any[]) {
-    if (Array.isArray(recipes)) {
-      this.server.emit('recipes_updated', recipes);
+  async handleSyncRecipes(@MessageBody() recipes: any[], @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId || !Array.isArray(recipes)) return { status: 'ERROR' };
+    console.log(`📜 [Recipe Gateway] Sync from ${client.id}: ${recipes.length} recipes`);
+    
+    try {
+      for (const recipe of recipes) {
+        if (!recipe?.menuItemId || !Array.isArray(recipe.ingredients)) continue;
+        const productId = recipe.menuItemId;
+        
+        const product = await this.prisma.product.findUnique({ where: { id: productId } }).catch(() => null);
+        if (!product) continue;
+        
+        // Transaction: clear old ingredients, insert new ones
+        await this.prisma.$transaction(async (tx) => {
+          await tx.recipeIngredient.deleteMany({ where: { productId } });
+          
+          for (const item of recipe.ingredients) {
+            if (!item.ingredientId) continue;
+            
+            const invItem = await tx.inventoryItem.findFirst({
+              where: { 
+                OR: [{ id: item.ingredientId }, { name: item.ingredientId }],
+                restaurantId 
+              }
+            });
+            
+            if (invItem) {
+              await tx.recipeIngredient.create({
+                data: {
+                  productId,
+                  inventoryItemId: invItem.id,
+                  quantity: item.quantity,
+                  unit: invItem.unit || 'pcs'
+                }
+              });
+            }
+          }
+        });
+      }
+    } catch(e) {
+      console.warn('[Recipes] Persist error (non-fatal):', e.message);
     }
+
+    this.server.to(restaurantId).emit('recipes_updated', recipes);
+    return { status: 'OK' };
+  }
+
+  @SubscribeMessage('sync_menu')
+  async handleSyncMenu(@MessageBody() payload: { products: any[], categories: any[] }, @ConnectedSocket() client: Socket) {
+    const restaurantId = client.handshake.query.restaurantId as string;
+    if (!restaurantId) return { status: 'ERROR' };
+    console.log(`🍔 [Menu Gateway] Sync from ${client.id}: ${payload.products?.length || 0} products`);
+
+    try {
+      if (payload.categories && Array.isArray(payload.categories)) {
+        for (const cat of payload.categories) {
+          if (!cat.id) continue;
+          await this.prisma.category.upsert({
+            where: { id: cat.id },
+            update: { name: cat.name, sortOrder: cat.sortOrder, iconName: cat.iconName, imageUrl: cat.imageUrl },
+            create: { id: cat.id, name: cat.name, sortOrder: cat.sortOrder, iconName: cat.iconName, imageUrl: cat.imageUrl, restaurantId }
+          }).catch((e: any) => console.warn('[Menu] Cat upsert skip:', e.message));
+        }
+      }
+      
+      if (payload.products && Array.isArray(payload.products)) {
+        for (const prod of payload.products) {
+          if (!prod.id) continue;
+          
+          const cat = payload.categories?.find((c: any) => c.name === prod.category);
+          let categoryId = cat ? cat.id : null;
+          
+          if (!categoryId) {
+             const firstCat = await this.prisma.category.findFirst({ where: { restaurantId } });
+             if (firstCat) categoryId = firstCat.id;
+          }
+          if (!categoryId) continue;
+
+          await this.prisma.product.upsert({
+            where: { id: prod.id },
+            update: { name: prod.name, price: prod.price, categoryId, prepTimeMinutes: prod.prepTime, isAvailable: prod.isAvailable, description: prod.description, imageEmoji: prod.imageEmoji, imageUrl: prod.imageUrl, gstRate: prod.gstRate },
+            create: { id: prod.id, name: prod.name, price: prod.price, categoryId, prepTimeMinutes: prod.prepTime, isAvailable: prod.isAvailable, description: prod.description, imageEmoji: prod.imageEmoji, imageUrl: prod.imageUrl, gstRate: prod.gstRate, restaurantId }
+          }).catch((e: any) => console.warn('[Menu] Prod upsert skip:', e.message));
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Menu] Persist error (non-fatal):', e.message);
+    }
+    
+    // Broadcast back to all EXCEPT sender to prevent loop
+    client.broadcast.to(restaurantId).emit('sync_master_state', { categories: payload.categories, products: payload.products });
     return { status: 'OK' };
   }
 
@@ -480,7 +615,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.warn('[Waste] Persist error (non-fatal):', e.message);
     }
 
-    this.server.emit('waste_updated', wasteLogs);
+    this.server.to(restaurantId).emit('waste_updated', wasteLogs);
     return { status: 'OK' };
   }
 
@@ -493,48 +628,13 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`💳 [Gateway] Bill settled: ${billData.billNumber}`);
 
     try {
-      // Ensure we have a parent Order record
-      let orderId: string | undefined;
-      const existing = await this.prisma.order.findUnique({
-        where: { restaurantId_orderNumber: { restaurantId, orderNumber: billData.orderNumber } },
-      }).catch(() => null);
-
-      if (existing) {
-        orderId = existing.id;
-        await this.prisma.order.update({
-          where: { id: orderId },
-          data: { status: 'SERVED', discount: billData.discount || 0 },
-        }).catch(() => {});
-      }
-
-      // Persist the Bill record
-      await this.prisma.bill.upsert({
-        where: { restaurantId_billNumber: { restaurantId, billNumber: billData.billNumber } },
-        update: {},
-        create: {
-          billNumber: billData.billNumber,
-          orderId: orderId || await this.getOrCreateOrderId(billData, restaurantId),
-          orderType: billData.orderType || 'DINE_IN',
-          subtotal: billData.subtotal || 0,
-          cgst: billData.cgst || 0,
-          sgst: billData.sgst || 0,
-          discount: billData.discount || 0,
-          deliveryFee: billData.deliveryFee || 0,
-          grandTotal: billData.grandTotal || 0,
-          paymentMethod: billData.method || billData.paymentMethod || 'CASH',
-          customerName: billData.customerName || null,
-          customerPhone: billData.customerPhone || null,
-          waiterName: billData.waiter || null,
-          settledAt: new Date(),
-          restaurantId,
-        },
-      }).catch((e) => console.warn('[Bill] Persist skip:', e.message));
-
+      // Use unified Billing Service path to guarantee ACID safety and inventory deduction
+      await this.billingService.processDirectCheckout(billData, restaurantId);
     } catch (e) {
       console.warn('[Bill] Persist error (non-fatal):', e.message);
     }
 
-    this.server.emit('bill_settled', billData);
+    this.server.to(restaurantId).emit('bill_settled', billData);
     return { status: 'OK' };
   }
 

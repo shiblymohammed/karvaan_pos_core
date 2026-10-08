@@ -104,6 +104,9 @@ interface SettingsState {
   operatingMode: 'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN';
   setOperatingMode: (mode: 'FINE_DINING' | 'QSR' | 'CLOUD_KITCHEN') => void;
 
+  cloudSyncEnabled: boolean;
+  setCloudSyncEnabled: (enabled: boolean) => void;
+
   fetchSettings: () => Promise<void>;
 }
 
@@ -131,6 +134,8 @@ export const useSettingsStore = create<SettingsState>()(
       setDateFormat: (format) => set({ dateFormat: format }),
       operatingMode: 'FINE_DINING',
       setOperatingMode: (mode) => set({ operatingMode: mode }),
+      cloudSyncEnabled: false,
+      setCloudSyncEnabled: (enabled) => set({ cloudSyncEnabled: enabled }),
       orderTvEnabled: true,
       orderTvShowPopup: true,
       orderTvPlayAudio: true,
@@ -301,7 +306,7 @@ useSettingsStore.subscribe((state) => {
     lastSyncedData = dataString;
 
     try {
-      await fetch(`http://${getServerUrl()}/settings`, {
+      await fetch(`${getServerUrl()}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: dataString

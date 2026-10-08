@@ -21,10 +21,11 @@ export const AdminPrinterSettings: React.FC = () => {
   ]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [labelPrinter, setLabelPrinter] = useState<any>({ CUP: {}, BAG: {}, KOT: {} });
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const toggleLabelSetting = (type: 'CUP' | 'BAG' | 'KOT', setting: string) => {
-    setLabelSettings(prev => ({
+    setLabelPrinter(prev => ({
       ...prev,
       [type]: {
         ...prev[type],

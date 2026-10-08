@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { tenantStorage } from './tenantStorage';
 import { socket, emitAction } from '../services/socket';
 
 export interface StaffPermissions {
@@ -64,7 +65,7 @@ export const useStaffStore = create<StaffState>()(
 
       getDeliveryRiders: () => get().staff.filter(s => s.role === 'DELIVERY' && s.isActive),
     }),
-    { name: 'pos-staff-storage' }
+    { name: 'pos-staff-storage', storage: createJSONStorage(() => tenantStorage) }
   )
 );
 

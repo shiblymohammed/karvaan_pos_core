@@ -58,7 +58,13 @@ export class UploadController {
           mimetype: file.mimetype
         };
       } catch (error) {
-        throw new HttpException(`Cloudinary upload failed: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
+        console.error(`Cloudinary upload failed: ${error.message}. Falling back to local storage.`);
+        // Fallback to local storage
+        return {
+          url: `/uploads/${file.filename}`,
+          filename: file.filename,
+          mimetype: file.mimetype
+        };
       }
     }
 
