@@ -8,13 +8,13 @@ echo "=================================================="
 # Ensure data directory exists
 mkdir -p /app/data /app/data/uploads
 
-# Run Prisma schema push on the database (creates tables or applies incremental schema updates)
+# Run Prisma schema push on the database non-interactively using local binary
 echo "📦 Synchronizing Prisma database schema..."
-npx prisma db push --skip-generate
+./node_modules/.bin/prisma db push --skip-generate --accept-data-loss
 
-# Seed initial super-admin if database is empty
+# Seed initial super-admin if database is empty using compiled JS
 echo "🌱 Checking seed data..."
-npx ts-node prisma/seed.ts || true
+node dist/prisma/seed.js || true
 
 echo "✅ Database ready. Starting server..."
 exec node dist/src/main.js
