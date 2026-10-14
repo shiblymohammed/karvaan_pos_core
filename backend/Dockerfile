@@ -8,7 +8,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ openssl
 
 # Install all npm dependencies
 COPY package*.json ./
@@ -28,8 +28,8 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Install runtime tools
-RUN apk add --no-cache wget
+# Install runtime tools (openssl and libc6-compat are required for Prisma engine on Alpine)
+RUN apk add --no-cache wget openssl libc6-compat
 
 # Create data directory for persistent SQLite database and uploads
 RUN mkdir -p /app/data /app/data/uploads
