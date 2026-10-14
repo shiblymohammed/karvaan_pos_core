@@ -1,10 +1,15 @@
-import { Injectable, ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class TenantService {
   constructor(private prisma: PrismaService) {}
+
+  private requireInitialPassword(password?: string) {
+    if (typeof password !== 'string' || password.length < 8) throw new BadRequestException('A password of at least 8 characters is required');
+    return password;
+  }
 
   async getAllOwners() {
     return this.prisma.user.findMany({
@@ -17,7 +22,7 @@ export class TenantService {
     const existing = await this.prisma.user.findUnique({ where: { username: data.username } });
     if (existing) throw new ConflictException('Username already taken');
 
-    const hashedPassword = await bcrypt.hash(data.password || 'password123', 10);
+    const hashedPassword = await bcrypt.hash(this.requireInitialPassword(data.password), 10);
 
     return this.prisma.user.create({
       data: {
@@ -73,7 +78,7 @@ export class TenantService {
     const existing = await this.prisma.user.findUnique({ where: { username: data.username } });
     if (existing) throw new ConflictException('Username already taken');
 
-    const hashedPassword = await bcrypt.hash(data.password || 'password123', 10);
+    const hashedPassword = await bcrypt.hash(this.requireInitialPassword(data.password), 10);
 
     return this.prisma.user.create({
       data: {

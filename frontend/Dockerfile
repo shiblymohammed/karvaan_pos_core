@@ -3,13 +3,13 @@
 # Vite React SPA + Nginx Reverse Proxy
 # ============================================================
 
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 # Copy package manifests and install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 # Copy application source
 COPY tsconfig*.json ./

@@ -29,6 +29,12 @@ export function setOperatingMode(mode: OperatingMode): void {
   localStorage.setItem(OP_MODE_KEY, mode);
 }
 
+function getAutomaticServerUrl(): string | undefined {
+  if (typeof window === 'undefined' || !window.location?.origin) return;
+  const origin = window.location.origin;
+  if (/^https?:\/\//.test(origin) && !origin.includes('localhost') && !origin.includes('127.0.0.1')) return origin;
+}
+
 export function getServerUrl(): string {
   // 1. Env variable (set at build time for VPS / production)
   const envUrl = import.meta.env.VITE_BACKEND_URL as string | undefined;
@@ -39,12 +45,8 @@ export function getServerUrl(): string {
   if (stored && stored.trim()) return stored.trim();
 
   // 3. Cloud web deployment: if loaded via domain or IP in browser, default to same origin
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    const origin = window.location.origin;
-    if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
-      return origin;
-    }
-  }
+  const automaticUrl = getAutomaticServerUrl();
+  if (automaticUrl) return automaticUrl;
 
   // 4. Fallback: local development / desktop app
   return DEFAULT_URL;
@@ -68,7 +70,7 @@ export function isServerConfigured(): boolean {
   const envUrl = import.meta.env.VITE_BACKEND_URL as string | undefined;
   if (envUrl && envUrl.trim()) return true;
   const stored = localStorage.getItem(STORAGE_KEY);
-  return !!(stored && stored.trim());
+  return !!(stored && stored.trim()) || !!getAutomaticServerUrl();
 }
 
 export async function probeServer(url: string): Promise<{ ok: boolean; latencyMs: number }> {

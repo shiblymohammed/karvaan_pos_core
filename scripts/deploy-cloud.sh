@@ -66,6 +66,12 @@ while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
     ATTEMPTS=$((ATTEMPTS+1))
 done
 
+if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then
+    echo "❌ Backend did not become healthy. Deployment failed."
+    docker compose logs --tail=80 backend
+    exit 1
+fi
+
 # 5. Summary & Connection Information
 PUBLIC_IP=$(curl -s https://ifconfig.me || hostname -I | awk '{print $1}')
 echo ""

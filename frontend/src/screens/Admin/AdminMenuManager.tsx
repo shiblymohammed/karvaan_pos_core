@@ -1,4 +1,5 @@
-import { authorizedFetch } from '../../services/authFetch';
+import { uploadMenuImage } from '../../services/menuImageUpload';
+import { resolveMediaUrl } from '../../services/mediaUrl';
 import React, { useState, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useMenuStore, Product, Category } from '../../store/useMenuStore';
@@ -80,18 +81,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products
     if (!file) return;
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await authorizedFetch('/upload?type=menu', {
-        method: 'POST',
-        body: formData
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const data = await res.json();
-      setForm({ ...form, imageUrl: data.url });
+      const imageUrl = await uploadMenuImage(file);
+      setForm(current => ({ ...current, imageUrl }));
     } catch (err) {
       console.error('Image upload failed', err);
-      alert('Failed to upload image. Please try again.');
+      alert(err instanceof Error ? err.message : 'Failed to upload image. Please try again.');
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -119,7 +113,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products
           {/* Live Preview */}
           <div className="flex items-center gap-4 px-5 py-4 rounded-[20px] border border-slate-200/60 bg-white/50 shadow-sm">
             {form.imageUrl ? (
-              <img src={form.imageUrl} alt="Preview" className="w-12 h-12 rounded-[14px] object-cover shadow-md" />
+              <img src={resolveMediaUrl(form.imageUrl)} alt="Preview" className="w-12 h-12 rounded-[14px] object-cover shadow-md" />
             ) : (
               <div className="w-12 h-12 flex items-center justify-center text-2xl bg-white rounded-[14px] shadow-sm border border-slate-100">
                 {form.iconName ? React.createElement((Icons as any)[form.iconName] || Icons.Utensils, { className: 'w-6 h-6 text-slate-600' }) : (form.imageEmoji || '🍽️')}
@@ -156,7 +150,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products
             <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImageUpload} className="hidden" />
             {form.imageUrl ? (
               <div className="flex items-center gap-4 bg-white/40 p-4 rounded-2xl border border-slate-200/60">
-                <img src={form.imageUrl} alt="Preview" className="w-16 h-16 rounded-[14px] object-cover shadow-sm" />
+                <img src={resolveMediaUrl(form.imageUrl)} alt="Preview" className="w-16 h-16 rounded-[14px] object-cover shadow-sm" />
                 <div className="flex flex-col gap-2">
                   <button type="button" onClick={() => fileInputRef.current?.click()}
                     className="text-[11px] font-black uppercase tracking-wider text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer w-fit">Change Image</button>
@@ -263,18 +257,11 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ initial, onSave, onClose, t
     if (!file) return;
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await authorizedFetch('/upload?type=menu', {
-        method: 'POST',
-        body: formData
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const data = await res.json();
-      setForm({ ...form, imageUrl: data.url });
+      const imageUrl = await uploadMenuImage(file);
+      setForm(current => ({ ...current, imageUrl }));
     } catch (err) {
       console.error('Image upload failed', err);
-      alert('Failed to upload image. Please try again.');
+      alert(err instanceof Error ? err.message : 'Failed to upload image. Please try again.');
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -302,7 +289,7 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ initial, onSave, onClose, t
           {/* Live Preview */}
           <div className="flex items-center gap-4 px-5 py-4 rounded-[20px] border border-slate-200/60 bg-white/50 shadow-sm">
             {form.imageUrl ? (
-              <img src={form.imageUrl} alt="Preview" className="w-12 h-12 rounded-[14px] object-cover shadow-md" />
+              <img src={resolveMediaUrl(form.imageUrl)} alt="Preview" className="w-12 h-12 rounded-[14px] object-cover shadow-md" />
             ) : (
               <div className="w-12 h-12 flex items-center justify-center text-2xl bg-white rounded-[14px] shadow-sm border border-slate-100">
                 {form.iconName ? React.createElement((Icons as any)[form.iconName] || Icons.Tag, { className: 'w-6 h-6 text-slate-600' }) : (form.emoji || '🍽️')}
@@ -335,7 +322,7 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ initial, onSave, onClose, t
             <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImageUpload} className="hidden" />
             {form.imageUrl ? (
               <div className="flex items-center gap-4 bg-white/40 p-4 rounded-2xl border border-slate-200/60">
-                <img src={form.imageUrl} alt="Preview" className="w-16 h-16 rounded-[14px] object-cover shadow-sm" />
+                <img src={resolveMediaUrl(form.imageUrl)} alt="Preview" className="w-16 h-16 rounded-[14px] object-cover shadow-sm" />
                 <div className="flex flex-col gap-2">
                   <button type="button" onClick={() => fileInputRef.current?.click()}
                     className="text-[11px] font-black uppercase tracking-wider text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer w-fit">Change Image</button>
@@ -366,7 +353,7 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ initial, onSave, onClose, t
               className="flex-1 py-3.5 bg-white hover:bg-slate-50 text-slate-600 font-black text-sm rounded-2xl border border-slate-200 transition-colors cursor-pointer shadow-sm">
               Cancel
             </button>
-            <button type="submit"
+            <button type="submit" disabled={uploading}
               className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-900 text-[#b5ef85] font-black text-sm rounded-2xl shadow-md transition-transform active:scale-95 cursor-pointer flex items-center justify-center gap-2">
               <Save className="h-4 w-4" /> Save Category
             </button>
@@ -557,7 +544,7 @@ export const AdminMenuManager: React.FC = () => {
                             <div className="flex items-center gap-4">
                               <div className="w-11 h-11 shrink-0 flex items-center justify-center bg-white rounded-xl border border-slate-100 shadow-sm">
                                 {prod.imageUrl ? (
-                                  <img src={prod.imageUrl} alt={prod.name} className="w-11 h-11 rounded-[10px] object-cover" />
+                                  <img src={resolveMediaUrl(prod.imageUrl)} alt={prod.name} className="w-11 h-11 rounded-[10px] object-cover" />
                                 ) : (
                                   prod.iconName ? React.createElement((Icons as any)[prod.iconName] || Icons.Utensils, { className: 'w-5 h-5 text-slate-400' }) : <span className="text-xl">{prod.imageEmoji || '🍽️'}</span>
                                 )}
@@ -655,7 +642,7 @@ export const AdminMenuManager: React.FC = () => {
                   <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className="w-12 h-12 shrink-0 flex items-center justify-center bg-white rounded-xl border border-slate-100 shadow-sm text-slate-600">
                       {cat.imageUrl ? (
-                        <img src={cat.imageUrl} alt={cat.name} className="w-12 h-12 rounded-[10px] object-cover" />
+                        <img src={resolveMediaUrl(cat.imageUrl)} alt={cat.name} className="w-12 h-12 rounded-[10px] object-cover" />
                       ) : (
                         cat.iconName ? React.createElement((Icons as any)[cat.iconName] || Icons.Tag, { className: 'w-6 h-6' }) : <span className="text-2xl">{cat.emoji}</span>
                       )}

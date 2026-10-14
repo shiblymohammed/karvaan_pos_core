@@ -13,7 +13,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
       - CLOUD_SYNC_KEYS=${CLOUD_SYNC_KEYS:-{}}
       - SUPER_ADMIN_USERNAME=${SUPER_ADMIN_USERNAME:-admin}
-      - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-Admin@Karvaan2026}
+      - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:?SUPER_ADMIN_PASSWORD must be set in .env}
       - CLOUDINARY_URL=${CLOUDINARY_URL:-}
     volumes:
       - karvaan_data:/app/data

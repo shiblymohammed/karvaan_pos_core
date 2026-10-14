@@ -26,6 +26,8 @@ export class UploadService implements OnModuleInit {
   }
 
   async syncLocalImagesToCloudinary() {
+    const { cloud_name, api_key, api_secret } = cloudinary.config();
+    if (!cloud_name || !api_key || !api_secret) return;
     this.logger.log('Starting sync of local images to Cloudinary...');
 
     try {

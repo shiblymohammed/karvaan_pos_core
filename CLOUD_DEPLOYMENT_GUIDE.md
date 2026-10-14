@@ -159,3 +159,24 @@ The persistent volume `karvaan_data` retains all database records, menus, and bi
 docker compose logs -f backend
 docker compose logs -f frontend
 ```
+
+### Menu Image Uploads
+
+Menu category and item photos work without Cloudinary. Local uploads are stored in
+`/app/data/uploads` on the persistent `karvaan_data` volume and served at `/uploads/`.
+If `CLOUDINARY_URL` is configured, menu photos use Cloudinary with local storage as
+a fallback.
+
+After applying an upload fix, rebuild **both** containers so the frontend proxy and
+image handling are updated:
+
+```bash
+cd /opt/karvaan
+git pull
+docker compose up -d --build backend frontend
+```
+
+Refresh the POS app after the rebuild. An HTTP 404 or 405 from `/upload?type=menu`
+usually means the proxy did not forward the request to the backend. The proxy must
+match both `/upload` and `/upload/`; `/uploads/` must also reach the backend for image
+previews. An HTTP 413 means the image exceeded the proxy's 50 MB limit.

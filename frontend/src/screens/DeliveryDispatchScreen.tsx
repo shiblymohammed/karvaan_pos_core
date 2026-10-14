@@ -3,7 +3,6 @@ import { useDeliveryStore, DeliveryOrder } from '../store/useDeliveryStore';
 import { useStaffStore } from '../store/useStaffStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useKdsStore } from '../store/useKdsStore';
-import { useLedgerStore } from '../store/useLedgerStore';
 import { emitAction } from '../services/socket';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -301,14 +300,6 @@ export const DeliveryDispatchScreen: React.FC = () => {
     collectPayment(orderId, method, collected);
     const order = orders.find(o => o.id === orderId);
     if (order) {
-      useLedgerStore.getState().addEntry({
-        customerId: `cust-${Date.now()}`,
-        customerName: order.customerName,
-        customerPhone: order.customerPhone,
-        amount: collected,
-        billNumber: order.orderNumber,
-        date: new Date().toLocaleDateString()
-      });
       // Fix 2: Do NOT updateDeliveryBoy here — removeOrder handles rider availability safely
       const methodLabel = method === 'SPLIT'
         ? `Split (₹${splitAmounts?.cash ?? 0} Cash + ₹${splitAmounts?.upi ?? 0} UPI)`
@@ -322,14 +313,6 @@ export const DeliveryDispatchScreen: React.FC = () => {
   const handleMarkDeliveredPrepaidWithReceipt = (order: DeliveryOrder) => {
     // Fix 6: use 'PREPAID' label, not 'UPI'
     collectPayment(order.id, 'PREPAID', order.grandTotal);
-    useLedgerStore.getState().addEntry({
-      customerId: `cust-${Date.now()}`,
-      customerName: order.customerName,
-      customerPhone: order.customerPhone,
-      amount: order.grandTotal,
-      billNumber: order.orderNumber,
-      date: new Date().toLocaleDateString()
-    });
     setCompletedReceipt({ order, method: 'PREPAID (Online)', collected: order.grandTotal });
     setTimeout(() => removeOrder(order.id), 5000);
   };

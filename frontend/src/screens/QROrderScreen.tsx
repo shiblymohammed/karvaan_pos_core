@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { resolveMediaUrl } from '../services/mediaUrl';
 import { QrCode, Utensils, CheckCircle2, ShoppingBag, Plus, Minus, Send, Sparkles, Smartphone, Bell, Coffee } from 'lucide-react';
 import { useMenuStore } from '../store/useMenuStore';
 import { useKdsStore } from '../store/useKdsStore';
@@ -44,7 +45,7 @@ export const QROrderScreen: React.FC = () => {
       id: `kot-${Date.now()}`,
       orderNumber: orderNum,
       tableNumber: tableNum,
-      items: cart.map(i => ({ name: i.name, quantity: i.qty, notes: i.notes || '', status: 'COOKING' })),
+      items: cart.map(i => ({ productId: i.id, name: i.name, quantity: i.qty, notes: i.notes || '', status: 'COOKING' })),
       firedAt: new Date().toISOString()
     });
 
@@ -134,7 +135,7 @@ export const QROrderScreen: React.FC = () => {
                 className="bg-pos-card p-4 rounded-2xl border border-pos-border flex justify-between items-center gap-3 shadow-2xs hover:border-pos-accent/50 transition-colors"
               >
                 {item.imageUrl && (
-                  <img src={item.imageUrl} alt={item.name}
+                  <img src={resolveMediaUrl(item.imageUrl)} alt={item.name}
                     className="w-14 h-14 rounded-xl object-cover border border-pos-border/50 shadow-sm shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">

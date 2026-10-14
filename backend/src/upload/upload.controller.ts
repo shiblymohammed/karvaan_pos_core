@@ -48,8 +48,9 @@ export class UploadController {
       throw new HttpException('File required', HttpStatus.BAD_REQUEST);
     }
 
-    // If type is menu, upload to Cloudinary and delete local file
-    if (type === 'menu') {
+    // Cloudinary is optional; VPS uploads remain on the persistent local volume.
+    const { cloud_name, api_key, api_secret } = cloudinary.config();
+    if (type === 'menu' && cloud_name && api_key && api_secret) {
       try {
         const result = await cloudinary.uploader.upload(file.path, {
           folder: 'karvaan_pos',

@@ -12,6 +12,8 @@ process.env.CLOUD_SYNC_API_KEY = 'restaurant-a-test-key';
 process.env.CLOUD_SYNC_KEYS = JSON.stringify({ 'restaurant-a': 'restaurant-a-test-key', 'restaurant-b': 'restaurant-b-test-key' });
 process.env.IS_CLOUD = 'true';
 process.env.NODE_ENV = 'test';
+process.env.UPLOAD_DIR = path.join(directory, 'uploads');
+process.env.CLOUDINARY_URL = '';
 require('ts-node/register/transpile-only');
 require('reflect-metadata');
 const { NestFactory } = require('@nestjs/core');
@@ -22,6 +24,7 @@ const { BillingService } = require('../src/billing/billing.service');
 const { KdsGateway } = require('../src/kds/kds.gateway');
 const { BackupService } = require('../src/backup/backup.service');
 const { SyncService } = require('../src/sync/sync.service');
+const { TenantService } = require('../src/tenant/tenant.service');
 const { JwtService } = require('@nestjs/jwt');
 const { io } = require('../../frontend/node_modules/socket.io-client');
 let app, prisma, url, adminToken, cashierToken, schemaSql;
@@ -47,6 +50,7 @@ before(async () => {
   await prisma.user.create({ data: { id: 'cashier-a', name: 'Cashier', username: 'cashier-a', password: 'test-password', role: 'CASHIER', restaurantId: 'restaurant-a' } });
   await prisma.user.create({ data: { id: 'inactive', name: 'Inactive', username: 'inactive', password: 'test-password', role: 'ADMIN', isActive: false, restaurantId: 'restaurant-a' } });
   await prisma.user.create({ data: { id: 'pin-only', name: 'PIN', username: 'pin-only', pin: '4321', role: 'WAITER', restaurantId: 'restaurant-a' } });
+  app.useStaticAssets(process.env.UPLOAD_DIR, { prefix: '/uploads/' });
   await app.listen(0, '127.0.0.1');
   url = await app.getUrl();
   adminToken = (await app.get(AuthService).login('admin-a', 'test-password')).accessToken;
@@ -69,6 +73,34 @@ test('administrative HTTP routes require an authenticated authorized restaurant 
   }
   assert.equal((await fetch(url + '/settings', { method: 'PUT', headers: { Authorization: `Bearer ${cashierToken}`, 'Content-Type': 'application/json' }, body: '{}' })).status, 403);
   assert.equal((await fetch(url + '/settings', { headers: { Authorization: `Bearer ${adminToken}` } })).status, 200);
+});
+
+test('menu uploads work without Cloudinary and their returned paths serve the original image', async () => {
+  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6XcAAAAASUVORK5CYII=', 'base64');
+  const form = new FormData();
+  form.append('file', new Blob([image], { type: 'image/png' }), 'menu.png');
+  const response = await fetch(url + '/upload?type=menu', {
+    method: 'POST', headers: { Authorization: `Bearer ${adminToken}` }, body: form,
+  });
+  assert.equal(response.status, 201);
+  const result = await response.json();
+  assert.match(result.url, /^\/uploads\/[^/]+\.png$/);
+  const preview = await fetch(url + result.url);
+  assert.equal(preview.status, 200);
+  assert.match(preview.headers.get('content-type'), /^image\/png/);
+  assert.deepEqual(Buffer.from(await preview.arrayBuffer()), image);
+});
+
+test('menu upload validation rejects absent or unsupported files', async () => {
+  const headers = { Authorization: `Bearer ${adminToken}` };
+  const missing = await fetch(url + '/upload?type=menu', { method: 'POST', headers });
+  assert.equal(missing.status, 400);
+  assert.equal((await missing.json()).message, 'File required');
+  const form = new FormData();
+  form.append('file', new Blob(['invalid'], { type: 'text/plain' }), 'menu.txt');
+  const invalid = await fetch(url + '/upload?type=menu', { method: 'POST', headers, body: form });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).message, 'Only image and video files are allowed');
 });
 
 test('a valid token cannot join another restaurant room', async () => {
@@ -152,6 +184,59 @@ test('kitchen ticket retries do not duplicate persisted order items', async () =
   assert.equal(await prisma.orderItem.count({ where: { orderId: first.id } }), 1);
 });
 
+test('counter checkout publishes its kitchen ticket and accepts the next kitchen action without refiring the settled sale', async () => {
+  const socket = io(url, { transports: ['websocket'], reconnection: false, auth: { token: adminToken, restaurantId: 'restaurant-a' } });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Snapshot was not received')), 5000);
+      socket.once('sync_master_state', () => { clearTimeout(timer); resolve(); });
+      socket.once('connect_error', error => { clearTimeout(timer); reject(error); });
+    });
+    const tickets = [];
+    socket.on('kds_new_ticket', ticket => { if (ticket.orderNumber === 'ORDER-counter-kitchen') tickets.push(ticket); });
+    const sale = { ...checkout('counter-kitchen'), items: [{ productId: 'product-a', quantity: 2, status: 'NEW' }] };
+    const result = await socket.timeout(5000).emitWithAck('settle_bill', sale);
+    assert.equal(result.status, 'OK');
+    assert.equal(tickets.length, 1);
+    assert.equal(tickets[0].status, 'COOKING');
+    assert.equal(tickets[0].items[0].productId, 'product-a');
+    const next = await socket.timeout(5000).emitWithAck('update_kds_status', { orderId: tickets[0].id, status: 'READY' });
+    assert.equal(next.status, 'OK');
+    const order = await prisma.order.findUnique({ where: { id: tickets[0].id }, include: { items: true } });
+    assert.equal(order.items.length, 1);
+    assert.equal(order.items[0].quantity, 2);
+  } finally { socket.disconnect(); }
+});
+
+test('new owner and restaurant admin accounts cannot silently receive a default password', async () => {
+  const tenant = app.get(TenantService);
+  await assert.rejects(tenant.createOwner({ name: 'Unconfigured', username: 'unconfigured-owner' }), /password/);
+  await assert.rejects(tenant.createAdminForRestaurant('restaurant-a', { name: 'Unconfigured', username: 'unconfigured-admin' }, 'owner'), /password/);
+});
+
+test('cloud seeding creates only a private hashed super admin and is idempotent', async () => {
+  const seedUrl = `file:${path.join(directory, 'seed.db')}`;
+  const { PrismaClient } = require('@prisma/client');
+  const seedDb = new PrismaClient({ datasources: { db: { url: seedUrl } } });
+  try {
+    for (const statement of schemaSql.split(';').filter(sql => sql.trim())) await seedDb.$executeRawUnsafe(statement);
+    const seed = () => spawnSync(process.execPath, ['-r', 'ts-node/register/transpile-only', path.resolve('prisma/seed.ts')], {
+      env: { ...process.env, DATABASE_URL: seedUrl, SUPER_ADMIN_USERNAME: 'private-admin', SUPER_ADMIN_PASSWORD: 'private-seed-test-password' },
+      encoding: 'utf8', timeout: 30000,
+    });
+    const result = seed();
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!result.stdout.includes('private-seed-test-password'));
+    const users = await seedDb.user.findMany();
+    assert.equal(users.length, 1);
+    assert.equal(users[0].role, 'SUPER_ADMIN');
+    assert.ok(await require('bcryptjs').compare('private-seed-test-password', users[0].password));
+    assert.equal(await seedDb.restaurant.count(), 0);
+    assert.equal(seed().status, 0);
+    assert.equal(await seedDb.user.count(), 1);
+  } finally { await seedDb.$disconnect(); }
+});
+
 test('sync credentials are private and bound to one restaurant', async () => {
   const sync = app.get(SyncService);
   assert.throws(() => sync.authenticate('Bearer restaurant-a-test-key', 'restaurant-b'), /Invalid restaurant/);
@@ -177,7 +262,7 @@ test('backup settings and logs are tenant-scoped', async () => {
   assert.ok(settings.location.endsWith('restaurant-a'));
   await assert.rejects(backup.updateSettings({ enabled: true, time: '25:00', location: directory }, 'restaurant-a'), /Valid backup/);
   assert.deepEqual(await backup.getBackupLogs('restaurant-b'), []);
-  await assert.rejects(backup.updateSettings({ enabled: true, time: '03:00', location: path.resolve('uploads/private') }, 'restaurant-a'), /public uploads/);
+  await assert.rejects(backup.updateSettings({ enabled: true, time: '03:00', location: path.join(process.env.UPLOAD_DIR, 'private') }, 'restaurant-a'), /public uploads/);
 });
 
 test('multi-restaurant backups export only the requesting tenant', async () => {

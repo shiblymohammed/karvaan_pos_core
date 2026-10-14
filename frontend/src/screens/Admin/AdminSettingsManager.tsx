@@ -1,4 +1,5 @@
 import { authorizedFetch } from '../../services/authFetch';
+import { resolveMediaUrl } from '../../services/mediaUrl';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Wifi, 
@@ -285,7 +286,7 @@ export const AdminSettingsManager: React.FC = () => {
         store.addOrderTvPromoMedia({
           id: `media-${Date.now()}-${i}`,
           type: file.type.startsWith('video/') ? 'VIDEO' : 'IMAGE',
-          url: `http://${window.location.hostname}:3001${data.url}`
+          url: resolveMediaUrl(data.url)!
         });
       }
     } catch (error: any) {

@@ -1,0 +1,51 @@
+name: Verify POS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Generate database client
+        run: npm run prisma:generate
+        working-directory: backend
+      - name: Build backend
+        run: npm run build
+        working-directory: backend
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+      - name: Run HTTP, WebSocket, and browser storage regression tests
+        run: npm test
+        working-directory: backend
+      - name: Check deployment scripts
+        run: |
+          for script in scripts/deploy-cloud.sh scripts/backup-cloud.sh backend/docker-entrypoint.sh; do
+            bash -n "$script"
+          done
+      - name: Build deployment containers
+        run: docker compose build
+        env:
+          JWT_SECRET: isolated-ci-build-secret-never-used-for-deployment
+          SUPER_ADMIN_PASSWORD: isolated-ci-build-password

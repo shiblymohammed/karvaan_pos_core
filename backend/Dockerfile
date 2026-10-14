@@ -3,7 +3,7 @@
 # Multi-tenant Node.js + NestJS + Prisma + SQLite Engine
 # ============================================================
 
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ RUN apk add --no-cache python3 make g++ openssl
 
 # Install all npm dependencies
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm ci
 
 # Copy source and prisma schema
 COPY tsconfig.json ./
@@ -24,12 +24,12 @@ RUN npx prisma generate
 RUN npm run build
 
 # ── Runtime Stage ───────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
 # Install runtime tools (openssl and libc6-compat are required for Prisma engine on Alpine)
-RUN apk add --no-cache wget openssl libc6-compat
+RUN apk add --no-cache wget openssl libc6-compat sqlite
 
 # Create data directory for persistent SQLite database and uploads
 RUN mkdir -p /app/data /app/data/uploads

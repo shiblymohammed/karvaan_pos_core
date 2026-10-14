@@ -23,18 +23,7 @@ interface LedgerState {
 export const useLedgerStore = create<LedgerState>()(
   persist(
     (set, get) => ({
-      entries: [
-    {
-      id: 'led-1',
-      customerId: 'cust-1',
-      customerName: 'Rahul Sharma',
-      customerPhone: '9876543210',
-      amount: 1450.50,
-      billNumber: 'INV-102934',
-      date: new Date().toLocaleDateString(),
-      status: 'UNPAID'
-    }
-  ],
+      entries: [],
 
   addEntry: (entry) => set((state) => ({
     entries: [{ ...entry, id: `led-${Date.now()}`, status: 'UNPAID' }, ...state.entries]

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { resolveMediaUrl } from '../../services/mediaUrl';
 import { Clock, MessageSquare, Plus } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { Product, useMenuStore } from '../../store/useMenuStore';
@@ -51,7 +52,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
       <div className="relative h-[120px] md:h-[190px] w-full shrink-0 p-1.5 md:p-1 md:pb-0">
         <div className={`w-full h-full bg-white/50 backdrop-blur-md rounded-[20px] overflow-hidden relative shadow-sm border border-white/40 ${is86d ? 'grayscale opacity-70' : ''}`}>
           {product.imageUrl ? (
-            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+            <img src={resolveMediaUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl text-slate-400">
               {product.iconName ? React.createElement((Icons as any)[product.iconName] || Icons.Utensils, { className: 'w-12 h-12' }) : (product.imageEmoji || '🍽️')}

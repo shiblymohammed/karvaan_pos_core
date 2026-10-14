@@ -1,4 +1,5 @@
 import React from 'react';
+import { resolveMediaUrl } from '../../services/mediaUrl';
 import * as Icons from 'lucide-react';
 import { useMenuStore } from '../../store/useMenuStore';
 import { motion, LayoutGroup } from 'framer-motion';
@@ -46,7 +47,7 @@ export const CategorySidebar: React.FC<CategorySidebarProps> = ({ activeCategory
                 {/* Category Image / Icon Container */}
                 <div className="w-4 h-4 md:w-6 md:h-6 flex items-center justify-center shrink-0 relative z-10">
                   {cat.imageUrl ? (
-                    <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-cover rounded-[4px] md:rounded-md shadow-sm" />
+                    <img src={resolveMediaUrl(cat.imageUrl)} alt={cat.name} className="w-full h-full object-cover rounded-[4px] md:rounded-md shadow-sm" />
                   ) : (
                     cat.iconName ? React.createElement((Icons as any)[cat.iconName] || Icons.Tag, { className: `w-3.5 h-3.5 md:w-5 md:h-5 transition-colors ${isActive ? 'text-white' : 'text-slate-500 group-hover/btn:text-slate-700'}` }) : <span className="text-[13px] md:text-xl leading-none">{cat.emoji || '🍽️'}</span>
                   )}

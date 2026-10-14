@@ -217,22 +217,9 @@ export const POSScreen: React.FC = () => {
       });
     }
 
-    const hasUnsentItems = items.some(i => i.status === 'NEW');
-    if (hasUnsentItems) {
-      // Direct counter checkout: dispatch ticket to Kitchen KDS and Queue TV
-      useKdsStore.getState().addTicket({
-        id: `kot-${Date.now()}`,
-        orderNumber: billData.orderNumber,
-        tableNumber: orderType === 'PARCEL' ? '📦 Parcel' : (selectedTableName || 'Takeaway'),
-        orderType: orderType,
-        customerName: customer?.name,
-        items: items.map(i => {
-          const addonText = i.addons && i.addons.length > 0 ? ` [Add: ${i.addons.map(a => a.name).join(', ')}]` : '';
-          return { name: i.name, productId: i.productId, price: i.price, addons: i.addons, quantity: i.quantity, notes: (i.notes || '') + addonText, status: 'COOKING' };
-        }),
-        firedAt: new Date().toISOString()
-      });
-    } else if (selectedTableId && items.every(item => item.status === 'SENT')) {
+    // Checkout persists and broadcasts its kitchen ticket on the backend.
+    // Sending fire_order here would try to append items to an already settled sale.
+    if (selectedTableId && items.every(item => item.status === 'SENT')) {
       useKdsStore.getState().clearTableTickets(selectedTableName || 'Takeaway');
     }
 
@@ -249,17 +236,6 @@ export const POSScreen: React.FC = () => {
     const resolvedOrderNumber = useCartStore.getState().currentOrderNumber || `${orderPrefix}-${termId}-${Math.floor(1000 + Math.random() * 9000)}`;
     const billNum = `DEL-${termId}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
     const deliveryGrandTotal = grandTotal + (deliveryFee || 0);
-
-    if (isPrepaid) {
-      useLedgerStore.getState().addEntry({
-        customerId: `cust-${Date.now()}`,
-        customerName: customer?.name || 'Customer',
-        customerPhone: customer?.phone || '',
-        amount: deliveryGrandTotal,
-        billNumber: billNum,
-        date: new Date().toLocaleDateString(),
-      });
-    }
 
     const newItems = items.filter(i => i.status === 'NEW');
     if (newItems.length > 0) {

@@ -96,7 +96,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
           items: bill.items,
           grandTotal: bill.grandTotal,
         });
-        if (res.data?.success) {
+        if (res.success) {
           toast.success('🖨️ Receipt sent to thermal printer');
           printed = true;
         }

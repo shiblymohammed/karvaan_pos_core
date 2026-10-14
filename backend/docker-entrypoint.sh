@@ -10,11 +10,11 @@ mkdir -p /app/data /app/data/uploads
 
 # Run Prisma schema push on the database non-interactively using local binary
 echo "📦 Synchronizing Prisma database schema..."
-./node_modules/.bin/prisma db push --skip-generate --accept-data-loss
+./node_modules/.bin/prisma db push --skip-generate
 
 # Seed initial super-admin if database is empty using compiled JS
 echo "🌱 Checking seed data..."
-node dist/prisma/seed.js || true
+node dist/prisma/seed.js
 
 echo "✅ Database ready. Starting server..."
 exec node dist/src/main.js
