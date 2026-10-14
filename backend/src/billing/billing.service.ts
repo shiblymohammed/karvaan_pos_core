@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { KdsGateway } from '../kds/kds.gateway';
 import { getBusinessDayBounds } from '../utils/date.util';
-import { billTotals, paymentAllocation, ledgerView, readJson, ensurePersistedItemsPresent, financialSummary, immutableHistoryBill } from './financial';
+import { billTotals, paymentAllocation, ledgerView, readJson, ensurePersistedItemsPresent, financialSummary, immutableHistoryBill, itemSignature } from './financial';
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
@@ -40,7 +40,7 @@ export class BillingService {
         where: { id: item.productId } 
       });
       // Ensure product belongs to this restaurant
-      if (!product || product.restaurantId !== data.restaurantId) {
+      if (!product || product.isArchived || product.restaurantId !== data.restaurantId) {
         throw new NotFoundException(`Product ID ${item.productId} not found in this restaurant.`);
       }
 
@@ -164,7 +164,7 @@ export class BillingService {
     }, restaurantId, cashierId);
     return { bill, order: await this.prisma.order.findUnique({ where: { id: order.id } }) };
   }
-  async pricedItems(tx: any, items: any[], restaurantId: string) {
+  async pricedItems(tx: any, items: any[], restaurantId: string, persistedItems: any[] = []) {
     if (!Array.isArray(items) || !items.length || items.length > 500) throw new BadRequestException('Order must contain valid items');
     const raw = await tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } } });
     let settings: any = {};
@@ -174,6 +174,8 @@ export class BillingService {
       { id: 'a3', name: 'Peri Peri Dip', price: 15 }, { id: 'a4', name: 'Double Patty', price: 120 }, { id: 'a5', name: 'Hazelnut Syrup', price: 40 },
     ];
     const lines = [];
+    const archivedQuantities = new Map<string, number>();
+    for (const item of persistedItems) archivedQuantities.set(itemSignature(item), (archivedQuantities.get(itemSignature(item)) || 0) + item.quantity);
     for (const item of items) {
       if (!item || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 10000) throw new BadRequestException('Invalid item quantity');
       let product = await tx.product.findUnique({ where: { id: item.productId } });
@@ -181,7 +183,7 @@ export class BillingService {
         const addon = addonCatalog.find((a: any) => `standalone-${a.id}` === item.productId && a.isActive !== false);
         if (!addon || !Number.isFinite(addon.price) || addon.price < 0) throw new BadRequestException('This standalone add-on is no longer available');
         const category = await tx.category.upsert({ where: { restaurantId_name: { restaurantId, name: 'Add-ons' } }, update: {}, create: { restaurantId, name: 'Add-ons' } });
-        product = await tx.product.upsert({ where: { id: `addon:${restaurantId}:${addon.id}` }, update: { name: `+ ${addon.name}`, price: addon.price }, create: { id: `addon:${restaurantId}:${addon.id}`, restaurantId, categoryId: category.id, name: `+ ${addon.name}`, price: addon.price, isAvailable: false } });
+        product = await tx.product.upsert({ where: { id: `addon:${restaurantId}:${addon.id}` }, update: { name: `+ ${addon.name}`, price: addon.price, isArchived: true }, create: { id: `addon:${restaurantId}:${addon.id}`, restaurantId, categoryId: category.id, name: `+ ${addon.name}`, price: addon.price, isAvailable: false, isArchived: true } });
       }
       if (!product || product.restaurantId !== restaurantId) throw new BadRequestException('Product not found in this restaurant');
       const addons = (item.addons || []).map((addon: any) => {
@@ -189,6 +191,12 @@ export class BillingService {
         if (!match || !Number.isFinite(match.price) || match.price < 0) throw new BadRequestException('Invalid add-on');
         return { id: match.id, name: match.name, price: match.price };
       });
+      if (product.isArchived && !String(item.productId).startsWith('standalone-')) {
+        const signature = itemSignature({ productId: product.id, addons });
+        const remaining = archivedQuantities.get(signature) || 0;
+        if (item.quantity > remaining) throw new BadRequestException('This menu item was deleted. Remove new quantities; already-sent quantities can still be settled.');
+        archivedQuantities.set(signature, remaining - item.quantity);
+      }
       const price = roundMoney(product.price + addons.reduce((sum: number, a: any) => sum + a.price, 0));
       lines.push({ product, quantity: item.quantity, price, notes: typeof item.notes === 'string' ? item.notes : null, addons });
     }
@@ -252,7 +260,8 @@ export class BillingService {
       }
       const cashier = await tx.user.findUnique({ where: { id: cashierId } });
       if (!cashier?.isActive || cashier.restaurantId !== restaurantId) throw new UnauthorizedException('Invalid cashier');
-      const { lines, settings } = storedPricing || await this.pricedItems(tx, data.items, restaurantId);
+      const existingOrder = await tx.order.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } }, include: { bill: true, items: true } });
+      const { lines, settings } = storedPricing || await this.pricedItems(tx, data.items, restaurantId, existingOrder?.items || []);
       const discount = data.discount ?? 0;
       let permissions: any = {};
       try { permissions = JSON.parse(cashier.permissions || '{}'); } catch {}
@@ -265,7 +274,6 @@ export class BillingService {
       const { itemSubtotal, surcharge, packaging, deliveryFee, subtotal, cgst, sgst, grandTotal } = totals;
       const tenders = paymentAllocation(data, grandTotal);
       const paymentMethod = Object.keys(tenders).length > 1 ? 'SPLIT' : Object.keys(tenders)[0] || 'CASH';
-      const existingOrder = await tx.order.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } }, include: { bill: true, items: true } });
       if (existingOrder?.bill) throw new BadRequestException('This order is already settled');
       if (table?.currentOrderId && table.currentOrderId !== existingOrder?.id) throw new BadRequestException('This table has a different active order. Reload the table before payment.');
       if (existingOrder) {

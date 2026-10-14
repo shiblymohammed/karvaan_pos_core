@@ -9,6 +9,8 @@ export interface PendingAction extends ActionContext {
   payload: any;
   timestamp: number;
   error?: string;
+  lastAttemptMessage?: string;
+  recoveryReason?: string;
 }
 interface OfflineDB extends DBSchema {
   actions: { key: number; value: PendingAction; indexes: { 'by-timestamp': number } };
@@ -72,14 +74,34 @@ export const enqueueAction = async (type: string, payload: any, context = getAct
   return id;
 };
 export const getPendingActions = async (context = getActionContext()) => {
+  const db = await initDB();
+  const actions = await db.getAllFromIndex('actions', 'by-timestamp');
+  let migrated = false;
+  for (const action of actions) {
+    if (sameContext(action, context) && action.type === 'sync_inventory' && !action.recoveryReason) {
+      await db.put('actions', { ...action, recoveryReason: 'Older stock snapshots cannot establish a purchase quantity. Compare with server stock before reconciling.' });
+      migrated = true;
+    }
+  }
+  if (migrated) changed();
+  return actions.filter(action => sameContext(action, context) && action.type !== 'sync_inventory' && !action.recoveryReason);
+};
+export const getRecoveryActions = async (context = getActionContext()) => {
+  await getPendingActions(context);
   const actions = await (await initDB()).getAllFromIndex('actions', 'by-timestamp');
-  return actions.filter(action => sameContext(action, context));
+  return actions.filter(action => sameContext(action, context) && Boolean(action.recoveryReason));
 };
 export const clearAction = async (id: number) => { await (await initDB()).delete('actions', id); changed(); };
 export const markActionError = async (id: number, error: string) => {
   const db = await initDB();
   const action = await db.get('actions', id);
   if (action) await db.put('actions', { ...action, error });
+  changed();
+};
+export const markActionAttempt = async (id: number, message: string) => {
+  const db = await initDB();
+  const action = await db.get('actions', id);
+  if (action && sameContext(action, getActionContext())) await db.put('actions', { ...action, lastAttemptMessage: message });
   changed();
 };
 export const getQueueCount = async () => {

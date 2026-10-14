@@ -141,6 +141,8 @@ export class SyncService {
           const delegate = (tx as any)[model];
           const existing = await delegate.findUnique({ where: { id: row.id }, ...(relation ? { include: { [relation]: true } } : {}) });
           if (existing && (relation ? existing[relation]?.restaurantId : existing.restaurantId) !== restaurantId) throw new ForbiddenException('Cross-restaurant overwrite');
+          if (model === 'product' && existing?.isArchived) continue;
+          if (model === 'product' && row.isArchived) row.isAvailable = false;
           if (existing && new Date(existing.updatedAt) >= new Date(row.updatedAt)) continue;
           await delegate.upsert({ where: { id: row.id }, update: row, create: row });
           count++;
@@ -156,13 +158,7 @@ export class SyncService {
             const record = await delegate.findUnique({ where: { id: t.id } });
             if (record && (record.restaurantId === restaurantId || !record.restaurantId)) {
               if (t.model === 'product') {
-                const orderCount = await tx.orderItem.count({ where: { productId: t.id } });
-                if (orderCount === 0) {
-                  await tx.recipeIngredient.deleteMany({ where: { productId: t.id } });
-                  await tx.product.delete({ where: { id: t.id } });
-                } else {
-                  await tx.product.update({ where: { id: t.id }, data: { isAvailable: false } });
-                }
+                await tx.product.update({ where: { id: t.id }, data: { isAvailable: false, isArchived: true } });
               } else if (t.model === 'category') {
                 const prodCount = await tx.product.count({ where: { categoryId: t.id } });
                 if (prodCount === 0) {

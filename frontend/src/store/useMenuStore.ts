@@ -9,6 +9,7 @@ export interface Product {
   category: string;
   prepTime: number;
   isAvailable: boolean;
+  isArchived?: boolean;
   description?: string;
   imageEmoji?: string; // Quick emoji icon for visual menu
   iconName?: string;   // Lucide icon name
@@ -194,6 +195,7 @@ export const useMenuStore = create<MenuState>()(
     {
       name: 'karvaan-menu-store',
       storage: createJSONStorage(() => tenantStorage),
+      merge: (saved: any, current) => ({ ...current, ...saved, products: (saved?.products || current.products).filter((product: Product) => !product.isArchived) }),
     }
   )
 );

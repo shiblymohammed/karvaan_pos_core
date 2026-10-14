@@ -126,6 +126,7 @@ model Product {
   gstRate         Float    @default(5.0)
   categoryId      String
   isAvailable     Boolean  @default(true)
+  isArchived      Boolean  @default(false)
   prepTimeMinutes Int      @default(12)
   imageEmoji      String?
   imageUrl        String?

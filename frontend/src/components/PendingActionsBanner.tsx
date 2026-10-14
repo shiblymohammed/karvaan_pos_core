@@ -1,23 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import { clearAction, getActionContext, getPendingActions, markActionError, PendingAction, replaceActionPayload, sameContext } from '../services/offlineQueue';
-import { flushPendingActions } from '../services/socket';
+import { clearAction, getActionContext, getPendingActions, getRecoveryActions, markActionError, PendingAction, replaceActionPayload, sameContext } from '../services/offlineQueue';
+import { flushPendingActions, socket } from '../services/socket';
 import { useAuthStore } from '../store/useAuthStore';
 import { useCartStore } from '../store/cartStore';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '../store/useToastStore';
 import { authorizedFetch } from '../services/authFetch';
+import { getServerUrl } from '../services/serverConfig';
 
 export function PendingActionsBanner() {
   const navigate = useNavigate();
   const userId = useAuthStore(s => s.currentUser?.id);
   const [actions, setActions] = useState<PendingAction[]>([]);
+  const [recovery, setRecovery] = useState<PendingAction[]>([]);
+  const [showRecovery, setShowRecovery] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
   const [refund, setRefund] = useState<PendingAction | null>(null);
   const [pin, setPin] = useState('');
+  const [connected, setConnected] = useState(socket.connected);
+  useEffect(() => {
+    const changed = () => setConnected(socket.connected);
+    socket.on('connect', changed); socket.on('disconnect', changed); socket.on('connect_error', changed);
+    return () => { socket.off('connect', changed); socket.off('disconnect', changed); socket.off('connect_error', changed); };
+  }, []);
   useEffect(() => {
     let cancelled = false;
-    const refresh = () => { void getPendingActions().then(data => { if (!cancelled) setActions(data); }).catch(() => {}); };
+    const refresh = () => { void (async () => {
+      const pending = await getPendingActions();
+      const saved = await getRecoveryActions();
+      if (!cancelled) { setActions(pending); setRecovery(saved); }
+    })().catch(() => {}); };
     refresh();
     window.addEventListener('offline-queue-updated', refresh);
     return () => { cancelled = true; window.removeEventListener('offline-queue-updated', refresh); };
@@ -72,11 +85,12 @@ export function PendingActionsBanner() {
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Refund could not be authorized'); }
     finally { setBusy(null); }
   };
-  if (!actions.length) return null;
+  if (!actions.length && !recovery.length) return null;
   const failed = actions.some(action => action.error);
   return <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[80] max-w-[90vw] rounded-xl bg-amber-100 border border-amber-400 text-amber-950 px-4 py-2 shadow-lg text-sm">
-    <button onClick={() => setOpen(!open)}>{actions.length} action(s) awaiting confirmation{failed ? ' — review required' : ''}</button>
+    <button onClick={() => setOpen(!open)}>{actions.length ? `${actions.length} action(s) awaiting confirmation${failed ? ' — review required' : ''}` : `${recovery.length} older inventory update(s) saved for review`}</button>
     {open && <div className="max-h-[60vh] overflow-y-auto space-y-3 mt-3">
+      <p>{connected ? 'Connected' : 'Reconnecting'} to {getServerUrl()}. Pending purchases are kept until the server confirms them.</p>
       <p>Actions for the same bill, table, or stock item wait until their earlier error is resolved.</p>
       {refund && <div className="border border-amber-400 p-3 space-y-2">
         <p>Authorize refund for {refund.payload.billNumber} with a manager PIN.</p>
@@ -84,9 +98,11 @@ export function PendingActionsBanner() {
         <button disabled={busy !== null || !pin} onClick={() => void renewRefund()}>Authorize and retry</button>
         <button disabled={busy !== null} onClick={() => { setPin(''); setRefund(null); }}>Cancel</button>
       </div>}
-      {actions.map(action => <div key={action.id} className="border-t border-amber-300 pt-2">
+      {recovery.length > 0 && <button onClick={() => setShowRecovery(!showRecovery)}>{showRecovery ? 'Hide' : 'Review'} {recovery.length} older stock update(s) — saved separately, no longer sent</button>}
+      {[...actions, ...(showRecovery ? recovery : [])].map(action => <div key={action.id} className="border-t border-amber-300 pt-2">
         <strong>{action.payload?.billNumber || (action.type === 'sync_inventory' ? 'Older inventory update — review needed' : action.type === 'receive_inventory_purchase' ? 'Stock purchase' : action.type)}</strong>
-        <p>{action.error || 'Saved on this device; awaiting the restaurant server.'}</p>
+        <p>{action.recoveryReason || action.error || action.lastAttemptMessage || 'Saved on this device; awaiting the restaurant server.'}</p>
+        {action.type === 'receive_inventory_purchase' && <p>{action.payload.purchaseUnits} {action.payload.purchaseUnit}{action.payload.invoiceCost !== undefined ? ` · Invoice total ₹${action.payload.invoiceCost}` : ''}{action.payload.vendor ? ` · ${action.payload.vendor}` : ''}</p>}
         {action.type === 'sync_inventory' && <>
           <p>Open Inventory &amp; Recipes and reload server stock. Compare these older saved values before removing the action; re-enter only purchases missing from the server.</p>
           {Array.isArray(action.payload) && <details><summary>Saved stock values</summary>{action.payload.map((row: any, index: number) => <p key={row.id || index}>{row.name || row.id}: {Number.isFinite(row.currentStock) ? row.currentStock : 'Invalid or missing quantity'} {row.unit || ''}</p>)}</details>}

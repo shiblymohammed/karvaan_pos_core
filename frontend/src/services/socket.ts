@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 import { getServerUrl } from './serverConfig';
-import { enqueueAction, getPendingActions, clearAction, getActionContext, sameContext, markActionError, actionResources } from './offlineQueue';
+import { enqueueAction, getPendingActions, clearAction, getActionContext, sameContext, markActionError, markActionAttempt, actionResources } from './offlineQueue';
+import { InventoryBackendError, verifyInventoryBackend } from './inventoryBackend';
 import { useSettingsStore, applyRemoteSettings } from '../store/useSettingsStore';
 
 
@@ -59,6 +60,7 @@ export function flushPendingActions(): Promise<Map<number, ActionResult>> {
     const results = new Map<number, ActionResult>();
     let context;
     const blocked = new Set<string>();
+    let inventoryCheck: Promise<void> | undefined;
     try { context = getActionContext(); } catch { return results; }
     for (const action of await getPendingActions(context)) {
       const resources = actionResources(action.type, action.payload);
@@ -66,6 +68,10 @@ export function flushPendingActions(): Promise<Map<number, ActionResult>> {
       if (resources.some(resource => blocked.has(resource))) continue;
       if (!socket.connected || !sameContext(context, getActionContext())) break;
       try {
+        if (['receive_inventory_purchase', 'apply_inventory_changes'].includes(action.type)) {
+          await (inventoryCheck ||= verifyInventoryBackend());
+          if (!socket.connected || !sameContext(context, getActionContext())) break;
+        }
         const payload = Array.isArray(action.payload) ? action.payload : { ...action.payload, actionId: action.payload?.actionId || action.actionId };
         const result: ActionResult = await socket.timeout(15000).emitWithAck(action.type, payload);
         if (!sameContext(context, getActionContext())) break;
@@ -80,7 +86,13 @@ export function flushPendingActions(): Promise<Map<number, ActionResult>> {
         }
         await clearAction(action.id!);
         results.set(action.id!, result);
-      } catch {
+      } catch (error) {
+        if (!sameContext(context, getActionContext())) break;
+        if (error instanceof InventoryBackendError) {
+          await markActionError(action.id!, error.message);
+          results.set(action.id!, { status: 'ERROR', message: error.message });
+          toast.error(error.message);
+        } else await markActionAttempt(action.id!, `No server confirmation received${error instanceof Error ? ` (${error.message})` : ''}. This action may already be saved on the server; retry its original entry instead of creating it again.`);
         // A lost acknowledgment can mean the write committed. Retain the stable action for an idempotent retry.
         for (const resource of resources) blocked.add(resource);
         continue;
@@ -200,7 +212,7 @@ export function initSocketListeners() {
 
           if (masterState.products) {
             
-            useMenuStore.setState({ products: masterState.products });
+            useMenuStore.setState({ products: masterState.products.filter((product: any) => !product.isArchived) });
             
           }
 

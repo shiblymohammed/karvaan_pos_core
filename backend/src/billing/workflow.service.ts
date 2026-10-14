@@ -48,13 +48,13 @@ export class WorkflowService {
       const key = { restaurantId_orderNumber: { restaurantId: user.restaurantId, orderNumber: data.orderNumber } };
       const existing = await tx.deliveryOrder.findUnique({ where: key });
       if (existing) return { id: existing.id, orderNumber: existing.orderNumber };
-      const { lines, settings } = await this.billing.pricedItems(tx, data.items, user.restaurantId);
+      let order = await tx.order.findUnique({ where: key, include: { bill: true, items: true } });
+      const { lines, settings } = await this.billing.pricedItems(tx, data.items, user.restaurantId, order?.items || []);
       const totals = billTotals(lines, settings, data);
       const permissions = readJson<any>(JSON.stringify(user.permissions || {}), {});
       if (totals.discount > 0 && !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user.role) && !permissions.canDiscount) throw new ForbiddenException('Discount permission is required');
       const storedLines = [];
       for (const line of lines) storedLines.push({ productId: line.product.id, name: line.product.name, price: line.price, basePrice: line.product.price, gstRate: line.product.gstRate, quantity: line.quantity, notes: line.notes, addons: line.addons, recipe: await tx.recipeIngredient.findMany({ where: { productId: line.product.id }, select: { inventoryItemId: true, quantity: true } }) });
-      let order = await tx.order.findUnique({ where: key, include: { bill: true, items: true } });
       if (order?.bill && data.orderType !== 'PARCEL') throw new BadRequestException('This order is already settled');
       if (order && !order.bill) ensurePersistedItemsPresent(order.items, storedLines);
       if (!order) order = await tx.order.create({ data: { restaurantId: user.restaurantId, orderNumber: data.orderNumber, orderType: data.orderType, status: 'COOKING', totalAmount: totals.subtotal, discount: totals.discount, waiterId: user.id, items: { create: storedLines.map(line => ({ productId: line.productId, price: line.price, quantity: line.quantity, notes: line.notes, addons: JSON.stringify(line.addons), status: 'SENT' })) } }, include: { bill: true, items: true } });
@@ -161,7 +161,7 @@ export class WorkflowService {
 
   async menu(restaurantId: string) {
     return this.prisma.$transaction(async tx => {
-      const [categories, products, version] = await Promise.all([tx.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: 'asc' } }), tx.product.findMany({ where: { restaurantId }, include: { category: true } }), tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'menu_revision' } } })]);
+      const [categories, products, version] = await Promise.all([tx.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: 'asc' } }), tx.product.findMany({ where: { restaurantId, isArchived: false }, include: { category: true } }), tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'menu_revision' } } })]);
       return { categories, products: products.map(product => ({ ...product, category: product.category.name, prepTime: product.prepTimeMinutes })), serverRevision: readJson<number>(version?.data, 0) };
     });
   }

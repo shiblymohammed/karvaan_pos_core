@@ -13,6 +13,7 @@ function browserHarness() {
   const emitted = [];
   let ack = async () => ({ status: 'OK' });
   let uploadResponse;
+  let inventoryResponse;
   const uploads = [];
   const socket = { connected: true, on: () => {}, timeout: () => ({ emitWithAck: async (type, payload) => { emitted.push({ type, payload }); return ack(type, payload); } }) };
   const db = {
@@ -22,7 +23,7 @@ function browserHarness() {
     put: async (_store, row) => rows.set(row.id, row),
   };
   const context = vm.createContext({
-    console, crypto: require('node:crypto').webcrypto, FormData, Error, URL, TextEncoder,
+    console, crypto: require('node:crypto').webcrypto, FormData, Error, URL, TextEncoder, AbortSignal,
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
     window: { dispatchEvent: () => {}, location: { origin: 'http://127.0.0.1:5173' } }, CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
     setInterval: () => 1, setTimeout, clearTimeout,
@@ -39,7 +40,7 @@ function browserHarness() {
       if (name === 'socket.io-client') return { io: () => socket };
       if (name.endsWith('serverConfig')) return { getServerUrl: () => storage.get('server') || 'http://server-a:3001', getOperatingMode: () => 'NODE_SERVER', getTerminalId: () => 'test-terminal' };
       if (name.endsWith('useAuthStore')) return { useAuthStore: { getState: () => ({ currentUser: JSON.parse(storage.get('pos-auth-storage') || '{}').state?.currentUser }) } };
-      if (name.endsWith('authFetch')) return { authorizedFetch: async (endpoint, options) => { uploads.push({ endpoint, options }); return uploadResponse; } };
+      if (name.endsWith('authFetch')) return { authorizedFetch: async (endpoint, options) => { uploads.push({ endpoint, options }); if (endpoint === '/billing/inventory') return inventoryResponse || new Response('[]', { status: 200 }); return uploadResponse; } };
       if (name.endsWith('useSettingsStore')) return { useSettingsStore: { setState: () => {} }, applyRemoteSettings: () => {} };
       if (name.endsWith('useLedgerStore')) return { applyLedgerSnapshot: () => {} };
       if (name.endsWith('useToastStore')) return { toast: { error: () => {} } };
@@ -52,7 +53,7 @@ function browserHarness() {
   }
   function login(restaurantId = 'tenant-a', userId = 'cashier-a') { storage.set('pos-auth-storage', JSON.stringify({ state: { currentUser: { restaurantId, id: userId } } })); }
   login();
-  return { load, storage, rows, emitted, socket, login, uploads, setOrigin: value => { context.window.location.origin = value; }, setUploadResponse: value => { uploadResponse = value; }, setAck: fn => { ack = fn; } };
+  return { load, storage, rows, emitted, socket, login, uploads, setOrigin: value => { context.window.location.origin = value; }, setUploadResponse: value => { uploadResponse = value; }, setInventoryResponse: value => { inventoryResponse = value; }, setAck: fn => { ack = fn; } };
 }
 
 test('a VPS web deployment uses its origin without repeatedly opening setup, while local terminals still require setup', () => {
@@ -224,10 +225,10 @@ test('a different login cannot flush another cashier’s pending actions', async
 test('Force Sync keeps rejected originals and reports only server-confirmed actions', async () => {
   const h = browserHarness(), actions = h.load('services/socket.ts'), queue = h.load('services/offlineQueue.ts');
   h.socket.connected = false;
-  await actions.emitAction('sync_inventory', [{ id: 'rice', currentStock: null }]);
+  await actions.emitAction('apply_inventory_changes', { changes: [{ id: 'rice', delta: null }] });
   await actions.emitAction('settle_bill', { billNumber: 'INDEPENDENT', orderNumber: 'INDEPENDENT' });
   const original = (await queue.getPendingActions())[0];
-  h.setAck(async type => type === 'sync_inventory' ? { status: 'ERROR', message: 'Invalid inventory quantity' } : { status: 'OK' });
+  h.setAck(async type => type === 'apply_inventory_changes' ? { status: 'ERROR', message: 'Invalid inventory quantity' } : { status: 'OK' });
   h.socket.connected = true;
   const first = await actions.syncPendingNow();
   assert.equal(first.confirmed, 1); assert.equal(first.pending, 1); assert.equal(first.failed, 1);
@@ -252,6 +253,24 @@ test('inventory reloads retain purchase conversions and quarantine invalid saved
   assert.equal(normalizeInventoryItem(corrupted).stockNeedsReview, true);
 });
 
+test('old inventory snapshots are preserved for their owner without blocking new PO receipts', async () => {
+  const h = browserHarness(), actions = h.load('services/socket.ts'), queue = h.load('services/offlineQueue.ts');
+  h.socket.connected = false;
+  await actions.emitAction('sync_inventory', [{ id: 'rice', currentStock: null }]);
+  const original = [...h.rows.values()][0];
+  await actions.emitAction('receive_inventory_purchase', { id: 'rice', purchaseUnits: 2, conversionFactor: 1000, purchaseUnit: 'kg', invoiceCost: 120 });
+  assert.equal(await queue.getQueueCount(), 1);
+  const recovery = await queue.getRecoveryActions();
+  assert.equal(recovery.length, 1); assert.equal(recovery[0].id, original.id); assert.equal(recovery[0].actionId, original.actionId);
+  assert.equal(recovery[0].payload[0].currentStock, null);
+  h.socket.connected = true;
+  const result = await actions.syncPendingNow();
+  assert.equal(result.confirmed, 1); assert.equal(result.pending, 0);
+  assert.equal(h.emitted.length, 1); assert.equal(h.emitted[0].type, 'receive_inventory_purchase');
+  h.login('tenant-b', 'cashier-b'); assert.equal((await queue.getRecoveryActions()).length, 0);
+  h.login(); assert.equal((await queue.getRecoveryActions()).length, 1);
+});
+
 test('PO intake queues an invoice total without speculative stock changes or duplicate snapshot writes', async () => {
   const h = browserHarness(), inventory = h.load('store/useInventoryStore.ts'), queue = h.load('services/offlineQueue.ts');
   inventory.initializeInventorySync();
@@ -266,4 +285,40 @@ test('PO intake queues an invoice total without speculative stock changes or dup
   assert.equal((await queue.getPendingActions()).length, 1);
   assert.equal(inventory.useInventoryStore.getState().addIngredient({ name: 'Invalid ingredient', currentStock: 0, reorderLevel: 0, costPerUnit: 0, conversionFactor: 0, unit: 'g', purchaseUnit: 'kg' }), false);
   assert.equal((await queue.getPendingActions()).length, 1);
+});
+
+test('an older VPS reports missing inventory support and saved PO retries retain their identity after upgrade', async () => {
+  const h = browserHarness(), actions = h.load('services/socket.ts'), queue = h.load('services/offlineQueue.ts');
+  h.socket.connected = false;
+  await actions.emitAction('receive_inventory_purchase', { id: 'rice', purchaseUnits: 2, purchaseUnit: 'kg', conversionFactor: 1000, invoiceCost: 120 });
+  const original = (await queue.getPendingActions())[0];
+  h.socket.connected = true;
+  h.setInventoryResponse(new Response('{"message":"Cannot GET /billing/inventory"}', { status: 404 }));
+  const rejected = await actions.syncPendingNow();
+  assert.equal(rejected.confirmed, 0); assert.equal(rejected.failed, 1); assert.equal(h.emitted.length, 0);
+  const pending = (await queue.getPendingActions())[0];
+  assert.match(pending.error, /Backend update required/); assert.equal(pending.actionId, original.actionId);
+  h.setInventoryResponse(new Response('[]', { status: 200 }));
+  await queue.markActionError(pending.id, '');
+  const retried = await actions.syncPendingNow();
+  assert.equal(retried.confirmed, 1); assert.equal(retried.pending, 0);
+  assert.equal(h.emitted[0].payload.actionId, original.actionId);
+});
+
+test('inventory connectivity checks distinguish expired sessions and proxy HTML', async () => {
+  const h = browserHarness(), backend = h.load('services/inventoryBackend.ts');
+  h.setInventoryResponse(new Response('{}', { status: 401 }));
+  await assert.rejects(backend.verifyInventoryBackend(), /session expired/);
+  h.setInventoryResponse(new Response('<html>POS application</html>', { status: 200 }));
+  await assert.rejects(backend.verifyInventoryBackend(), /page instead of stock data/);
+});
+
+test('saved menu hydration removes archived items while keeping temporarily unavailable items', () => {
+  const h = browserHarness(), menu = h.load('store/useMenuStore.ts').useMenuStore;
+  const merge = menu.persist.getOptions().merge;
+  const saved = { products: [{ id: 'deleted', isArchived: true }, { id: 'temporary', isAvailable: false }, { id: 'active', isAvailable: true }] };
+  const state = merge(saved, menu.getInitialState());
+  assert.equal(state.products.length, 2);
+  assert.equal(state.products.some(product => product.id === 'deleted'), false);
+  assert.equal(state.products.find(product => product.id === 'temporary').isAvailable, false);
 });

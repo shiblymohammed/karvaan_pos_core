@@ -406,7 +406,7 @@ export const AdminMenuManager: React.FC = () => {
 
   const filteredProducts = useMemo(() => {
     const q = search.toLowerCase();
-    return products.filter(p =>
+    return products.filter(p => !p.isArchived &&
       (filterCat === 'All' || p.category === filterCat) &&
       (!q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q))
     );

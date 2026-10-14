@@ -11,6 +11,21 @@ Updated 15 October 2026. Changes are local; the VPS has not been redeployed.
 
 ## Deploy
 
+The public VPS at wq8ss.aiccloud.online was checked on 15 October 2026. Health and Socket.IO polling responded successfully, while /billing/inventory, /billing/menu, and /billing/ledger returned 404. This confirms that the checked live backend did not expose the new APIs. Update the backend source and rebuild/recreate its container; refreshing the frontend alone cannot provide those routes.
+
+For Docker Compose over SSH, run the following in the VPS repository directory after pushing the intended source changes. Stop if backup or pull fails:
+
+```sh
+bash scripts/backup-cloud.sh
+git pull --ff-only
+grep -n 'receive_inventory_purchase' backend/src/kds/kds.gateway.ts
+docker compose build --no-cache backend frontend
+docker compose up -d --force-recreate --wait --wait-timeout 180
+curl -i https://wq8ss.aiccloud.online/billing/inventory
+```
+
+The source check must find the PO handler. The final unauthenticated request should return 401 (authentication required), rather than 404 (route absent). If it remains 404, inspect docker compose ps and docker compose logs --tail=80 backend and confirm this deployment serves that domain. Once updated, retry the original saved purchases; do not re-enter them while awaiting confirmation.
+
 1. Transfer source and lockfile changes through the normal Git workflow. Rebuild both containers from the repository root:
 
    ```sh
@@ -31,6 +46,8 @@ Exit all backend processes before restoring. Preserve the current database and W
 
 ## Financial behavior
 
+Menu deletion now archives the product separately from its temporary 86'd availability flag. Deleted items disappear from the menu and reconnect snapshots while invoices, recipes used by saved returns, and already-sent orders keep their references. Old deleted items that previously returned as 86'd must be deleted once after this upgrade; legitimate temporarily unavailable items are not automatically removed. An archived ID cannot be revived by stale menu/replica data; add a new item if the product should return to the menu. Verify menuArchiving: 1 in the backend health capabilities after deploying this additive schema update.
+
 - Dispatch consumes ingredients once. COD stays payment pending until the server creates its sale; prepaid dispatch creates the sale immediately. Kitchen readiness updates the delivery board. Riders can claim ready unassigned orders, and only the assigned rider or a cashier can collect.
 - Rider remittance includes archived deliveries and actual cash/UPI/card splits. A cashier or manager must physically receive the displayed cash before confirming. Changed collection IDs or totals require reloading. Remittance records cash custody, not new sales.
 - Credit repayments record the selected method and reduce the original debt. Reports separate repayments from sales.
@@ -43,11 +60,13 @@ Exit all backend processes before restoring. Preserve the current database and W
 - Bills without saved snapshots require manual reviewed returns. Deliveries without known collectors are flagged for manual cash reconciliation.
 - Failed bills can open the latest kitchen order in POS. Review all lines, totals, and payment allocation, then confirm using the original bill number. Independent queued actions continue while related actions wait.
 - Expired refund authorization can be renewed in the pending-actions panel. The manager enters a PIN online; only a scoped token is queued.
-- Older sync_inventory entries require manual review. Use Reload Server Stock in Inventory & Recipes, compare the saved values in the pending panel, remove only reconciled old actions, and re-enter actual purchases missing from the server. Invalid/null saved quantities cannot establish how much was purchased.
+- Older sync_inventory entries are automatically preserved as recovery records under their original account and excluded from active sync. Expand Review older stock updates in the pending panel. Use Reload Server Stock in Inventory & Recipes, compare saved values, remove only reconciled records, and re-enter actual purchases missing from the server. Invalid/null quantities cannot establish how much was purchased.
 - PO intake now records quantity, purchase conversion, invoice total, supplier, and cashier on the server. A 2 kg delivery of an ingredient stocked in grams with a ₹120 invoice adds 2,000 g at ₹0.06/g. Older gram/ml rows use kg/l defaults; unknown packaging uses individual pieces unless a valid saved conversion exists. Verify pack sizes before intake.
 - Force Sync only reports confirmed actions as successful. Pending and rejected actions remain visible and retain their identities.
 - Lost acknowledgment can mean an action already committed. Retry its original identity or check history before removing it. Legacy unowned IndexedDB actions require manual recovery and never replay under another login.
 
 ## Staging acceptance
 
-The automated suite passes 53 tests and both app builds. Before live service, exercise counter checkout, another waiter's added items, stale-checkout review, COD/prepaid delivery, split collection/remittance, partial credit repayment, partial/remaining refunds, PO intake and reload, rejected Force Sync actions, disconnection/reconnection, receipt reprint, and backup restoration. Check invoice count, stock, balances, and sales/collection totals. CI includes a container/proxy/restore smoke test; it has not run remotely from this checkout.
+After deploying the latest source, verify `/health` includes `capabilities.inventoryPurchases: 1`. A healthy response without that marker does not confirm this backend update. Updating a desktop client requires rebuilding/installing the Windows app; updating the VPS frontend alone does not replace an installed app. The recovery/connectivity follow-up passes all 19 frontend queue/storage tests. Inventory commands check API compatibility before sending, and connection/acknowledgment failures remain visible without losing action identities.
+
+The automated suite passes 57 tests and both app builds. Before live service, exercise counter checkout, another waiter's added items, stale-checkout review, COD/prepaid delivery, split collection/remittance, partial credit repayment, partial/remaining refunds, PO intake and reload, rejected Force Sync actions, disconnection/reconnection, receipt reprint, and backup restoration. Check invoice count, stock, balances, and sales/collection totals. CI includes a container/proxy/restore smoke test; it has not run remotely from this checkout.

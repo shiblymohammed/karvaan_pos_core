@@ -135,7 +135,7 @@ export class KdsGateway implements OnGatewayConnection {
         this.prisma.deliveryOrder.findMany({ where: { restaurantId, status: { notIn: ['DELIVERED', 'CANCELLED'] } }, take: 100 }),
         this.staff(restaurantId), this.prisma.inventoryItem.findMany({ where: { restaurantId, isActive: true } }),
         this.prisma.table.findMany({ where: { restaurantId } }), this.prisma.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: 'asc' } }),
-        this.prisma.product.findMany({ where: { restaurantId }, include: { category: true } }),
+        this.prisma.product.findMany({ where: { restaurantId, isArchived: false }, include: { category: true } }),
         this.prisma.recipeIngredient.findMany({ where: { product: { restaurantId } }, include: { product: true } }),
         this.prisma.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } } }),
       ]);
@@ -317,7 +317,8 @@ export class KdsGateway implements OnGatewayConnection {
           await tx.category.upsert({ where: { id: category.id }, update: values, create: { id: category.id, restaurantId: user.restaurantId, ...values } });
         }
         for (const product of incomingProducts) {
-          await this.owned(tx, 'product', product.id, user.restaurantId);
+          const existingProduct = await this.owned(tx, 'product', product.id, user.restaurantId);
+          if (existingProduct?.isArchived) throw new ConflictException('This menu item was deleted. Reload the menu before editing; create a new item to add it again.');
           if (!Number.isFinite(product.price) || product.price < 0 || !Number.isFinite(product.gstRate ?? 5) || (product.gstRate ?? 5) < 0 || (product.gstRate ?? 5) > 100) throw new BadRequestException('Invalid product price or tax');
           const category = await tx.category.findFirst({ where: { restaurantId: user.restaurantId, name: product.category } });
           if (!category) throw new BadRequestException('Product category not found');
@@ -328,17 +329,11 @@ export class KdsGateway implements OnGatewayConnection {
         // Propagate deletions for omitted products
         {
           const incProdIds = new Set(incomingProducts.map((p: any) => p.id));
-          const existingProds = await tx.product.findMany({ where: { restaurantId: user.restaurantId } });
+          const existingProds = await tx.product.findMany({ where: { restaurantId: user.restaurantId, isArchived: false } });
           for (const ep of existingProds) {
             if (!incProdIds.has(ep.id)) {
-              const orderItemCount = await tx.orderItem.count({ where: { productId: ep.id } });
-              if (orderItemCount === 0) {
-                await tx.recipeIngredient.deleteMany({ where: { productId: ep.id } });
-                await tx.product.delete({ where: { id: ep.id } });
-                newTombstones.push({ id: ep.id, model: 'product', deletedAt: new Date().toISOString() });
-              } else if (ep.isAvailable) {
-                await tx.product.update({ where: { id: ep.id }, data: { isAvailable: false } });
-              }
+              await tx.product.update({ where: { id: ep.id }, data: { isAvailable: false, isArchived: true } });
+              newTombstones.push({ id: ep.id, model: 'product', deletedAt: new Date().toISOString() });
             }
           }
         }

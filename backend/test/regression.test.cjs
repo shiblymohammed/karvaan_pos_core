@@ -382,6 +382,26 @@ test('inventory PO invoices convert units, preserve supplier details, and receiv
   assert.equal((await prisma.inventoryItem.findUnique({ where: { id: data.id } })).currentStock, 3000);
 });
 
+test('PO socket commands acknowledge durable purchases and reject another restaurant’s stock', async () => {
+  await prisma.inventoryItem.create({ data: { id: 'socket-po-rice', restaurantId: 'restaurant-a', name: 'Socket PO rice', category: 'PRODUCE', unit: 'g', currentStock: 0, purchaseUnit: 'kg', conversionFactor: 1000 } });
+  const socket = io(url, { transports: ['websocket'], reconnection: false, auth: { token: adminToken, restaurantId: 'restaurant-a' } });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Restaurant snapshot was not received')), 5000);
+      socket.once('sync_master_state', () => { clearTimeout(timer); resolve(); });
+      socket.once('connect_error', error => { clearTimeout(timer); reject(error); });
+    });
+    const purchase = { actionId: 'socket-po', id: 'socket-po-rice', purchaseUnits: 1, purchaseUnit: 'kg', conversionFactor: 1000, invoiceCost: 60, vendor: 'Supplier' };
+    const result = await socket.timeout(5000).emitWithAck('receive_inventory_purchase', purchase);
+    assert.equal(result.status, 'OK'); assert.equal(result.data.quantityReceived, 1000);
+    assert.equal((await socket.timeout(5000).emitWithAck('receive_inventory_purchase', purchase)).status, 'OK');
+    assert.equal((await prisma.inventoryItem.findUnique({ where: { id: purchase.id } })).currentStock, 1000);
+    assert.equal(await prisma.stockLog.count({ where: { itemId: purchase.id, reason: 'PURCHASE' } }), 1);
+    const foreign = await socket.timeout(5000).emitWithAck('receive_inventory_purchase', { ...purchase, actionId: 'socket-po-foreign', id: 'stock-b' });
+    assert.equal(foreign.status, 'ERROR'); assert.match(foreign.message, /not found/);
+  } finally { socket.disconnect(); }
+});
+
 test('stale menu revisions cannot erase newer edits and lost acknowledgments remain idempotent', async () => {
   const gateway = app.get(KdsGateway);
   const client = { handshake: { auth: { token: adminToken, restaurantId: 'restaurant-a' } }, data: {} };
@@ -390,6 +410,52 @@ test('stale menu revisions cannot erase newer edits and lost acknowledgments rem
   assert.equal((await gateway.handleSyncMenu(data, client)).status, 'OK');
   assert.equal((await gateway.handleSyncMenu({ ...data, actionId: 'stale-menu', products: [] }, client)).status, 'ERROR');
   assert.equal((await prisma.product.findUnique({ where: { id: 'product-a' } })).isAvailable, true);
+});
+
+test('menu deletion stays hidden after sync and reconnect while preserving sales and already-sent food', async () => {
+  const billing = app.get(BillingService), workflow = app.get(WorkflowService), gateway = app.get(KdsGateway);
+  for (const [id, name, isAvailable] of [['delete-menu-used', 'Previously sold item', true], ['delete-menu-unused', 'Unused item', true], ['menu-temporary-86', 'Temporarily unavailable', false]]) {
+    await prisma.product.create({ data: { id, name, isAvailable, restaurantId: 'restaurant-b', categoryId: 'category-b', price: 40 } });
+  }
+  const bill = await billing.processDirectCheckout({ billNumber: 'DELETE-MENU-BILL', orderNumber: 'DELETE-MENU-SALE', items: [{ productId: 'delete-menu-used', quantity: 1 }], grandTotal: 42, paymentMethod: 'CASH' }, 'restaurant-b', 'admin-b');
+  await billing.saveKitchenOrder({ id: 'delete-menu-pending', orderNumber: 'DELETE-MENU-PENDING', items: [{ productId: 'delete-menu-used', quantity: 2 }] }, 'restaurant-b', 'admin-b');
+  const token = (await app.get(AuthService).login('admin-b', 'test-password')).accessToken;
+  const client = { handshake: { auth: { token, restaurantId: 'restaurant-b' } }, data: {} };
+  const before = await workflow.menu('restaurant-b');
+  const deletion = { actionId: 'delete-menu-items', expectedRevision: before.serverRevision, categories: before.categories, products: before.products.filter(product => !['delete-menu-used', 'delete-menu-unused'].includes(product.id)) };
+  assert.equal((await gateway.handleSyncMenu(deletion, client)).status, 'OK');
+  assert.equal((await gateway.handleSyncMenu(deletion, client)).status, 'OK');
+  const after = await workflow.menu('restaurant-b');
+  assert.equal(after.products.some(product => product.id === 'delete-menu-used'), false);
+  assert.equal(after.products.some(product => product.id === 'delete-menu-unused'), false);
+  assert.equal(after.products.find(product => product.id === 'menu-temporary-86').isAvailable, false);
+  assert.equal((await prisma.product.findUnique({ where: { id: 'delete-menu-used' } })).isArchived, true);
+  assert.equal((await billing.getOrderHistory('restaurant-b')).find(row => row.id === bill.id).order.items[0].product.name, 'Previously sold item');
+  const revived = await gateway.handleSyncMenu({ ...deletion, actionId: 'revive-deleted-menu', expectedRevision: after.serverRevision, products: before.products }, client);
+  assert.equal(revived.status, 'ERROR'); assert.match(revived.message, /deleted/);
+  await assert.rejects(billing.processDirectCheckout({ billNumber: 'NEW-DELETED-SALE', orderNumber: 'NEW-DELETED-ORDER', items: [{ productId: 'delete-menu-used', quantity: 1 }], grandTotal: 42, paymentMethod: 'CASH' }, 'restaurant-b', 'admin-b'), /deleted/);
+  await assert.rejects(billing.processDirectCheckout({ billNumber: 'EXTRA-DELETED-SALE', orderNumber: 'DELETE-MENU-PENDING', items: [{ productId: 'delete-menu-used', quantity: 3 }], grandTotal: 126, paymentMethod: 'CASH' }, 'restaurant-b', 'admin-b'), /deleted/);
+  await billing.processDirectCheckout({ billNumber: 'EXISTING-DELETED-SALE', orderNumber: 'DELETE-MENU-PENDING', items: [{ productId: 'delete-menu-used', quantity: 2 }], grandTotal: 84, paymentMethod: 'CASH' }, 'restaurant-b', 'admin-b');
+  const socket = io(url, { transports: ['websocket'], reconnection: false, auth: { token, restaurantId: 'restaurant-b' } });
+  try {
+    const state = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Snapshot was not received')), 5000);
+      socket.once('sync_master_state', state => { clearTimeout(timer); resolve(state); });
+      socket.once('connect_error', error => { clearTimeout(timer); reject(error); });
+    });
+    assert.equal(state.products.some(product => product.id === 'delete-menu-used'), false);
+    assert.equal(state.products.some(product => product.id === 'menu-temporary-86'), true);
+  } finally { socket.disconnect(); }
+});
+
+test('replication tombstones keep menu items archived even when newer stale rows arrive', async () => {
+  const sync = app.get(SyncService), workflow = app.get(WorkflowService);
+  await prisma.product.create({ data: { id: 'replica-deleted-menu', name: 'Deleted replica item', restaurantId: 'restaurant-b', categoryId: 'category-b', price: 10 } });
+  await sync.receiveSyncData({ restaurantId: 'restaurant-b', data: { tombstones: [{ model: 'product', id: 'replica-deleted-menu', deletedAt: new Date().toISOString() }] } });
+  const saved = await prisma.product.findUnique({ where: { id: 'replica-deleted-menu' } });
+  await sync.receiveSyncData({ restaurantId: 'restaurant-b', data: { products: [{ ...saved, isArchived: false, isAvailable: true, updatedAt: new Date(Date.now() + 10000).toISOString() }] } });
+  assert.equal((await prisma.product.findUnique({ where: { id: saved.id } })).isArchived, true);
+  assert.equal((await workflow.menu('restaurant-b')).products.some(product => product.id === saved.id), false);
 });
 
 test('manager refund grants are bound to the cashier, invoice, and action', async () => {
