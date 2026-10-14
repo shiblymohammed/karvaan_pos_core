@@ -25,6 +25,7 @@ const { KdsGateway } = require('../src/kds/kds.gateway');
 const { BackupService } = require('../src/backup/backup.service');
 const { SyncService } = require('../src/sync/sync.service');
 const { TenantService } = require('../src/tenant/tenant.service');
+const { WorkflowService } = require('../src/billing/workflow.service');
 const { JwtService } = require('@nestjs/jwt');
 const { io } = require('../../frontend/node_modules/socket.io-client');
 let app, prisma, url, adminToken, cashierToken, schemaSql;
@@ -200,9 +201,14 @@ test('counter checkout publishes its kitchen ticket and accepts the next kitchen
     assert.equal(tickets.length, 1);
     assert.equal(tickets[0].status, 'COOKING');
     assert.equal(tickets[0].items[0].productId, 'product-a');
-    const next = await socket.timeout(5000).emitWithAck('update_kds_status', { orderId: tickets[0].id, status: 'READY' });
+    const ready = { actionId: 'counter-ready', orderId: tickets[0].id, status: 'READY' };
+    const next = await socket.timeout(5000).emitWithAck('update_kds_status', ready);
     assert.equal(next.status, 'OK');
+    assert.equal((await socket.timeout(5000).emitWithAck('update_kds_status', { ...ready, actionId: 'counter-served', status: 'SERVED' })).status, 'OK');
+    assert.equal((await socket.timeout(5000).emitWithAck('update_kds_status', ready)).status, 'OK');
+    assert.equal((await socket.timeout(5000).emitWithAck('update_kds_status', { ...ready, actionId: 'counter-stale-ready' })).status, 'ERROR');
     const order = await prisma.order.findUnique({ where: { id: tickets[0].id }, include: { items: true } });
+    assert.equal(order.status, 'SERVED');
     assert.equal(order.items.length, 1);
     assert.equal(order.items[0].quantity, 2);
   } finally { socket.disconnect(); }
@@ -235,6 +241,259 @@ test('cloud seeding creates only a private hashed super admin and is idempotent'
     assert.equal(seed().status, 0);
     assert.equal(await seedDb.user.count(), 1);
   } finally { await seedDb.$disconnect(); }
+});
+
+test('credit settlement and partial repayment are durable, tenant scoped, and idempotent', async () => {
+  const bill = await app.get(BillingService).processDirectCheckout({ ...checkout('credit'), customerName: 'Credit Guest', customerPhone: '9000000001', tenders: { CASH: 60, CREDIT: 150 }, paymentMethod: 'SPLIT' }, 'restaurant-a', 'admin-a');
+  assert.deepEqual(JSON.parse(bill.tenders), { CASH: 60, CREDIT: 150 });
+  const workflow = app.get(WorkflowService);
+  const user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  const entry = (await workflow.ledger('restaurant-a')).find(row => row.billNumber === bill.billNumber);
+  assert.equal(entry.amount, 150);
+  const payment = { actionId: 'partial-credit-payment', entryId: entry.id, amount: 40, paymentMethod: 'UPI' };
+  await workflow.repay(payment, user);
+  await workflow.repay(payment, user);
+  assert.equal((await workflow.ledger('restaurant-a')).find(row => row.id === entry.id).amount, 110);
+  assert.equal(await prisma.ledgerEntry.count({ where: { sourceEntryId: entry.id } }), 1);
+  await assert.rejects(workflow.repay({ ...payment, actionId: 'foreign-credit-payment' }, { id: 'admin-b', restaurantId: 'restaurant-b' }), /not found/);
+  await assert.rejects(workflow.repay({ ...payment, actionId: 'excess-credit-payment', amount: 111 }, user), /exceeds/);
+});
+
+test('delivery dispatch consumes stock once and assigned-rider collection creates one immutable sale', async () => {
+  await prisma.user.create({ data: { id: 'rider-a', restaurantId: 'restaurant-a', name: 'Rider', role: 'DELIVERY' } });
+  const workflow = app.get(WorkflowService), user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  const data = { actionId: 'delivery-dispatch', orderNumber: 'DELIVERY-WORKFLOW', billNumber: 'DELIVERY-BILL', orderType: 'DELIVERY', customerName: 'Delivery Guest', customerPhone: '9000000002', items: [{ productId: 'product-a', quantity: 1 }], deliveryFee: 10, grandTotal: 115 };
+  const stock = (await prisma.inventoryItem.findUnique({ where: { id: 'stock-a' } })).currentStock;
+  const row = await workflow.createDelivery(data, user);
+  await workflow.createDelivery(data, user);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: 'stock-a' } })).currentStock, stock - 1);
+  assert.equal(await prisma.bill.count({ where: { billNumber: data.billNumber } }), 0);
+  await workflow.updateDelivery({ actionId: 'delivery-prepare', id: row.id, expectedRevision: 0, status: 'READY' }, user);
+  await workflow.updateDelivery({ actionId: 'delivery-assign', id: row.id, expectedRevision: 1, status: 'OUT_FOR_DELIVERY', riderId: 'rider-a' }, user);
+  const pay = { actionId: 'delivery-collection', id: row.id, amount: 115, paymentMethod: 'CASH', complete: true };
+  await assert.rejects(workflow.collectDelivery(pay, { id: 'admin-b', restaurantId: 'restaurant-b', role: 'ADMIN' }), /not found/);
+  await prisma.product.update({ where: { id: 'product-a' }, data: { price: 150 } });
+  try {
+    await workflow.collectDelivery(pay, { id: 'rider-a', restaurantId: 'restaurant-a', role: 'DELIVERY' });
+    await workflow.collectDelivery(pay, { id: 'rider-a', restaurantId: 'restaurant-a', role: 'DELIVERY' });
+    const bill = await prisma.bill.findFirst({ where: { billNumber: data.billNumber } });
+    assert.equal(bill.grandTotal, 115);
+    assert.equal(JSON.parse(bill.invoiceItems)[0].price, 100);
+    assert.equal(await prisma.bill.count({ where: { billNumber: data.billNumber } }), 1);
+    assert.equal((await prisma.inventoryItem.findUnique({ where: { id: 'stock-a' } })).currentStock, stock - 1);
+    assert.equal((await prisma.deliveryOrder.findUnique({ where: { id: row.id } })).status, 'DELIVERED');
+  } finally { await prisma.product.update({ where: { id: 'product-a' }, data: { price: 100 } }); }
+});
+
+test('archived deliveries retain split cash custody and remittance is validated and idempotent', async () => {
+  const workflow = app.get(WorkflowService), user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  await prisma.user.create({ data: { id: 'rider-remit', restaurantId: 'restaurant-a', name: 'Cash rider', role: 'DELIVERY' } });
+  const rider = { id: 'rider-remit', restaurantId: 'restaurant-a', role: 'DELIVERY' };
+  const row = await workflow.createDelivery({ actionId: 'remit-dispatch', orderNumber: 'REMIT-ORDER', billNumber: 'REMIT-BILL', orderType: 'DELIVERY', customerName: 'Guest', items: [{ productId: 'product-a', quantity: 1 }], grandTotal: 105 }, user);
+  await workflow.kitchenStatus({ actionId: 'remit-ready', orderNumber: 'REMIT-ORDER', status: 'READY' }, user);
+  assert.equal((await prisma.deliveryOrder.findUnique({ where: { id: row.id } })).status, 'READY');
+  await workflow.updateDelivery({ actionId: 'remit-assign', id: row.id, expectedRevision: 1, status: 'OUT_FOR_DELIVERY', riderId: rider.id }, rider);
+  await workflow.updateDelivery({ actionId: 'remit-unassign', id: row.id, expectedRevision: 2, status: 'READY', riderId: null }, rider);
+  await workflow.updateDelivery({ actionId: 'remit-reassign', id: row.id, expectedRevision: 3, status: 'OUT_FOR_DELIVERY', riderId: rider.id }, rider);
+  await workflow.collectDelivery({ actionId: 'remit-collection', id: row.id, paymentMethod: 'SPLIT', tenders: { CASH: 40, UPI: 65 }, complete: true }, rider);
+  const saved = await prisma.deliveryOrder.findUnique({ where: { id: row.id } });
+  await workflow.updateDelivery({ actionId: 'remit-archive', id: row.id, expectedRevision: saved.revision, archived: true }, user);
+  const summary = await workflow.riderRemittanceSummary(rider.id, user);
+  assert.equal(summary.cash, 40); assert.equal(summary.digital, 65); assert.equal(summary.trips, 1);
+  const data = { actionId: 'remit-cash', riderId: rider.id, amount: summary.cash, deliveryIds: summary.deliveryIds };
+  await assert.rejects(workflow.remitRiderCash(data, rider), /cashier or manager/);
+  await assert.rejects(workflow.remitRiderCash({ ...data, amount: 39 }, user), /changed/);
+  await assert.rejects(workflow.riderRemittanceSummary(rider.id, { ...user, restaurantId: 'restaurant-b' }), /not found/);
+  await workflow.remitRiderCash(data, user); await workflow.remitRiderCash(data, user);
+  assert.equal((await workflow.riderRemittanceSummary(rider.id, user)).trips, 0);
+  assert.equal(await prisma.systemSetting.count({ where: { restaurantId: 'restaurant-a', settingKey: 'command:rider-remit:remit-cash' } }), 1);
+  assert.equal((await prisma.bill.findFirst({ where: { billNumber: 'REMIT-BILL' } })).grandTotal, 105);
+});
+
+test('refunds are based on saved invoice lines and cannot duplicate money or inventory', async () => {
+  const billing = app.get(BillingService), workflow = app.get(WorkflowService);
+  const user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  const bill = await billing.processDirectCheckout(checkout('return'), 'restaurant-a', 'admin-a');
+  const line = JSON.parse(bill.invoiceItems)[0];
+  const stock = (await prisma.inventoryItem.findUnique({ where: { id: 'stock-a' } })).currentStock;
+  const data = { actionId: 'partial-refund', billNumber: bill.billNumber, items: [{ id: line.id, quantity: 1 }], action: 'RESTOCK', reason: 'Wrong item', refundDest: 'CASH' };
+  assert.equal((await workflow.refund(data, user)).totalRefund, 105);
+  await workflow.refund(data, user);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: 'stock-a' } })).currentStock, stock + 1);
+  await assert.rejects(workflow.refund({ ...data, actionId: 'too-many-refunds', items: [{ id: line.id, quantity: 2 }] }, user), /exceeds/);
+  await assert.rejects(workflow.refund({ ...data, actionId: 'unauthorized-refund' }, { id: 'cashier-a', restaurantId: 'restaurant-a', role: 'CASHIER' }), /authorization/);
+  await workflow.refund({ ...data, actionId: 'remaining-refund' }, user);
+  assert.equal((await prisma.bill.findUnique({ where: { id: bill.id } })).refundedAmount, 210);
+});
+
+test('checkout rejects a stale cart that omits another waiter’s kitchen additions', async () => {
+  const billing = app.get(BillingService);
+  await billing.saveKitchenOrder({ id: 'shared-kitchen-one', orderNumber: 'SHARED-ORDER', items: [{ productId: 'product-a', quantity: 2 }] }, 'restaurant-a', 'admin-a');
+  await billing.saveKitchenOrder({ id: 'shared-kitchen-two', orderNumber: 'SHARED-ORDER', items: [{ productId: 'product-a', quantity: 1 }] }, 'restaurant-a', 'admin-a');
+  await assert.rejects(billing.processDirectCheckout({ ...checkout('stale-cart'), orderNumber: 'SHARED-ORDER' }, 'restaurant-a', 'admin-a'), /changed on another terminal/);
+  assert.equal(await prisma.bill.count({ where: { billNumber: 'BILL-stale-cart' } }), 0);
+  assert.equal((await prisma.orderItem.aggregate({ where: { order: { orderNumber: 'SHARED-ORDER' } }, _sum: { quantity: true } }))._sum.quantity, 3);
+});
+
+test('prepaid delivery creates its bill before dispatch and consumes ingredients once', async () => {
+  const workflow = app.get(WorkflowService), user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  const data = { actionId: 'prepaid-dispatch', orderNumber: 'PREPAID-ORDER', billNumber: 'PREPAID-BILL', orderType: 'DELIVERY', customerName: 'Prepaid Guest', items: [{ productId: 'product-a', quantity: 1 }], paymentStatus: 'COLLECTED', paymentMethod: 'UPI', grandTotal: 105 };
+  const before = (await prisma.inventoryItem.findUnique({ where: { id: 'stock-a' } })).currentStock;
+  await workflow.createDelivery(data, user);
+  await workflow.createDelivery(data, user);
+  assert.equal((await prisma.bill.findFirst({ where: { billNumber: data.billNumber } })).paymentMethod, 'UPI');
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: 'stock-a' } })).currentStock, before - 1);
+  assert.equal((await prisma.deliveryOrder.findFirst({ where: { orderNumber: data.orderNumber } })).paymentStatus, 'COLLECTED');
+});
+
+test('concurrent inventory movements add deltas, deduplicate retries, and reject stale metadata', async () => {
+  await prisma.inventoryItem.create({ data: { id: 'concurrent-stock', restaurantId: 'restaurant-a', name: 'Concurrent stock', category: 'General', currentStock: 10 } });
+  const workflow = app.get(WorkflowService), user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  await workflow.inventory({ actionId: 'stock-use', changes: [{ id: 'concurrent-stock', delta: -3 }] }, user);
+  const purchase = { actionId: 'stock-purchase', changes: [{ id: 'concurrent-stock', delta: 5 }] };
+  await workflow.inventory(purchase, user); await workflow.inventory(purchase, user);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: 'concurrent-stock' } })).currentStock, 12);
+  await assert.rejects(workflow.inventory({ actionId: 'stale-stock-details', changes: [{ id: 'concurrent-stock', delta: 0, expectedRevision: 0, metadata: { name: 'Wrong', category: 'General', unit: 'kg', costPrice: 1, minThreshold: 2 } }] }, user), /changed on another terminal/);
+});
+
+test('resuming one parked order never deletes another terminal’s parked order', async () => {
+  const workflow = app.get(WorkflowService), user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  await workflow.park({ actionId: 'park-one', expectedRevision: 0, order: { id: 'parked-one', items: [] } }, user);
+  await workflow.park({ actionId: 'park-two', expectedRevision: 0, order: { id: 'parked-two', items: [] } }, user);
+  await assert.rejects(workflow.park({ actionId: 'stale-park', expectedRevision: 0, order: { id: 'parked-one', items: [{ quantity: 3 }] } }, user), /changed or resumed/);
+  const resume = { actionId: 'resume-one', id: 'parked-one', expectedRevision: 1 };
+  await workflow.park(resume, user, true); await workflow.park(resume, user, true);
+  assert.deepEqual((await workflow.parkedState('restaurant-a')).map(row => row.id), ['parked-two']);
+});
+
+test('inventory PO invoices convert units, preserve supplier details, and receive stock once on retry', async () => {
+  const workflow = app.get(WorkflowService), user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  await prisma.inventoryItem.create({ data: { id: 'po-rice', restaurantId: 'restaurant-a', name: 'PO rice', category: 'PRODUCE', unit: 'g', currentStock: 1000 } });
+  const data = { actionId: 'rice-po', id: 'po-rice', purchaseUnits: 2, purchaseUnit: 'kg', conversionFactor: 1000, invoiceCost: 120, vendor: 'Rice Supplier' };
+  await workflow.receiveInventoryPurchase(data, user); await workflow.receiveInventoryPurchase(data, user);
+  const stock = (await workflow.inventoryState('restaurant-a')).find(row => row.id === data.id);
+  assert.equal(stock.currentStock, 3000); assert.equal(stock.costPrice, 0.06);
+  assert.equal(stock.purchaseUnit, 'kg'); assert.equal(stock.conversionFactor, 1000); assert.equal(stock.lastVendor, 'Rice Supplier');
+  const logs = await prisma.stockLog.findMany({ where: { itemId: data.id, reason: 'PURCHASE' } });
+  assert.equal(logs.length, 1); assert.equal(JSON.parse(logs[0].notes).invoiceCost, 120);
+  await assert.rejects(workflow.receiveInventoryPurchase({ ...data, actionId: 'invalid-po', purchaseUnits: null }, user), /positive/);
+  await assert.rejects(workflow.receiveInventoryPurchase({ ...data, actionId: 'foreign-po' }, { ...user, restaurantId: 'restaurant-b' }), /not found/);
+  await assert.rejects(workflow.receiveInventoryPurchase({ ...data, actionId: 'changed-conversion', conversionFactor: 10 }, user), /changed/);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: data.id } })).currentStock, 3000);
+});
+
+test('stale menu revisions cannot erase newer edits and lost acknowledgments remain idempotent', async () => {
+  const gateway = app.get(KdsGateway);
+  const client = { handshake: { auth: { token: adminToken, restaurantId: 'restaurant-a' } }, data: {} };
+  const data = { actionId: 'menu-one', expectedRevision: 0, categories: [{ id: 'category-a', name: 'Main', sortOrder: 0 }], products: [{ id: 'product-a', name: 'Meal', category: 'Main', price: 100, gstRate: 5 }] };
+  assert.equal((await gateway.handleSyncMenu(data, client)).status, 'OK');
+  assert.equal((await gateway.handleSyncMenu(data, client)).status, 'OK');
+  assert.equal((await gateway.handleSyncMenu({ ...data, actionId: 'stale-menu', products: [] }, client)).status, 'ERROR');
+  assert.equal((await prisma.product.findUnique({ where: { id: 'product-a' } })).isAvailable, true);
+});
+
+test('manager refund grants are bound to the cashier, invoice, and action', async () => {
+  const auth = app.get(AuthService), workflow = app.get(WorkflowService), user = { id: 'cashier-a', restaurantId: 'restaurant-a', role: 'CASHIER' };
+  const bill = await app.get(BillingService).processDirectCheckout(checkout('manager-refund'), 'restaurant-a', 'admin-a');
+  const line = JSON.parse(bill.invoiceItems)[0];
+  const authorization = (await auth.authorizeRefund(user, { pin: '1234', actionId: 'authorized-return', billNumber: bill.billNumber })).authorization;
+  const data = { actionId: 'authorized-return', billNumber: bill.billNumber, authorization, items: [{ id: line.id, quantity: 1 }], action: 'WASTE', reason: 'Reviewed return', refundDest: 'CASH' };
+  await assert.rejects(workflow.refund({ ...data, actionId: 'another-return' }, user), /authorization/);
+  await workflow.refund(data, user);
+  await workflow.refund({ ...data, authorization: 'expired-or-lost-token' }, user);
+  assert.equal(await prisma.returnRecord.count({ where: { billNumber: bill.billNumber } }), 1);
+});
+
+test('standalone add-ons use server catalogue prices and immutable historical item names', async () => {
+  const billing = app.get(BillingService);
+  const bill = await billing.processDirectCheckout({ billNumber: 'ADDON-BILL', orderNumber: 'ADDON-ORDER', items: [{ productId: 'standalone-a1', quantity: 1 }], grandTotal: 21, paymentMethod: 'CASH' }, 'restaurant-a', 'admin-a');
+  const line = JSON.parse(bill.invoiceItems)[0];
+  await prisma.product.update({ where: { id: line.productId }, data: { name: 'Renamed later' } });
+  const history = await billing.getOrderHistory('restaurant-a');
+  assert.equal(history.find(row => row.billNumber === bill.billNumber).order.items[0].product.name, '+ Extra Mayonnaise');
+  await assert.rejects(billing.processDirectCheckout({ billNumber: 'SHORT-PAYMENT', orderNumber: 'SHORT-ORDER', items: [{ productId: 'product-a', quantity: 1 }], tenders: { CASH: 104.99 }, paymentMethod: 'CASH' }, 'restaurant-a', 'admin-a'), /Insufficient/);
+});
+
+test('ledger refunds reduce credit once without counting the same reduction twice', async () => {
+  const workflow = app.get(WorkflowService), user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  const bill = await app.get(BillingService).processDirectCheckout({ ...checkout('credit-refund'), customerName: 'Refund Credit Guest', customerPhone: '9000000003', tenders: { CREDIT: 210 }, paymentMethod: 'CREDIT' }, 'restaurant-a', 'admin-a');
+  const line = JSON.parse(bill.invoiceItems)[0];
+  await workflow.refund({ actionId: 'credit-return', billNumber: bill.billNumber, items: [{ id: line.id, quantity: 1 }], action: 'WASTE', reason: 'Credit adjustment', refundDest: 'LEDGER' }, user);
+  const entries = (await workflow.ledger('restaurant-a')).filter(row => row.customerPhone === '9000000003' && row.status === 'UNPAID');
+  assert.equal(entries.reduce((sum, row) => sum + row.amount, 0), 105);
+  assert.equal((await prisma.customer.findUnique({ where: { restaurantId_mobile: { restaurantId: 'restaurant-a', mobile: '9000000003' } } })).creditBalance, 105);
+});
+
+test('split sales and partial refunds preserve exact report totals and tax reversal', async () => {
+  const { financialSummary } = require('../src/billing/financial');
+  const workflow = app.get(WorkflowService), user = { id: 'admin-a', restaurantId: 'restaurant-a', role: 'ADMIN' };
+  const reportTime = new Date('2020-01-02T12:00:00.000Z');
+  const bill = await app.get(BillingService).processDirectCheckout({ ...checkout('split-report'), tenders: { CASH: 120, UPI: 90 }, paymentMethod: 'SPLIT' }, 'restaurant-a', 'admin-a');
+  const line = JSON.parse(bill.invoiceItems)[0];
+  const refund = await workflow.refund({ actionId: 'report-refund', billNumber: bill.billNumber, items: [{ id: line.id, quantity: 1 }], action: 'WASTE', reason: 'Partial return', refundDest: 'CASH' }, user);
+  await prisma.bill.update({ where: { id: bill.id }, data: { settledAt: reportTime } });
+  await prisma.returnRecord.update({ where: { id: refund.id }, data: { createdAt: reportTime } });
+  const report = await financialSummary(prisma, 'restaurant-a', new Date('2020-01-02T00:00:00.000Z'), new Date('2020-01-03T00:00:00.000Z'));
+  assert.equal(report.grossRevenue, 210);
+  assert.equal(report.netRevenue, 105);
+  assert.equal(report.byPayment.CASH, 15);
+  assert.equal(report.byPayment.UPI, 90);
+  assert.equal(report.refundGst, 5);
+});
+
+test('print jobs use validated local targets and send the provided receipt bytes exactly once', async () => {
+  const net = require('node:net'); const { PrinterService } = require('../src/printer/printer.service');
+  const service = app.get(PrinterService);
+  await assert.rejects(service.printJob({ ip: '127.0.0.1', port: 9100, type: 'RECEIPT' }), /Cloud printing/);
+  const oldCloud = process.env.IS_CLOUD; process.env.IS_CLOUD = 'false';
+  let server;
+  try {
+    await assert.rejects(service.printJob({ ip: '8.8.8.8', port: 9100, type: 'RECEIPT' }), /Invalid local/);
+    let received;
+    const data = new Promise(resolve => { received = resolve; });
+    server = net.createServer(socket => { const chunks = []; socket.on('data', chunk => chunks.push(chunk)); socket.on('end', () => received(Buffer.concat(chunks))); });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const bytes = [27, 64, 82, 101, 99, 101, 105, 112, 116, 10];
+    assert.equal(await service.printJob({ ip: '127.0.0.1', port: server.address().port, type: 'RECEIPT', data: bytes }), true);
+    assert.deepEqual([...await data], bytes);
+  } finally { process.env.IS_CLOUD = oldCloud; if (server) await new Promise(resolve => server.close(resolve)); }
+});
+
+test('new restaurants receive backup schedules in the business timezone immediately', async () => {
+  const restaurant = await app.get(TenantService).createRestaurant({ name: 'Scheduled restaurant', ownerId: 'owner' });
+  try {
+    const { SchedulerRegistry } = require('@nestjs/schedule');
+    const job = app.get(SchedulerRegistry).getCronJob(`database-backup-${restaurant.id}`);
+    assert.equal(job.cronTime.timeZone, 'Asia/Kolkata');
+  } finally { await prisma.restaurant.delete({ where: { id: restaurant.id } }); }
+});
+
+test('a local database upgrade preserves old rows and creates a readable pre-upgrade restore point', async () => {
+  const oldSchema = fs.readFileSync(path.join(__dirname, 'fixtures/previous-schema.prisma'), 'utf8');
+  const schema = path.join(directory, 'old-schema.prisma'); fs.writeFileSync(schema, oldSchema);
+  const ddl = spawnSync(process.execPath, [require.resolve('prisma/build/index.js'), 'migrate', 'diff', '--from-empty', '--to-schema-datamodel', schema, '--script'], { encoding: 'utf8', timeout: 60000, env: process.env });
+  assert.equal(ddl.status, 0, ddl.stderr);
+  const database = `file:${path.join(directory, 'old-install.db')}`;
+  const { PrismaClient } = require('@prisma/client');
+  const local = new PrismaClient({ datasources: { db: { url: database } } });
+  const upgrades = path.join(directory, 'upgrades');
+  try {
+    for (const statement of ddl.stdout.split(';').filter(sql => sql.trim())) await local.$executeRawUnsafe(statement);
+    await local.$executeRawUnsafe("INSERT INTO User (id, name, role, updatedAt) VALUES ('upgrade-owner', 'Owner', 'OWNER', CURRENT_TIMESTAMP)");
+    await local.$executeRawUnsafe("INSERT INTO Restaurant (id, name, ownerId, updatedAt) VALUES ('upgrade-restaurant', 'Restaurant', 'upgrade-owner', CURRENT_TIMESTAMP)");
+    await local.$executeRawUnsafe("INSERT INTO InventoryItem (id, name, category, currentStock, unit, minThreshold, costPrice, updatedAt, restaurantId) VALUES ('upgrade-stock', 'Saved stock', 'General', 12, 'kg', 1, 1, CURRENT_TIMESTAMP, 'upgrade-restaurant')");
+    await local.$disconnect();
+    const { upgradeLocalDatabase } = require('../src/prisma/upgrade-local');
+    await upgradeLocalDatabase(database, path.resolve('prisma/schema.prisma'), upgrades);
+    assert.equal((await local.inventoryItem.findUnique({ where: { id: 'upgrade-stock' } })).currentStock, 12);
+    assert.equal((await local.inventoryItem.findUnique({ where: { id: 'upgrade-stock' } })).revision, 0);
+    await upgradeLocalDatabase(database, path.resolve('prisma/schema.prisma'), upgrades);
+    const backups = fs.readdirSync(upgrades).filter(name => name.endsWith('.db'));
+    assert.equal(backups.length, 1);
+    const restoredPath = path.join(directory, 'restored-upgrade.db'); fs.copyFileSync(path.join(upgrades, backups[0]), restoredPath);
+    const restored = new PrismaClient({ datasources: { db: { url: `file:${restoredPath}` } } });
+    try { assert.equal((await restored.$queryRawUnsafe("SELECT currentStock FROM InventoryItem WHERE id = 'upgrade-stock'"))[0].currentStock, 12); } finally { await restored.$disconnect(); }
+  } finally { await local.$disconnect(); }
 });
 
 test('sync credentials are private and bound to one restaurant', async () => {

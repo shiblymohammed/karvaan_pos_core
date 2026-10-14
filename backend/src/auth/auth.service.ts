@@ -106,6 +106,23 @@ export class AuthService {
     return { success: true };
   }
 
+  async authorizeRefund(user: any, body: any) {
+    if (!body?.actionId || !body.billNumber || !user.restaurantId) throw new UnauthorizedException('Refund context is required');
+    const manager = await this.authorizeManager(user.restaurantId, body.pin);
+    return { authorization: this.jwtService.sign({ purpose: 'refund', restaurantId: user.restaurantId, cashierId: user.id, managerId: manager.id, actionId: body.actionId, billNumber: body.billNumber }, { expiresIn: '15m' }) };
+  }
+
+  async verifyRefundAuthorization(token: string, user: any, actionId: string, billNumber: string) {
+    let grant: any;
+    try { grant = this.jwtService.verify(token); } catch { throw new UnauthorizedException('Manager authorization expired. Authorize this refund again.'); }
+    if (grant.purpose !== 'refund' || grant.restaurantId !== user.restaurantId || grant.cashierId !== user.id || grant.actionId !== actionId || grant.billNumber !== billNumber) throw new UnauthorizedException('Invalid refund authorization');
+    const manager = await this.prisma.user.findFirst({ where: { id: grant.managerId, restaurantId: user.restaurantId, isActive: true } });
+    let permissions: any = {};
+    try { permissions = JSON.parse(manager?.permissions || '{}'); } catch {}
+    if (!manager || (!['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(manager.role) && !permissions.canVoid)) throw new UnauthorizedException('Manager authorization is no longer active');
+    return manager.id;
+  }
+
   async authorizeManager(restaurantId: string, pin: string) {
     if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) throw new UnauthorizedException('Invalid authorization PIN');
     const staff = await this.prisma.user.findMany({ where: { restaurantId, isActive: true } });
@@ -117,7 +134,7 @@ export class AuthService {
       const valid = user.pin.startsWith('$2') ? await bcrypt.compare(pin, user.pin) : pin === user.pin;
       if (valid) {
         if (!user.pin.startsWith('$2')) await this.prisma.user.update({ where: { id: user.id }, data: { pin: await bcrypt.hash(pin, 10) } });
-        return { name: user.name };
+        return { name: user.name, id: user.id };
       }
     }
     throw new UnauthorizedException('Unauthorized PIN or insufficient permissions');

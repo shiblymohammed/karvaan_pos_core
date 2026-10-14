@@ -2,6 +2,23 @@ use tauri::Manager;
 use std::sync::Mutex;
 struct BackendChild(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
+#[tauri::command]
+fn print_network_receipt(ip: String, port: u16, data: Vec<u8>) -> Result<String, String> {
+    use std::io::Write;
+    use std::net::{IpAddr, SocketAddr, TcpStream};
+    let address: IpAddr = ip.parse().map_err(|_| "Enter a valid printer IP address")?;
+    let local = match address {
+        IpAddr::V4(value) => value.is_private() || value.is_loopback(),
+        IpAddr::V6(value) => value.is_loopback() || (value.segments()[0] & 0xfe00) == 0xfc00,
+    };
+    if !local || port == 0 || data.is_empty() || data.len() > 1_000_000 { return Err("Invalid local printer target or print data".into()); }
+    let mut stream = TcpStream::connect_timeout(&SocketAddr::new(address, port), std::time::Duration::from_secs(3)).map_err(|error| format!("Printer connection failed: {}", error))?;
+    stream.set_write_timeout(Some(std::time::Duration::from_secs(3))).map_err(|error| error.to_string())?;
+    stream.write_all(&data).map_err(|error| format!("Printer write failed: {}", error))?;
+    stream.flush().map_err(|error| error.to_string())?;
+    Ok("Receipt sent to the local network printer".into())
+}
+
 // ─── Thermal Printer Commands ─────────────────────────────────────────────────
 
 /// List available serial ports (USB/COM ports for receipt printers)
@@ -92,6 +109,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_serial_ports,
             print_receipt,
+            print_network_receipt,
             kick_cash_drawer,
             get_app_version,
             is_tauri_app,

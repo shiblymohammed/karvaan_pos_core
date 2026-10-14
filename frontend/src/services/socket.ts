@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 import { getServerUrl } from './serverConfig';
-import { enqueueAction, getPendingActions, clearAction, getActionContext, sameContext, markActionError } from './offlineQueue';
+import { enqueueAction, getPendingActions, clearAction, getActionContext, sameContext, markActionError, actionResources } from './offlineQueue';
 import { useSettingsStore, applyRemoteSettings } from '../store/useSettingsStore';
 
 
@@ -39,6 +39,7 @@ export function emitSettleBill(billData: {
   customerPhone?: string;
   items?: any[];
   tableId?: string | null;
+  expectedOrderVersion?: string | null;
 }) {
   return emitAction('settle_bill', billData);
 }
@@ -47,6 +48,7 @@ export function emitSettleBill(billData: {
 import { getOperatingMode } from './serverConfig';
 import { toast } from '../store/useToastStore';
 import { apiClient } from './apiClient';
+import { applyLedgerSnapshot } from '../store/useLedgerStore';
 
 export interface ActionResult { status: 'OK' | 'QUEUED' | 'ERROR'; data?: any; message?: string; }
 let flushing: Promise<Map<number, ActionResult>> | null = null;
@@ -56,12 +58,16 @@ export function flushPendingActions(): Promise<Map<number, ActionResult>> {
   flushing = (async () => {
     const results = new Map<number, ActionResult>();
     let context;
+    const blocked = new Set<string>();
     try { context = getActionContext(); } catch { return results; }
     for (const action of await getPendingActions(context)) {
-      if (action.error) break;
+      const resources = actionResources(action.type, action.payload);
+      if (action.error) { for (const resource of resources) blocked.add(resource); continue; }
+      if (resources.some(resource => blocked.has(resource))) continue;
       if (!socket.connected || !sameContext(context, getActionContext())) break;
       try {
-        const result: ActionResult = await socket.timeout(15000).emitWithAck(action.type, action.payload);
+        const payload = Array.isArray(action.payload) ? action.payload : { ...action.payload, actionId: action.payload?.actionId || action.actionId };
+        const result: ActionResult = await socket.timeout(15000).emitWithAck(action.type, payload);
         if (!sameContext(context, getActionContext())) break;
         if (result?.status !== 'OK') {
           const message = result?.message || 'The server did not save this action';
@@ -69,13 +75,15 @@ export function flushPendingActions(): Promise<Map<number, ActionResult>> {
           results.set(action.id!, { status: 'ERROR', message });
           toast.error(message);
           window.dispatchEvent(new CustomEvent('offline-action-error', { detail: { actionId: action.id, message } }));
-          break;
+          for (const resource of resources) blocked.add(resource);
+          continue;
         }
         await clearAction(action.id!);
         results.set(action.id!, result);
       } catch {
         // A lost acknowledgment can mean the write committed. Retain the stable action for an idempotent retry.
-        break;
+        for (const resource of resources) blocked.add(resource);
+        continue;
       }
     }
     return results;
@@ -83,6 +91,16 @@ export function flushPendingActions(): Promise<Map<number, ActionResult>> {
   return flushing;
 }
 socket.on('connect', () => { void flushPendingActions(); });
+
+export async function syncPendingNow() {
+  if (!socket.connected) throw new Error('Cannot sync: no connection to the restaurant server.');
+  const context = getActionContext();
+  const before = await getPendingActions(context);
+  const results = await flushPendingActions();
+  if (!sameContext(context, getActionContext())) throw new Error('The signed-in session changed during sync.');
+  const remaining = await getPendingActions(context);
+  return { confirmed: before.filter(action => results.get(action.id!)?.status === 'OK').length, pending: remaining.length, failed: remaining.filter(action => action.error).length };
+}
 
 // Every action is saved locally before it is sent, including actions created while online.
 export async function emitAction(type: string, payload: any): Promise<ActionResult> {
@@ -132,11 +150,13 @@ export function initSocketListeners() {
       import('../store/cartStore').then(({ useCartStore }) => {
         import('../store/useDeliveryStore').then(({ useDeliveryStore }) => {
           import('../store/useStaffStore').then(({ useStaffStore }) => {
-            import('../store/useInventoryStore').then(({ useInventoryStore }) => {
+                import('../store/useInventoryStore').then(({ useInventoryStore, applyInventorySnapshot }) => {
               import('../store/useMenuStore').then(({ useMenuStore }) => {
 
         // --- On connect: receive master state snapshot ---
         socket.on('sync_master_state', (masterState: any) => {
+          if (masterState.ledgerEntries) applyLedgerSnapshot(masterState.ledgerEntries);
+          if (masterState.menuRevision !== undefined) useMenuStore.setState({ serverRevision: masterState.menuRevision });
           console.log('📥 [POS] Received Master State from Server');
 
           if (masterState.settings) {
@@ -161,7 +181,7 @@ export function initSocketListeners() {
           }
 
           if (masterState.inventoryStock) {
-            useInventoryStore.setState({ ingredients: masterState.inventoryStock });
+            applyInventorySnapshot(masterState.inventoryStock);
           }
 
           if (masterState.recipes) {
@@ -264,6 +284,7 @@ export function initSocketListeners() {
           console.log('🛵 [POS] Delivery orders updated from another terminal. Count:', deliveryOrders.length);
           useDeliveryStore.setState({ orders: deliveryOrders });
         });
+        socket.on('ledger_updated', applyLedgerSnapshot);
 
         // --- Staff Roster updated on another terminal ---
         socket.on('staff_updated', (staffMembers: any[]) => {
@@ -274,7 +295,7 @@ export function initSocketListeners() {
         // --- Inventory updated on another terminal ---
         socket.on('inventory_updated', (inventory: any[]) => {
           console.log('📦 [POS] Inventory stock updated from another terminal. Count:', inventory.length);
-          useInventoryStore.setState({ ingredients: inventory });
+          applyInventorySnapshot(inventory);
         });
 
         // --- Recipes updated on another terminal ---

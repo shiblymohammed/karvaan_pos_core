@@ -30,6 +30,12 @@ jobs:
       - name: Generate database client
         run: npm run prisma:generate
         working-directory: backend
+      - name: Audit production backend dependencies
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: backend
+      - name: Audit production frontend dependencies
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: frontend
       - name: Build backend
         run: npm run build
         working-directory: backend
@@ -49,3 +55,28 @@ jobs:
         env:
           JWT_SECRET: isolated-ci-build-secret-never-used-for-deployment
           SUPER_ADMIN_PASSWORD: isolated-ci-build-password
+      - name: Verify container startup, proxy login, and backup restore
+        env:
+          JWT_SECRET: isolated-ci-build-secret-never-used-for-deployment
+          SUPER_ADMIN_PASSWORD: isolated-ci-build-password
+          PORT_HTTP: 8080
+        run: |
+          set -euo pipefail
+          docker compose up -d --wait --wait-timeout 120
+          curl --fail --silent http://localhost:8080/health | python3 -c 'import json,sys; assert json.load(sys.stdin)["status"] == "ok"'
+          curl --fail --silent -H 'Content-Type: application/json' -d '{"username":"admin","password":"isolated-ci-build-password"}' http://localhost:8080/auth/login | python3 -c 'import json,sys; assert json.load(sys.stdin)["accessToken"]'
+          bash scripts/backup-cloud.sh
+          restore_dir=$(mktemp -d)
+          tar -xzf backups/karvaan_cloud_backup_*.tar.gz -C "$restore_dir"
+          docker cp "$restore_dir/karvaan.db" karvaan-backend:/tmp/restore-check.db
+          test "$(docker exec karvaan-backend sqlite3 /tmp/restore-check.db 'PRAGMA quick_check;')" = "ok"
+          test "$(docker exec karvaan-backend sqlite3 /tmp/restore-check.db 'SELECT COUNT(*) FROM User WHERE role = "SUPER_ADMIN";')" = "1"
+      - name: Container diagnostics and cleanup
+        if: always()
+        env:
+          JWT_SECRET: isolated-ci-build-secret-never-used-for-deployment
+          SUPER_ADMIN_PASSWORD: isolated-ci-build-password
+          PORT_HTTP: 8080
+        run: |
+          docker compose logs --no-color
+          docker compose down --volumes

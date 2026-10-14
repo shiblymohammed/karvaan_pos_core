@@ -1,5 +1,6 @@
 import { uploadMenuImage } from '../../services/menuImageUpload';
 import { resolveMediaUrl } from '../../services/mediaUrl';
+import { authorizedFetch } from '../../services/authFetch';
 import React, { useState, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useMenuStore, Product, Category } from '../../store/useMenuStore';
@@ -377,7 +378,13 @@ export const AdminMenuManager: React.FC = () => {
   const triggerMenuSync = () => {
     setTimeout(() => {
       const state = useMenuStore.getState();
-      emitAction('sync_menu', { categories: state.categories, products: state.products });
+      useMenuStore.setState({ serverRevision: state.serverRevision + 1 });
+      void emitAction('sync_menu', { categories: state.categories, products: state.products, expectedRevision: state.serverRevision }).then(async result => {
+        if (result.status === 'ERROR') {
+          const response = await authorizedFetch('/billing/menu');
+          if (response.ok) useMenuStore.setState(await response.json());
+        }
+      }).catch(error => console.error('Menu refresh failed', error));
     }, 0);
   };
 

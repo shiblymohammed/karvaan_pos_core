@@ -1,10 +1,11 @@
-import { BadRequestException, ForbiddenException, HttpException, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, forwardRef } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer, SubscribeMessage, OnGatewayConnection, MessageBody, ConnectedSocket } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
+import { WorkflowService } from '../billing/workflow.service';
 import { SessionService } from '../auth/session.service';
 import { ADMIN_ROLES } from '../auth/roles.guard';
 
@@ -17,6 +18,7 @@ export class KdsGateway implements OnGatewayConnection {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => BillingService)) private readonly billingService: BillingService,
+    @Inject(forwardRef(() => WorkflowService)) private readonly workflows: WorkflowService,
     private readonly jwtService: JwtService,
     private readonly sessions: SessionService,
   ) {}
@@ -48,6 +50,65 @@ export class KdsGateway implements OnGatewayConnection {
     return value;
   }
 
+  async broadcastOperations(restaurantId: string) {
+    try {
+    const [ledger, deliveries, inventory, orders] = await Promise.all([
+      this.workflows.ledger(restaurantId), this.workflows.deliveryState(restaurantId),
+      this.prisma.inventoryItem.findMany({ where: { restaurantId, isActive: true } }),
+      this.prisma.order.findMany({ where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } }, include: { items: { include: { product: true } }, table: true } }),
+    ]);
+    this.server.to(restaurantId).emit('ledger_updated', ledger);
+    this.server.to(restaurantId).emit('delivery_orders_updated', deliveries);
+    this.server.to(restaurantId).emit('inventory_updated', inventory);
+    for (const order of orders) this.server.to(restaurantId).emit('kds_new_ticket', this.ticket(order));
+    } catch { console.error('Action committed; live notification could not be refreshed.'); }
+  }
+
+  @SubscribeMessage('create_delivery')
+  handleCreateDelivery(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, SALES_ROLES, async user => { const result = await this.workflows.createDelivery(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+  }
+
+  @SubscribeMessage('park_order')
+  handlePark(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, [...SALES_ROLES, 'WAITER'], async user => { const result = await this.workflows.park(data, user); try { this.server.to(user.restaurantId).emit('parked_orders_updated', await this.workflows.parkedState(user.restaurantId)); } catch {} return result; });
+  }
+
+  @SubscribeMessage('remove_parked_order')
+  handleUnpark(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, [...SALES_ROLES, 'WAITER'], async user => { const result = await this.workflows.park(data, user, true); try { this.server.to(user.restaurantId).emit('parked_orders_updated', await this.workflows.parkedState(user.restaurantId)); } catch {} return result; });
+  }
+
+  @SubscribeMessage('update_delivery')
+  handleUpdateDelivery(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, [...SALES_ROLES, 'DELIVERY', 'KITCHEN'], async user => { const result = await this.workflows.updateDelivery(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+  }
+
+  @SubscribeMessage('collect_delivery_payment')
+  handleDeliveryPayment(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, [...SALES_ROLES, 'DELIVERY'], async user => { const result = await this.workflows.collectDelivery(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+  }
+
+  @SubscribeMessage('ledger_payment')
+  handleLedgerPayment(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, SALES_ROLES, async user => { const result = await this.workflows.repay(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+  }
+
+  @SubscribeMessage('apply_inventory_changes')
+  handleInventoryChanges(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, ADMIN_ROLES, async user => { const result = await this.workflows.inventory(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+  }
+
+  @SubscribeMessage('receive_inventory_purchase')
+  handleInventoryPurchase(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, ADMIN_ROLES, async user => { const result = await this.workflows.receiveInventoryPurchase(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+  }
+
+  @SubscribeMessage('record_return')
+  handleReturn(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, SALES_ROLES, async user => { const result = await this.workflows.refund(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+  }
+
   private async owned(tx: any, model: string, id: string, restaurantId: string) {
     const record = await tx[model].findUnique({ where: { id } });
     if (record && record.restaurantId !== restaurantId) throw new ForbiddenException('Record belongs to another restaurant');
@@ -72,7 +133,7 @@ export class KdsGateway implements OnGatewayConnection {
         this.prisma.order.findMany({ where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } }, include: { items: { include: { product: true } }, table: true }, take: 100, orderBy: { createdAt: 'desc' } }),
         this.prisma.parkedOrder.findMany({ where: { restaurantId }, take: 100 }),
         this.prisma.deliveryOrder.findMany({ where: { restaurantId, status: { notIn: ['DELIVERED', 'CANCELLED'] } }, take: 100 }),
-        this.staff(restaurantId), this.prisma.inventoryItem.findMany({ where: { restaurantId } }),
+        this.staff(restaurantId), this.prisma.inventoryItem.findMany({ where: { restaurantId, isActive: true } }),
         this.prisma.table.findMany({ where: { restaurantId } }), this.prisma.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: 'asc' } }),
         this.prisma.product.findMany({ where: { restaurantId }, include: { category: true } }),
         this.prisma.recipeIngredient.findMany({ where: { product: { restaurantId } }, include: { product: true } }),
@@ -86,9 +147,11 @@ export class KdsGateway implements OnGatewayConnection {
         recipeMap.get(r.productId).ingredients.push({ ingredientId: r.inventoryItemId, quantity: r.quantity });
       }
       client.emit('sync_master_state', {
+        menuRevision: (await this.workflows.menu(restaurantId)).serverRevision,
+        ledgerEntries: await this.workflows.ledger(restaurantId),
         kdsTickets: orders.map(o => ({ id: o.id, orderNumber: o.orderNumber, orderType: o.orderType, tableNumber: o.table?.tableNumber || (o.orderType === 'DELIVERY' ? '🛵 Delivery' : 'Takeaway'), status: o.status, firedAt: o.createdAt, elapsedMinutes: 0, items: o.items.map(i => ({ id: i.id, productId: i.productId, name: i.product.name, price: i.price, quantity: i.quantity, notes: i.notes, status: i.status })) })),
-        parkedOrders: parked.map(p => { try { return JSON.parse(p.data); } catch { return null; } }).filter(Boolean),
-        deliveryOrders: deliveries.map(d => ({ ...d, items: JSON.parse(d.items), deliveryBoyId: d.riderId, deliveryBoyName: d.riderName, placedAt: d.createdAt })),
+        parkedOrders: parked.map(p => { try { return { ...JSON.parse(p.data), revision: p.revision }; } catch { return null; } }).filter(Boolean),
+        deliveryOrders: await this.workflows.deliveryState(restaurantId),
         staffMembers: staff, inventoryStock: inventory, recipes: Array.from(recipeMap.values()),
         tables: tables.map(t => ({ ...t, number: t.tableNumber, floorId: settings.tableConfig?.find((c: any) => c.id === t.id)?.floorId || 'f-1' })),
         categories, products: products.map(p => ({ ...p, category: p.category.name, prepTime: p.prepTimeMinutes })), settings,
@@ -111,11 +174,23 @@ export class KdsGateway implements OnGatewayConnection {
   @SubscribeMessage('update_kds_status')
   handleStatusUpdate(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
     return this.run(client, [...SALES_ROLES, 'WAITER', 'KITCHEN'], async user => {
-      if (!['COOKING', 'READY', 'SERVED'].includes(data?.status)) throw new BadRequestException('Invalid kitchen status');
-      const order = await this.prisma.order.findFirst({ where: { restaurantId: user.restaurantId, OR: [{ id: data.orderId }, { orderNumber: data.orderNumber || data.orderId }] } });
-      if (!order) throw new BadRequestException('Kitchen order not found');
-      await this.prisma.order.update({ where: { id: order.id }, data: { status: data.status } });
-      this.server.to(user.restaurantId).emit('kds_status_changed', { ...data, orderId: order.id });
+      const result = await this.workflows.kitchenStatus(data, user);
+      // A replay must broadcast the current status, never the old command's status.
+      try {
+        const order = await this.prisma.order.findUnique({ where: { id: result.orderId } });
+        this.server.to(user.restaurantId).emit('kds_status_changed', { orderId: result.orderId, status: order.status });
+      } catch (error) { console.error('Kitchen notification failed', error); }
+      await this.broadcastOperations(user.restaurantId);
+      return result;
+    });
+  }
+
+  @SubscribeMessage('remit_rider_cash')
+  handleRiderRemittance(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, SALES_ROLES, async user => {
+      const result = await this.workflows.remitRiderCash(data, user);
+      await this.broadcastOperations(user.restaurantId);
+      return result;
     });
   }
 
@@ -136,11 +211,12 @@ export class KdsGateway implements OnGatewayConnection {
           if (!order?.id) throw new BadRequestException('Parked order ID is required');
           const existing = await tx.parkedOrder.findUnique({ where: { orderId: order.id } });
           if (existing && existing.restaurantId !== user.restaurantId) throw new ForbiddenException('Invalid parked order');
+          if (existing && existing.data !== JSON.stringify(order)) throw new BadRequestException('This older client cannot overwrite a parked order. Refresh the app before editing.');
           await tx.parkedOrder.upsert({ where: { orderId: order.id }, update: { data: JSON.stringify(order) }, create: { orderId: order.id, restaurantId: user.restaurantId, data: JSON.stringify(order) } });
         }
-        await tx.parkedOrder.deleteMany({ where: { restaurantId: user.restaurantId, orderId: { notIn: orders.map(o => o.id) } } });
+        // Older clients may add a new parked order, but absence in a stale list is never a deletion.
       });
-      this.server.to(user.restaurantId).emit('parked_orders_updated', orders);
+      this.server.to(user.restaurantId).emit('parked_orders_updated', await this.workflows.parkedState(user.restaurantId));
     });
   }
 
@@ -171,29 +247,8 @@ export class KdsGateway implements OnGatewayConnection {
   }
 
   @SubscribeMessage('sync_delivery_orders')
-  handleSyncDeliveryOrders(@MessageBody() data: any[], @ConnectedSocket() client: Socket) {
-    return this.run(client, [...SALES_ROLES, 'DELIVERY', 'KITCHEN'], async user => {
-      const orders = this.list(data);
-      await this.prisma.$transaction(async tx => {
-        for (const order of orders) {
-          const orderNumber = order.orderNumber || order.id;
-          const existing = await tx.deliveryOrder.findUnique({ where: { restaurantId_orderNumber: { restaurantId: user.restaurantId, orderNumber } } });
-          if (user.role === 'DELIVERY' && (!existing || existing.riderId !== user.id)) continue;
-          if (user.role === 'KITCHEN' && !existing) throw new ForbiddenException('Kitchen staff cannot create deliveries');
-          if (!['RECEIVED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'].includes(order.status)) throw new BadRequestException('Invalid delivery status');
-          const riderId = order.deliveryBoyId || order.riderId;
-          if (riderId) {
-            const rider = await this.owned(tx, 'user', riderId, user.restaurantId);
-            if (!rider || rider.role !== 'DELIVERY' || !rider.isActive) throw new BadRequestException('Invalid rider');
-          }
-          const values = { status: order.status, paymentStatus: order.paymentStatus || 'PENDING', paymentMethod: order.paymentMethod || 'CASH', collectedAmount: order.collectedAmount ?? null };
-          const adminValues = { ...values, riderId: order.deliveryBoyId || order.riderId || null, riderName: order.deliveryBoyName || order.riderName || null, customerName: order.customerName || 'Guest', customerPhone: order.customerPhone || null, deliveryAddress: order.deliveryAddress || null, deliveryLat: order.deliveryLat ?? null, deliveryLng: order.deliveryLng ?? null, grandTotal: order.grandTotal || 0, deliveryFee: order.deliveryFee || 0, items: JSON.stringify(order.items || []), notes: order.notes || null };
-          await tx.deliveryOrder.upsert({ where: { restaurantId_orderNumber: { restaurantId: user.restaurantId, orderNumber } }, update: user.role === 'KITCHEN' ? { status: order.status } : user.role === 'DELIVERY' ? values : adminValues, create: { ...adminValues, restaurantId: user.restaurantId, orderNumber } });
-        }
-      });
-      const records = await this.prisma.deliveryOrder.findMany({ where: { restaurantId: user.restaurantId } });
-      this.server.to(user.restaurantId).emit('delivery_orders_updated', records.map(d => ({ ...d, items: JSON.parse(d.items), deliveryBoyId: d.riderId, deliveryBoyName: d.riderName, placedAt: d.createdAt })));
-    });
+  handleSyncDeliveryOrders(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, [...SALES_ROLES, 'DELIVERY', 'KITCHEN'], async () => { throw new BadRequestException('Refresh the app to use delivery commands. Legacy snapshots cannot change payment records.'); });
   }
 
   @SubscribeMessage('sync_staff')
@@ -219,19 +274,8 @@ export class KdsGateway implements OnGatewayConnection {
   }
 
   @SubscribeMessage('sync_inventory')
-  handleSyncInventory(@MessageBody() data: any[], @ConnectedSocket() client: Socket) {
-    return this.run(client, ADMIN_ROLES, async user => {
-      const inventory = this.list(data);
-      await this.prisma.$transaction(async tx => {
-        for (const item of inventory) {
-          if (!item?.name || !Number.isFinite(item.currentStock) || item.currentStock < 0) throw new BadRequestException('Invalid inventory quantity');
-          if (item.id) await this.owned(tx, 'inventoryItem', item.id, user.restaurantId);
-          const values = { currentStock: item.currentStock, category: item.category || 'General', unit: item.unit || 'pcs', minThreshold: item.reorderLevel ?? item.minThreshold ?? 5, costPrice: item.costPerUnit ?? item.costPrice ?? 0 };
-          await tx.inventoryItem.upsert({ where: { restaurantId_name: { restaurantId: user.restaurantId, name: item.name } }, update: values, create: { id: item.id || undefined, restaurantId: user.restaurantId, name: item.name, ...values } });
-        }
-      });
-      this.server.to(user.restaurantId).emit('inventory_updated', await this.prisma.inventoryItem.findMany({ where: { restaurantId: user.restaurantId } }));
-    });
+  handleSyncInventory(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+    return this.run(client, ADMIN_ROLES, async () => { throw new BadRequestException('Refresh the app to apply stock movements. Legacy snapshots cannot overwrite stock.'); });
   }
 
   @SubscribeMessage('sync_recipes')
@@ -257,6 +301,12 @@ export class KdsGateway implements OnGatewayConnection {
   handleSyncMenu(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
     return this.run(client, ADMIN_ROLES, async user => {
       await this.prisma.$transaction(async tx => {
+        const receiptKey = { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: `command:menu:${data.actionId}` } };
+        if (data.actionId && await tx.systemSetting.findUnique({ where: receiptKey })) return;
+        const versionKey = { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: 'menu_revision' } };
+        const version = await tx.systemSetting.findUnique({ where: versionKey });
+        const revision = version ? JSON.parse(version.data) : 0;
+        if (data.expectedRevision !== revision) throw new ConflictException('Menu changed on another terminal. Reload and review your changes.');
         const incomingCategories = this.list(data.categories);
         const incomingProducts = this.list(data.products);
         const newTombstones: Array<{ id: string; model: string; deletedAt: string }> = [];
@@ -276,7 +326,7 @@ export class KdsGateway implements OnGatewayConnection {
         }
 
         // Propagate deletions for omitted products
-        if (incomingProducts.length > 0) {
+        {
           const incProdIds = new Set(incomingProducts.map((p: any) => p.id));
           const existingProds = await tx.product.findMany({ where: { restaurantId: user.restaurantId } });
           for (const ep of existingProds) {
@@ -294,7 +344,7 @@ export class KdsGateway implements OnGatewayConnection {
         }
 
         // Propagate deletions for omitted categories
-        if (incomingCategories.length > 0) {
+        {
           const incCatIds = new Set(incomingCategories.map((c: any) => c.id));
           const existingCats = await tx.category.findMany({ where: { restaurantId: user.restaurantId } });
           for (const ec of existingCats) {
@@ -318,8 +368,13 @@ export class KdsGateway implements OnGatewayConnection {
           if (list.length > 500) list = list.slice(-500);
           await tx.systemSetting.upsert({ where: tKey, update: { data: JSON.stringify(list) }, create: { restaurantId: user.restaurantId, settingKey: 'sync_tombstones', data: JSON.stringify(list) } });
         }
+        await tx.systemSetting.upsert({ where: versionKey, update: { data: JSON.stringify(revision + 1) }, create: { restaurantId: user.restaurantId, settingKey: 'menu_revision', data: JSON.stringify(revision + 1) } });
+        if (data.actionId) await tx.systemSetting.create({ data: { restaurantId: user.restaurantId, settingKey: receiptKey.restaurantId_settingKey.settingKey, data: 'true' } });
       });
-      client.broadcast.to(user.restaurantId).emit('sync_master_state', { categories: data.categories, products: data.products });
+      try {
+        const menu = await this.workflows.menu(user.restaurantId);
+        this.server.to(user.restaurantId).emit('sync_master_state', { ...menu, menuRevision: menu.serverRevision });
+      } catch (error) { console.error('Menu notification failed', error); }
     });
   }
 

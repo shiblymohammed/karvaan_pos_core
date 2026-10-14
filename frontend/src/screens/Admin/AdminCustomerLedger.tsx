@@ -5,6 +5,8 @@ import {
   ArrowLeft, Banknote, Clock, Receipt, Download
 } from 'lucide-react';
 import { useLedgerStore, LedgerEntry } from '../../store/useLedgerStore';
+import { ActionResult } from '../../services/socket';
+import { toast } from '../../store/useToastStore';
 
 // ─── Per-Customer Summary ─────────────────────────────────────────────────────
 interface CustomerSummary {
@@ -25,11 +27,14 @@ const labelCls = 'block text-[11px] font-black text-slate-500 uppercase tracking
 interface SettleModalProps {
   entry: LedgerEntry;
   onClose: () => void;
-  onSettle: (id: string, partialAmount?: number) => void;
+  onSettle: (id: string, partialAmount?: number, method?: 'CASH' | 'UPI' | 'CARD') => Promise<ActionResult>;
+  // Financial confirmation is handled by the server-backed store.
 }
 
 const SettleModal: React.FC<SettleModalProps> = ({ entry, onClose, onSettle }) => {
   const [amount, setAmount] = useState(entry.amount.toFixed(2));
+  const [method, setMethod] = useState<'CASH' | 'UPI' | 'CARD'>('CASH');
+  const [busy, setBusy] = useState(false);
   const isPartial = parseFloat(amount) < entry.amount && parseFloat(amount) > 0;
   const isValid = parseFloat(amount) > 0 && parseFloat(amount) <= entry.amount;
 
@@ -79,10 +84,15 @@ const SettleModal: React.FC<SettleModalProps> = ({ entry, onClose, onSettle }) =
           {isPartial && (
             <p className="text-[10px] sm:text-[11px] font-black text-amber-600 mt-2 flex items-center gap-1 bg-amber-50 p-1.5 sm:p-2 rounded-lg sm:rounded-xl border border-amber-100 leading-tight">
               <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" />
-              Partial: ₹{(entry.amount - parseFloat(amount)).toFixed(2)} will remain as new entry
+              Partial: ₹{(entry.amount - parseFloat(amount)).toFixed(2)} will remain outstanding
             </p>
           )}
         </div>
+
+        <label className={labelCls}>Payment method</label>
+        <select value={method} disabled={busy} onChange={event => setMethod(event.target.value as typeof method)} className={`${inputCls} mb-4`}>
+          <option value="CASH">Cash</option><option value="UPI">UPI</option><option value="CARD">Card</option>
+        </select>
 
         <div className="flex gap-2 sm:gap-3">
           <button onClick={onClose}
@@ -90,11 +100,20 @@ const SettleModal: React.FC<SettleModalProps> = ({ entry, onClose, onSettle }) =
             Cancel
           </button>
           <button
-            onClick={() => { onSettle(entry.id, parseFloat(amount)); onClose(); }}
-            disabled={!isValid}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const result = await onSettle(entry.id, parseFloat(amount), method);
+                if (result.status === 'ERROR') throw new Error(result.message || 'Payment was not recorded');
+                if (result.status === 'OK') toast.success('Payment recorded.');
+                onClose();
+              } catch (error) { toast.error(error instanceof Error ? error.message : 'Payment was not recorded'); }
+              finally { setBusy(false); }
+            }}
+            disabled={!isValid || busy}
             className="flex-1 py-3 sm:py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-black text-xs sm:text-sm rounded-xl sm:rounded-2xl shadow-md shadow-emerald-200 transition-transform active:scale-95 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1.5 sm:gap-2">
             <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            {isPartial ? 'Save Partial' : 'Mark Paid'}
+            {busy ? 'Confirming…' : isPartial ? 'Save Partial' : 'Mark Paid'}
           </button>
         </div>
       </div>
@@ -106,7 +125,7 @@ const SettleModal: React.FC<SettleModalProps> = ({ entry, onClose, onSettle }) =
 interface CustomerDetailProps {
   customer: CustomerSummary;
   onBack: () => void;
-  onSettle: (id: string, amount?: number) => void;
+  onSettle: SettleModalProps['onSettle'];
 }
 
 const CustomerDetail: React.FC<CustomerDetailProps> = ({ customer, onBack, onSettle }) => {
@@ -209,7 +228,7 @@ const CustomerDetail: React.FC<CustomerDetailProps> = ({ customer, onBack, onSet
                     {entry.status}
                   </span>
                 </div>
-                {entry.status === 'UNPAID' && (
+                {entry.status === 'UNPAID' && entry.amount > 0 && entry.id.startsWith('credit:') && (
                   <button
                     onClick={() => setSettleTarget(entry)}
                     className="px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-black text-xs sm:text-sm rounded-xl sm:rounded-2xl shadow-lg shadow-emerald-200 transition-all cursor-pointer shrink-0 active:scale-95">
@@ -235,7 +254,8 @@ const CustomerDetail: React.FC<CustomerDetailProps> = ({ customer, onBack, onSet
 
 // ─── Main Ledger Screen ────────────────────────────────────────────────────────
 export const AdminCustomerLedger: React.FC = () => {
-  const { entries, settleDebt, addEntry } = useLedgerStore();
+  const { entries, settleDebt, fetchEntries, legacyEntries } = useLedgerStore();
+  React.useEffect(() => { void fetchEntries(); }, [fetchEntries]);
   const [search, setSearch] = useState('');
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'UNPAID' | 'PAID'>('ALL');
@@ -257,15 +277,14 @@ export const AdminCustomerLedger: React.FC = () => {
         });
       }
       const s = map.get(e.customerPhone)!;
-      s.totalBilled += e.amount;
-      if (e.status === 'PAID') s.totalPaid += e.amount;
-      else s.outstanding += e.amount;
+      s.totalBilled += e.originalAmount ?? e.amount;
+      if (e.status === 'UNPAID') s.outstanding += e.amount;
       s.entryCount += 1;
       s.entries.push(e);
       // Latest date
       if (new Date(e.date) > new Date(s.lastActivity)) s.lastActivity = e.date;
     });
-    return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding);
+    return Array.from(map.values()).map(customer => ({ ...customer, totalPaid: customer.totalBilled - customer.outstanding })).sort((a, b) => b.outstanding - a.outstanding);
   }, [entries]);
 
   const filtered = useMemo(() => {
@@ -283,25 +302,7 @@ export const AdminCustomerLedger: React.FC = () => {
   const totalOutstanding = customerSummaries.reduce((s, c) => s + c.outstanding, 0);
   const unpaidCustomers = customerSummaries.filter(c => c.outstanding > 0).length;
 
-  const handleSettle = (id: string, partialAmount?: number) => {
-    const entry = entries.find(e => e.id === id);
-    if (!entry) return;
-
-    if (!partialAmount || partialAmount >= entry.amount) {
-      settleDebt(id);
-    } else {
-      settleDebt(id);
-      const remaining = entry.amount - partialAmount;
-      addEntry({
-        customerId: entry.customerId,
-        customerName: entry.customerName,
-        customerPhone: entry.customerPhone,
-        amount: remaining,
-        billNumber: `${entry.billNumber}-R`,
-        date: new Date().toLocaleDateString('en-IN'),
-      });
-    }
-  };
+  const handleSettle: SettleModalProps['onSettle'] = (id, partialAmount, method) => settleDebt(id, partialAmount, method);
 
   if (selectedPhone) {
     const customer = customerSummaries.find(c => c.phone === selectedPhone);
@@ -320,6 +321,7 @@ export const AdminCustomerLedger: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-transparent">
+      {legacyEntries.length > 0 && <details className="m-4 p-3 rounded-xl bg-amber-50 text-sm"><summary>{legacyEntries.length} older device entries preserved for review</summary><p className="mt-2">These entries have not been added to server balances. Reconcile them with the original invoices before recording any repayment.</p>{legacyEntries.map(entry => <p key={entry.id}>{entry.customerName} · {entry.billNumber} · ₹{entry.amount.toFixed(2)} · {entry.status}</p>)}</details>}
       {/* ─── Header ──────────────────────────────────────────────── */}
       <div className="px-4 sm:px-6 pt-4 pb-3 flex-shrink-0">
         <div className="flex flex-row items-center justify-between gap-2 mb-3 sm:mb-4">

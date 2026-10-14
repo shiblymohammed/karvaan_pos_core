@@ -18,6 +18,10 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+export function printNetworkReceipt(ip: string, port: number, data: Uint8Array): Promise<string> {
+  return invoke<string>('print_network_receipt', { ip, port, data: Array.from(data) });
+}
+
 // Lazy-load Tauri invoke to avoid errors in browser mode
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauri()) {
@@ -194,6 +198,8 @@ export function buildKotReceipt(params: {
  */
 export function buildBillReceipt(params: {
   restaurantName: string;
+  restaurantAddress?: string;
+  gstin?: string;
   billNumber: string;
   orderType: string;
   tableName?: string;
@@ -203,6 +209,10 @@ export function buildBillReceipt(params: {
   gst: number;
   grandTotal: number;
   paymentMethod: string;
+  tenders?: Record<string, number>;
+  deliveryFee?: number;
+  pendingConfirmation?: boolean;
+  paymentPending?: boolean;
   cashier: string;
   time: string;
 }): Uint8Array {
@@ -212,6 +222,10 @@ export function buildBillReceipt(params: {
     .bold(true)
     .doubleSize(true)
     .text(params.restaurantName)
+    .newline()
+    .text(params.restaurantAddress || '')
+    .newline()
+    .text(params.gstin ? `GSTIN: ${params.gstin}` : '')
     .newline()
     .doubleSize(false)
     .bold(false)
@@ -241,7 +255,7 @@ export function buildBillReceipt(params: {
   params.items.forEach(item => {
     const name = item.name.substring(0, 21).padEnd(21);
     const qty = String(item.qty).padStart(3);
-    const amt = `${(item.qty * item.price).toFixed(0)}`.padStart(8);
+    const amt = `${(item.qty * item.price).toFixed(2)}`.padStart(8);
     esc.text(`${name}${qty}${amt}`).newline();
     if (item.notes) {
       esc.text(`  ** ${item.notes.substring(0, 27)}`).newline();
@@ -258,17 +272,23 @@ export function buildBillReceipt(params: {
   }
 
   esc
-    .text(`${'GST (5%)'.padEnd(24)}${params.gst.toFixed(2).padStart(8)}`)
+    .text(`${'GST'.padEnd(24)}${params.gst.toFixed(2).padStart(8)}`)
     .newline()
+  if (params.deliveryFee) esc.text(`${'Delivery fee'.padEnd(24)}${params.deliveryFee.toFixed(2).padStart(8)}`).newline();
+  esc
     .separator()
     .bold(true)
     .doubleSize(true)
-    .text(`TOTAL   Rs.${params.grandTotal.toFixed(0)}`)
+    .text(`TOTAL   Rs.${params.grandTotal.toFixed(2)}`)
     .newline()
     .doubleSize(false)
     .bold(false)
     .text(`Payment: ${params.paymentMethod}`)
     .newline()
+  if (params.tenders) for (const [method, amount] of Object.entries(params.tenders)) if (amount > 0) esc.text(`${method}: Rs.${amount.toFixed(2)}`).newline();
+  if (params.pendingConfirmation) esc.text('AWAITING SERVER CONFIRMATION').newline();
+  if (params.paymentPending) esc.text('PAYMENT PENDING').newline();
+  esc
     .separator()
     .align(1)
     .text('Thank you! Visit again.')

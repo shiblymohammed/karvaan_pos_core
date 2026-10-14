@@ -12,6 +12,7 @@ export const AdminCustomerScreen: React.FC = () => {
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
 
   const { entries: ledgerEntries, settleDebt } = useLedgerStore();
+  useEffect(() => { void useLedgerStore.getState().fetchEntries(); }, []);
 
   const fetchHistory = async () => {
     try {

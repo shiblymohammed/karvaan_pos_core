@@ -181,7 +181,7 @@ export const POSScreen: React.FC = () => {
     };
 
     useCartStore.setState({ checkoutBillNumber: billData.billNumber, currentOrderNumber: billData.orderNumber });
-    const result = await emitSettleBill({ ...billData, orderType, tableId: selectedTableId, customerName: customer?.name, customerPhone: customer?.phone });
+    const result = await emitSettleBill({ ...billData, orderType, tableId: selectedTableId, expectedOrderVersion: useCartStore.getState().orderVersion, customerName: customer?.name, customerPhone: customer?.phone });
 
     if (result.status === 'ERROR') {
       setSettleState(prev => ({ ...prev, isProcessing: false }));
@@ -192,24 +192,14 @@ export const POSScreen: React.FC = () => {
 
     if (selectedTableId) setTableStatus(selectedTableId, 'AVAILABLE');
 
-    if (tenders.CREDIT > 0 && customer) {
-      useLedgerStore.getState().addEntry({
-        customerId: `cust-${customer.phone}`,
-        customerName: customer.name,
-        customerPhone: customer.phone,
-        amount: tenders.CREDIT,
-        billNumber: billData.billNumber,
-        date: new Date().toLocaleDateString(),
-      });
-    }
-
     if (orderType === 'PARCEL') {
-      useDeliveryStore.getState().addOrder({
+      await useDeliveryStore.getState().addOrder({
+        billNumber: billData.billNumber,
         orderNumber: useCartStore.getState().currentOrderNumber || billData.orderNumber,
         orderType: 'PARCEL',
         customerName: customer?.name || 'Walk-In Guest',
         customerPhone: customer?.phone || '',
-        items: items.map(i => ({ name: i.name, quantity: i.quantity, price: i.price })),
+        items: items.map(i => ({ productId: i.productId, name: i.name, quantity: i.quantity, price: i.price, addons: i.addons, notes: i.notes })),
         subtotal, grandTotal,
         status: 'RECEIVED',
         paymentStatus: 'COLLECTED',
@@ -223,82 +213,35 @@ export const POSScreen: React.FC = () => {
       useKdsStore.getState().clearTableTickets(selectedTableName || 'Takeaway');
     }
 
-    setLastBill(billData);
+    const savedBill = result.status === 'OK' ? result.data : null;
+    setLastBill({ ...billData, ...(savedBill ? { subtotal: savedBill.subtotal, discount: savedBill.discount, cgst: savedBill.cgst, sgst: savedBill.sgst, grandTotal: savedBill.grandTotal, method: savedBill.paymentMethod, tenders: JSON.parse(savedBill.tenders || '{}'), items: JSON.parse(savedBill.invoiceItems || 'null')?.map((line: any) => ({ ...line, addons: [] })) || billData.items } : {}), pendingConfirmation: result.status === 'QUEUED' });
     setSettleState({ isOpen: false, method: 'CASH', isProcessing: false });
     setReceiptType('CHECKOUT');
     clearCart();
   };
 
   // ─── Delivery Dispatch ────────────────────────────────────────────────────
-  const handleDispatchDelivery = (isPrepaid: boolean = false) => {
-    if (items.length === 0) return;
-    const termId = getTerminalId();
-    const resolvedOrderNumber = useCartStore.getState().currentOrderNumber || `${orderPrefix}-${termId}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const billNum = `DEL-${termId}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
-    const deliveryGrandTotal = grandTotal + (deliveryFee || 0);
-
-    const newItems = items.filter(i => i.status === 'NEW');
-    if (newItems.length > 0) {
-      useKdsStore.getState().addTicket({
-        id: `kot-${Date.now()}`,
-        orderNumber: resolvedOrderNumber,
-        tableNumber: '🛵 Delivery',
-        orderType: 'DELIVERY',
-        customerName: customer?.name,
-        items: newItems.map(i => {
-          const addonText = i.addons && i.addons.length > 0
-            ? ` [Add: ${Object.entries(i.addons.reduce((acc: any, addon: any) => { acc[addon.name] = (acc[addon.name] || 0) + 1; return acc; }, {})).map(([name, qty]) => (qty as number) > 1 ? `${qty}x ${name}` : name).join(', ')}]`
-            : '';
-
-          let subItems: { name: string; qty: number }[] | undefined;
-          if (i.isCombo && i.comboItems && i.comboItems.length > 0) {
-            const grouped = i.comboItems.reduce((acc: any, id: string) => {
-              const pName = useMenuStore.getState().products.find(p => p.id === id)?.name || 'Unknown Item';
-              if (pName) { if (!acc[pName]) acc[pName] = { qty: 0, id }; acc[pName].qty += 1; }
-              return acc;
-            }, {});
-            subItems = Object.entries(grouped).map(([name, payload]: any) => ({ name, qty: payload.qty }));
-          }
-
-          return {
-            name: i.name, quantity: i.quantity,
-            notes: (i.notes || '') + addonText, status: 'COOKING',
-            category: i.category, price: i.price || 0,
-            productId: i.productId || 'unknown', addons: i.addons, subItems,
-          };
-        }),
-        firedAt: new Date().toISOString(),
-      });
-    }
-
-    depleteForOrder(items, 'DELIVERY');
-
-    useDeliveryStore.getState().addOrder({
-      orderNumber: resolvedOrderNumber, orderType: 'DELIVERY',
-      customerName: customer?.name || 'Customer', customerPhone: customer?.phone || '',
+  const handleDispatchDelivery = async (isPrepaid: boolean = false) => {
+    if (!items.length || settleState.isProcessing) return;
+    setSettleState(previous => ({ ...previous, isProcessing: true }));
+    const identity = useCartStore.getState();
+    const orderNumber = identity.currentOrderNumber || orderPrefix + '-' + crypto.randomUUID();
+    const billNumber = identity.checkoutBillNumber || 'DEL-' + crypto.randomUUID();
+    useCartStore.setState({ currentOrderNumber: orderNumber, checkoutBillNumber: billNumber });
+    const total = Number((grandTotal + (deliveryFee || 0)).toFixed(2));
+    const result = await useDeliveryStore.getState().addOrder({
+      orderNumber, billNumber, orderType: 'DELIVERY',
+      customerName: customer?.name || 'Guest', customerPhone: customer?.phone || '',
       deliveryAddress: deliveryAddress || '', deliveryFee: deliveryFee || 0,
-      items: items.map(i => ({ name: i.name, quantity: i.quantity, price: i.price })),
-      subtotal, grandTotal: deliveryGrandTotal,
-      status: 'RECEIVED',
-      paymentStatus: isPrepaid ? 'COLLECTED' : 'PENDING',
-      paymentMethod: isPrepaid ? 'UPI' : undefined,
-      collectedAmount: isPrepaid ? deliveryGrandTotal : undefined,
+      items: items.map(item => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price, notes: item.notes, addons: item.addons })),
+      subtotal, discount, grandTotal: total, status: 'RECEIVED',
+      paymentStatus: isPrepaid ? 'COLLECTED' : 'PENDING', paymentMethod: isPrepaid ? 'UPI' : 'CASH',
       waiterName: selectedWaiter || undefined,
     });
-
-    const billData = {
-      orderNumber: resolvedOrderNumber, billNumber: billNum,
-      table: '🛵 Delivery', cashier: currentUser?.name || 'System',
-      waiter: selectedWaiter || 'Dispatch', items: [...items],
-      subtotal, discount, cgst, sgst, deliveryFee: deliveryFee || 0,
-      grandTotal: deliveryGrandTotal, method: isPrepaid ? 'PREPAID (ONLINE/UPI)' : 'COD',
-      customerName: customer?.name || 'Customer', customerPhone: customer?.phone || '',
-      deliveryAddress: deliveryAddress || '',
-      time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(),
-      isDelivery: true,
-    };
-
-    setLastBill(billData);
+    setSettleState(previous => ({ ...previous, isProcessing: false }));
+    if (result.status === 'ERROR') { toast.error(result.message || 'Delivery was not saved'); return; }
+    if (result.status === 'QUEUED') toast.info('Delivery saved on this device; awaiting server confirmation.');
+    setLastBill({ orderNumber, billNumber, table: 'Delivery', cashier: currentUser?.name || 'Staff', waiter: selectedWaiter || 'Dispatch', items: [...items], subtotal, discount, cgst, sgst, deliveryFee: deliveryFee || 0, grandTotal: total, method: isPrepaid ? 'UPI' : 'COD', customerName: customer?.name, customerPhone: customer?.phone, time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(), pendingConfirmation: result.status === 'QUEUED', paymentPending: !isPrepaid });
     setReceiptType('CHECKOUT');
     clearCart();
   };

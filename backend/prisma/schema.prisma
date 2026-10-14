@@ -217,6 +217,9 @@ model Bill {
   deliveryFee   Float     @default(0.0)
   grandTotal    Float
   paymentMethod String    @default("CASH") // CASH, CARD, UPI, CREDIT, SPLIT
+  tenders       String?   // Immutable allocation of payment methods, excluding cash change
+  invoiceItems  String?   // Immutable billed lines, taxes, and recipe quantities
+  refundedAmount Float    @default(0.0)
   cashierId     String?
   customerName  String?
   customerPhone String?
@@ -238,6 +241,16 @@ model Bill {
 model DeliveryOrder {
   id              String    @id @default(uuid())
   orderNumber     String
+  orderType       String    @default("DELIVERY")
+  billNumber      String?
+  discount        Float     @default(0.0)
+  subtotal        Float     @default(0.0)
+  archived        Boolean   @default(false)
+  inventoryConsumed Boolean @default(false)
+  revision        Int       @default(0)
+  collectedById   String?
+  collectedTenders String?
+  remittedAt      DateTime?
   customerName    String
   customerPhone   String?
   deliveryAddress String?
@@ -272,6 +285,7 @@ model ParkedOrder {
   id        String   @id @default(uuid())
   orderId   String   @unique // Client-side order ID from frontend
   data      String // Full JSON snapshot of cart state
+  revision  Int    @default(0)
   heldAt    DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -288,9 +302,14 @@ model InventoryItem {
   name         String
   category     String // e.g. "Vegetables", "Dairy", "Meat", "Dry Pantry"
   currentStock Float    @default(0.0)
+  revision     Int      @default(0)
+  isActive     Boolean  @default(true)
   unit         String   @default("kg")
   minThreshold Float    @default(5.0)
   costPrice    Float    @default(0.0)
+  purchaseUnit String?
+  conversionFactor Float?
+  lastVendor   String?
   updatedAt    DateTime @updatedAt
 
   restaurantId String
@@ -339,6 +358,10 @@ model LedgerEntry {
   customerId   String
   customerName String
   amount       Float
+  settledAmount Float   @default(0.0)
+  sourceEntryId String?
+  paymentMethod String?
+  recordedBy    String?
   type         String   @default("CREDIT") // CREDIT, PAYMENT
   billNumber   String?
   notes        String?
@@ -357,6 +380,8 @@ model ReturnRecord {
   action       String // "RESTOCK", "WASTE"
   refundDest   String // "CASH", "UPI", "LEDGER"
   totalRefund  Float
+  cgst         Float    @default(0.0)
+  sgst         Float    @default(0.0)
   items        String // JSON string of returned items
   authorizedBy String?
   createdAt    DateTime @default(now())

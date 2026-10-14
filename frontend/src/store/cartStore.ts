@@ -6,6 +6,8 @@ import { useKdsStore } from './useKdsStore';
 import { useSettingsStore } from './useSettingsStore';
 import { useMenuStore } from './useMenuStore';
 import { socket, emitAction } from '../services/socket';
+import { authorizedFetch } from '../services/authFetch';
+import { toast } from './useToastStore';
 
 export interface CartItem {
   productId: string;
@@ -21,6 +23,7 @@ export interface CartItem {
 }
 
 export interface ParkedOrder {
+  revision?: number;
   id: string;
   name: string;
   items: CartItem[];
@@ -49,6 +52,7 @@ interface CartState {
   orderType: 'DINE_IN' | 'PARCEL' | 'DELIVERY';
   currentOrderNumber: string | null;
   checkoutBillNumber: string | null;
+  orderVersion: string | null;
   deliveryAddress: string;
   deliveryFee: number;
   deliveryStatus: string | null;
@@ -85,6 +89,7 @@ export const useCartStore = create<CartState>()(
       items: [],
       currentOrderNumber: null,
       checkoutBillNumber: null,
+      orderVersion: null,
       selectedTableId: null,
       selectedTableName: null,
       selectedWaiter: null,
@@ -237,7 +242,7 @@ export const useCartStore = create<CartState>()(
     }
 
     const newParked: ParkedOrder = {
-      id: `PARK-${Date.now()}`,
+      id: (state.selectedTableId ? state.heldOrders.find(order => order.tableId === state.selectedTableId)?.id : undefined) || crypto.randomUUID(),
       name: label || state.selectedTableName || state.customer?.name || `Order #${state.heldOrders.length + 1}`,
       items: [...state.items],
       tableId: state.selectedTableId,
@@ -266,7 +271,9 @@ export const useCartStore = create<CartState>()(
     });
 
     // Broadcast parked orders to all other devices
-    emitAction('sync_parked_orders', nextHeldOrders);
+    const revision = state.heldOrders.find(order => order.id === newParked.id)?.revision || 0;
+    useCartStore.setState({ heldOrders: nextHeldOrders.map(order => order.id === newParked.id ? { ...order, revision: revision + 1 } : order) });
+    void emitAction('park_order', { order: newParked, expectedRevision: revision });
   },
 
   sendKot: () => {
@@ -326,6 +333,7 @@ export const useCartStore = create<CartState>()(
       customer: target.customerName ? { name: target.customerName, phone: '' } : null,
       orderType: target.orderType || 'DINE_IN',
       currentOrderNumber: target.orderNumber || null,
+      orderVersion: null,
       checkoutBillNumber: null,
       deliveryAddress: target.deliveryAddress || '',
       deliveryFee: target.deliveryFee || 0,
@@ -335,11 +343,19 @@ export const useCartStore = create<CartState>()(
     });
 
     // Broadcast that this order is no longer parked
-    emitAction('sync_parked_orders', nextHeldOrders);
+    void emitAction('remove_parked_order', { id: target.id, orderNumber: target.orderNumber, tableId: target.tableId, expectedRevision: target.revision || 0 });
+    if (target.orderNumber && navigator.onLine) {
+      const savedItems = target.items;
+      void authorizedFetch(`/billing/active-order/${encodeURIComponent(target.orderNumber)}${target.tableId ? `?tableId=${encodeURIComponent(target.tableId)}` : ''}`).then(async response => {
+        const order = await response.json();
+        if (!response.ok) throw new Error(order.message || 'Latest order could not be loaded');
+        if (order && get().currentOrderNumber === target.orderNumber && JSON.stringify(get().items) === JSON.stringify(savedItems)) set({ currentOrderNumber: order.orderNumber, orderVersion: order.version, items: [...order.items, ...savedItems.filter(item => item.status === 'NEW')] });
+      }).catch(error => toast.error(error.message));
+    }
   },
 
   clearCart: () => {
-    set({ checkoutBillNumber: null });
+    set({ checkoutBillNumber: null, orderVersion: null });
     const state = get();
     if (state.selectedTableId) {
       useTableStore.getState().setTableStatus(state.selectedTableId, 'AVAILABLE');

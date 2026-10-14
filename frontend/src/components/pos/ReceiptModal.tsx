@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { CheckCircle2, Printer, Share2, RotateCcw, X, Loader2 } from 'lucide-react';
 import { toast } from '../../store/useToastStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { isTauri, listSerialPorts, printReceipt, buildBillReceipt, buildKotReceipt } from '../../services/tauriCommands';
 import { apiClient } from '../../services/apiClient';
+import { getPrinterProfile, canBackendPrintLocally } from '../../services/printerProfile';
+import { printNetworkReceipt } from '../../services/tauriCommands';
+import { useSettingsStore } from '../../store/useSettingsStore';
 
 interface ReceiptItem {
   name: string;
@@ -31,6 +34,8 @@ interface BillData {
   date: string;
   deliveryFee?: number;
   customer?: string;
+  pendingConfirmation?: boolean;
+  paymentPending?: boolean;
 }
 
 interface ReceiptModalProps {
@@ -43,76 +48,43 @@ interface ReceiptModalProps {
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, orderType, onClose, onReturn }) => {
   const { currentUser } = useAuthStore();
+  const { receiptName = 'Karvaan POS', receiptAddress = '', receiptGstin = '' } = useSettingsStore();
   const [isPrinting, setIsPrinting] = useState(false);
+  const paper = useRef<HTMLDivElement>(null);
 
   const handlePrint = async () => {
+    if (isPrinting) return;
     setIsPrinting(true);
-    let printed = false;
-
-    // 1. If in Tauri desktop app, attempt hardware serial / USB ESC/POS printing
-    if (isTauri()) {
-      try {
-        const ports = await listSerialPorts();
-        if (ports && ports.length > 0) {
-          const bytes = receiptType === 'KOT'
-            ? buildKotReceipt({
-                orderNumber: bill.orderNumber || bill.billNumber,
-                tableName: bill.table || 'Counter',
-                items: bill.items.map(i => ({ name: i.name, qty: i.quantity, notes: i.notes })),
-                time: bill.time,
-              })
-            : buildBillReceipt({
-                restaurantName: 'Karvaan POS',
-                orderType: bill.table || orderType || 'Dine-In',
-                billNumber: bill.billNumber,
-                tableName: bill.table,
-                cashier: bill.cashier || currentUser?.name || 'Staff',
-                items: bill.items.map(i => ({ name: i.name, qty: i.quantity, price: i.price, notes: i.notes })),
-                subtotal: bill.subtotal,
-                discount: bill.discount || 0,
-                gst: bill.cgst + bill.sgst,
-                grandTotal: bill.grandTotal,
-                paymentMethod: bill.method || 'CASH',
-                time: bill.time,
-              });
-          await printReceipt(ports[0], bytes);
-          toast.success(`🖨️ Thermal receipt printed via ${ports[0]}`);
-          printed = true;
-        }
-      } catch (err) {
-        console.warn('Tauri printer error:', err);
+    const profile = getPrinterProfile();
+    const network = profile.printers.find(printer => printer.id === (receiptType === 'KOT' ? profile.kitchenPrinterId : profile.receiptPrinterId));
+    const lineItems = bill.items.map(item => ({ ...item, price: item.price + (item.addons?.reduce((sum, addon) => sum + addon.price, 0) || 0) }));
+    const bytes = receiptType === 'KOT'
+      ? buildKotReceipt({ orderNumber: bill.orderNumber || bill.billNumber, tableName: bill.table, items: lineItems.map(item => ({ name: item.name, qty: item.quantity, notes: item.notes })), time: bill.time })
+      : buildBillReceipt({ restaurantName: receiptName, restaurantAddress: receiptAddress, gstin: receiptGstin, orderType, billNumber: bill.billNumber, tableName: bill.table, cashier: bill.cashier || currentUser?.name || 'Staff', items: lineItems.map(item => ({ name: item.name, qty: item.quantity, price: item.price, notes: item.notes })), subtotal: bill.subtotal, discount: bill.discount || 0, gst: bill.cgst + bill.sgst, grandTotal: bill.grandTotal, paymentMethod: bill.method, tenders: bill.tenders, deliveryFee: bill.deliveryFee, pendingConfirmation: bill.pendingConfirmation, paymentPending: bill.paymentPending, time: bill.time });
+    try {
+      if (isTauri() && network) await printNetworkReceipt(network.ip, Number(network.port || 9100), bytes);
+      else if (isTauri() && profile.receiptPort) await printReceipt(profile.receiptPort, bytes);
+      else if (network && canBackendPrintLocally()) {
+        const result = await apiClient.post('/printer/print', { ip: network.ip, port: Number(network.port || 9100), type: receiptType === 'KOT' ? 'KOT' : 'RECEIPT', restaurantName: receiptName, orderNumber: bill.orderNumber || bill.billNumber, items: lineItems, grandTotal: bill.grandTotal, data: Array.from(bytes) });
+        if (!result.success) throw new Error('The configured printer did not accept the receipt');
+      } else {
+        const frame = document.createElement('iframe');
+        frame.style.cssText = 'position:fixed;width:1px;height:1px;left:-10000px;border:0';
+        document.body.appendChild(frame);
+        const printed = frame.contentWindow!;
+        const documentToPrint = printed.document;
+        documentToPrint.open();
+        // React escapes receipt values in the preview; print only that receipt.
+        documentToPrint.write('<!doctype html><html><head><title>Receipt</title><style>@page{margin:5mm}body{max-width:72mm;margin:0 auto;color:#000;background:#fff;font:12px monospace}.flex{display:flex}.justify-between{justify-content:space-between}.text-center{text-align:center}.font-bold,.font-black,.font-extrabold{font-weight:bold}.text-base{font-size:16px}.border-t,.border-b{border-bottom:1px dashed #000;padding:5px 0}p{margin:3px 0}</style></head><body>' + (paper.current?.innerHTML || '') + '</body></html>');
+        documentToPrint.close();
+        printed.addEventListener('afterprint', () => frame.remove(), { once: true });
+        printed.focus(); printed.print();
+        setTimeout(() => frame.remove(), 120000);
+        toast.info('Receipt print dialog opened for this device.'); return;
       }
-    }
-
-    // 2. Attempt network ESC/POS thermal printing via backend printer service
-    if (!printed) {
-      try {
-        const res = await apiClient.post('/printer/print', {
-          ip: '127.0.0.1',
-          port: 9100,
-          type: receiptType === 'KOT' ? 'KOT' : 'RECEIPT',
-          restaurantName: 'Karvaan POS',
-          orderNumber: bill.orderNumber || bill.billNumber,
-          items: bill.items,
-          grandTotal: bill.grandTotal,
-        });
-        if (res.success) {
-          toast.success('🖨️ Receipt sent to thermal printer');
-          printed = true;
-        }
-      } catch {
-        // Fallback continues
-      }
-    }
-
-    // 3. Fallback to standard browser print
-    if (!printed) {
-      window.print();
-      toast.info('🖨️ Standard print dialog opened');
-    }
-
-    setIsPrinting(false);
-    if (receiptType === 'PREBILL') onClose();
+      toast.success('Receipt sent to the configured printer.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Printer did not accept the receipt. Check the printer before retrying.'); }
+    finally { setIsPrinting(false); }
   };
 
   return (
@@ -123,7 +95,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
         </div>
         <div>
           <h3 className="font-extrabold text-lg text-pos-text">
-            {receiptType === 'CHECKOUT' ? 'Bill Settled Successfully!' : receiptType === 'KOT' ? 'Kitchen Order Ticket' : 'Pre-Bill Preview'}
+            {bill.pendingConfirmation ? 'Saved on this device — awaiting confirmation' : bill.paymentPending ? 'Delivery dispatched — payment pending' : receiptType === 'CHECKOUT' ? 'Bill Settled Successfully!' : receiptType === 'KOT' ? 'Kitchen Order Ticket' : 'Pre-Bill Preview'}
           </h3>
           <p className="text-xs font-bold text-pos-text-muted">
             {receiptType === 'KOT' ? 'Order: ' : 'Invoice: '} {receiptType === 'KOT' ? bill.orderNumber : bill.billNumber} • {bill.time}
@@ -131,10 +103,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
         </div>
 
         {/* Thermal Paper Preview */}
-        <div className="w-full bg-pos-accent/5 text-pos-text font-mono text-left p-4 rounded-lg shadow-inner text-xs space-y-2 border-t-4 border-dashed border-pos-border">
+        <div ref={paper} className="w-full bg-pos-accent/5 text-pos-text font-mono text-left p-4 rounded-lg shadow-inner text-xs space-y-2 border-t-4 border-dashed border-pos-border">
+          <p className="text-center font-bold">{receiptType === 'KOT' ? `Kitchen ticket ${bill.orderNumber}` : `${receiptType === 'PREBILL' ? 'Pre-bill' : 'Invoice'} ${bill.billNumber}`} · {bill.date} {bill.time}</p>
+          {bill.pendingConfirmation && <p className="text-center font-bold">Awaiting server confirmation</p>}
+          {bill.paymentPending && <p className="text-center font-bold">Payment pending</p>}
           <div className="text-center border-b border-pos-border pb-2">
-            <p className="font-extrabold text-sm uppercase">★ KARVAAN BISTRO & CAFE ★</p>
-            <p className="text-[10px] font-bold text-pos-text-muted">GSTIN: 27AADCK1234F1Z9</p>
+            <p className="font-extrabold text-sm uppercase">{receiptName}</p>
+            {receiptAddress && <p className="text-[10px] font-bold text-pos-text-muted">{receiptAddress}</p>}{receiptGstin && <p className="text-[10px] font-bold text-pos-text-muted">GSTIN: {receiptGstin}</p>}
             <p className="text-[10px] font-bold text-pos-text-muted">Table: {bill.table} | {bill.method === 'SPLIT' ? 'SPLIT PAYMENT' : `Method: ${bill.method}`}</p>
             <p className="text-[10px] font-bold text-pos-text-muted mt-1">Cashier: {bill.cashier} | Server: {bill.waiter}</p>
           </div>
@@ -193,9 +168,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
                 <span>₹{bill.subtotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-[11px] text-pos-text-muted">
-                <span>CGST + SGST (5%):</span>
+                <span>CGST + SGST:</span>
                 <span>₹{(bill.cgst + bill.sgst).toFixed(2)}</span>
               </div>
+              {!!bill.discount && <div className="flex justify-between"><span>Discount:</span><span>−₹{bill.discount.toFixed(2)}</span></div>}
+              {!!bill.deliveryFee && <div className="flex justify-between"><span>Delivery fee:</span><span>₹{bill.deliveryFee.toFixed(2)}</span></div>}
               <div className="flex justify-between text-base font-black border-t border-pos-border pt-1 mt-1">
                 <span>GRAND TOTAL:</span>
                 <span>₹{bill.grandTotal.toFixed(2)}</span>
@@ -204,8 +181,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
           )}
 
           <div className="text-center pt-2 text-[10px] font-bold text-pos-text-muted border-t border-pos-border">
-            <p>Thank you for dining with Karvaan!</p>
-            <p>Scan QR on table for digital loyalty points.</p>
+            <p>Thank you for visiting!</p>
           </div>
         </div>
 

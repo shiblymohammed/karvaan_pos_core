@@ -23,13 +23,13 @@ export class SettingsService implements OnModuleInit {
       where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } },
     });
     
-    if (!setting) {
-      return {};
-    }
+    const restaurant = await this.prisma.restaurant.findUnique({ where: { id: restaurantId } });
+    const receipt = { receiptName: restaurant?.name || 'Karvaan POS', receiptAddress: restaurant?.address || '', receiptGstin: '' };
+    if (!setting) return receipt;
     try {
-      return JSON.parse(setting.data);
+      return { ...receipt, ...JSON.parse(setting.data) };
     } catch (e) {
-      return {};
+      return receipt;
     }
   }
 

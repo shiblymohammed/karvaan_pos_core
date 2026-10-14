@@ -1,10 +1,11 @@
 import { Injectable, BadRequestException, ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { BackupService } from '../backup/backup.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class TenantService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private readonly backups: BackupService) {}
 
   private requireInitialPassword(password?: string) {
     if (typeof password !== 'string' || password.length < 8) throw new BadRequestException('A password of at least 8 characters is required');
@@ -126,7 +127,7 @@ export class TenantService {
       throw new NotFoundException('Valid Owner not found');
     }
 
-    return this.prisma.restaurant.create({
+    const restaurant = await this.prisma.restaurant.create({
       data: {
         name: data.name,
         address: data.address,
@@ -134,6 +135,8 @@ export class TenantService {
         ownerId: data.ownerId,
       },
     });
+    await this.backups.applyBackupSettings(restaurant.id);
+    return restaurant;
   }
 
   async updateSubscription(restaurantId: string, data: {

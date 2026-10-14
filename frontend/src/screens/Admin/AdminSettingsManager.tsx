@@ -324,6 +324,11 @@ export const AdminSettingsManager: React.FC = () => {
   const renderNetworkSync = () => (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <SettingsHeader title="Network & Sync" description="Configure server connections and cloud synchronization." />
+      <SettingsSection>
+        <SettingsRow label="Receipt business name" control={<Input value={store.receiptName || ''} onChange={event => useSettingsStore.setState({ receiptName: event.target.value })} />} />
+        <SettingsRow label="Receipt address" control={<Input value={store.receiptAddress || ''} onChange={event => useSettingsStore.setState({ receiptAddress: event.target.value })} />} />
+        <SettingsRow label="GST registration number" description="Printed only when configured." control={<Input value={store.receiptGstin || ''} onChange={event => useSettingsStore.setState({ receiptGstin: event.target.value })} />} />
+      </SettingsSection>
       
       <SettingsSection>
         <SettingsRow 

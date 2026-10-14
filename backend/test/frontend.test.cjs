@@ -22,7 +22,7 @@ function browserHarness() {
     put: async (_store, row) => rows.set(row.id, row),
   };
   const context = vm.createContext({
-    console, crypto: require('node:crypto').webcrypto, FormData, Error,
+    console, crypto: require('node:crypto').webcrypto, FormData, Error, URL, TextEncoder,
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
     window: { dispatchEvent: () => {}, location: { origin: 'http://127.0.0.1:5173' } }, CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
     setInterval: () => 1, setTimeout, clearTimeout,
@@ -34,10 +34,14 @@ function browserHarness() {
     const source = ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '{}'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 } }).outputText;
     const localRequire = name => {
       if (name === 'idb') return { openDB: async () => db };
+      if (name === 'zustand') return require('../../frontend/node_modules/zustand');
+      if (name === 'zustand/middleware') return require('../../frontend/node_modules/zustand/middleware');
       if (name === 'socket.io-client') return { io: () => socket };
-      if (name.endsWith('serverConfig')) return { getServerUrl: () => storage.get('server') || 'http://server-a:3001', getOperatingMode: () => 'NODE_SERVER' };
+      if (name.endsWith('serverConfig')) return { getServerUrl: () => storage.get('server') || 'http://server-a:3001', getOperatingMode: () => 'NODE_SERVER', getTerminalId: () => 'test-terminal' };
+      if (name.endsWith('useAuthStore')) return { useAuthStore: { getState: () => ({ currentUser: JSON.parse(storage.get('pos-auth-storage') || '{}').state?.currentUser }) } };
       if (name.endsWith('authFetch')) return { authorizedFetch: async (endpoint, options) => { uploads.push({ endpoint, options }); return uploadResponse; } };
       if (name.endsWith('useSettingsStore')) return { useSettingsStore: { setState: () => {} }, applyRemoteSettings: () => {} };
+      if (name.endsWith('useLedgerStore')) return { applyLedgerSnapshot: () => {} };
       if (name.endsWith('useToastStore')) return { toast: { error: () => {} } };
       if (name.endsWith('apiClient')) return { apiClient: {} };
       if (name.startsWith('.')) return load(path.relative(path.resolve(__dirname, '../../frontend/src'), path.resolve(path.dirname(filename), name + '.ts')));
@@ -148,6 +152,65 @@ test('rejected writes stay reviewable and are not presented as committed', async
   assert.equal((await queue.getPendingActions()).length, 1);
 });
 
+test('a rejected order blocks its dependent commands while another bill continues', async () => {
+  const h = browserHarness(); const actions = h.load('services/socket.ts'); const queue = h.load('services/offlineQueue.ts');
+  h.socket.connected = false;
+  await actions.emitAction('settle_bill', { billNumber: 'BAD', orderNumber: 'ORDER-A' });
+  await actions.emitAction('fire_order', { orderNumber: 'ORDER-A' });
+  await actions.emitAction('settle_bill', { billNumber: 'GOOD', orderNumber: 'ORDER-B' });
+  h.setAck(async (_type, payload) => payload.billNumber === 'BAD' ? { status: 'ERROR', message: 'Review this cart' } : { status: 'OK' });
+  h.socket.connected = true;
+  await actions.flushPendingActions();
+  assert.equal(h.emitted.length, 2);
+  assert.equal(h.emitted[1].payload.billNumber, 'GOOD');
+  const pending = await queue.getPendingActions();
+  assert.equal(pending.length, 2);
+  await queue.replaceActionPayload(pending[0].id, { billNumber: 'FIXED', orderNumber: 'ORDER-A' });
+  await actions.flushPendingActions();
+  assert.equal((await queue.getPendingActions()).length, 0);
+});
+
+test('a lost acknowledgment preserves its action identity without stopping an unrelated sale', async () => {
+  const h = browserHarness(); const actions = h.load('services/socket.ts'); const queue = h.load('services/offlineQueue.ts');
+  h.socket.connected = false;
+  await actions.emitAction('ledger_payment', { entryId: 'credit-a', amount: 40, paymentMethod: 'CASH' });
+  await actions.emitAction('settle_bill', { billNumber: 'OTHER', orderNumber: 'OTHER-ORDER' });
+  h.socket.connected = true;
+  h.setAck(async type => { if (type === 'ledger_payment') throw new Error('Ack lost'); return { status: 'OK' }; });
+  await actions.flushPendingActions();
+  assert.equal((await queue.getPendingActions()).length, 1);
+  assert.equal(h.emitted.length, 2);
+  const identity = h.emitted[0].payload.actionId;
+  h.setAck(async () => ({ status: 'OK' }));
+  await actions.flushPendingActions();
+  assert.equal(h.emitted[2].payload.actionId, identity);
+});
+
+test('printer selection is scoped to its server, restaurant, and terminal', () => {
+  const h = browserHarness(); const profile = h.load('services/printerProfile.ts');
+  h.storage.set('server', 'https://cloud.example.com');
+  profile.savePrinterProfile({ printers: [], receiptPort: 'COM4' });
+  assert.equal(profile.getPrinterProfile().receiptPort, 'COM4');
+  assert.equal(profile.canBackendPrintLocally(), false);
+  h.login('tenant-b'); assert.equal(profile.getPrinterProfile().receiptPort, undefined);
+  h.login(); h.storage.set('server', 'http://192.168.1.10:3001');
+  assert.equal(profile.getPrinterProfile().receiptPort, undefined);
+  assert.equal(profile.canBackendPrintLocally(), true);
+});
+
+test('printed invoice bytes contain configured business details and individual item prices', () => {
+  const h = browserHarness(); const printing = h.load('services/tauriCommands.ts');
+  const bytes = printing.buildBillReceipt({ restaurantName: 'Real Restaurant', restaurantAddress: 'Real Address', gstin: 'Configured GST Number', billNumber: 'TEST-1', orderType: 'PARCEL', tableName: 'Counter', cashier: 'Cashier', items: [{ name: 'Menu Item', qty: 2, price: 100 }], subtotal: 200, discount: 0, gst: 10, grandTotal: 210, paymentMethod: 'SPLIT', tenders: { CASH: 50, UPI: 160 }, pendingConfirmation: true, time: '12:00' });
+  const receipt = Buffer.from(bytes).toString('utf8');
+  assert.match(receipt, /Real Restaurant/);
+  assert.match(receipt, /Real Address/);
+  assert.match(receipt, /Configured GST Number/);
+  assert.match(receipt, /CASH: Rs.50.00/);
+  assert.match(receipt, /UPI: Rs.160.00/);
+  assert.match(receipt, /AWAITING SERVER CONFIRMATION/);
+  assert.ok(!receipt.includes('27AADCK1234F1Z9'));
+});
+
 test('a different login cannot flush another cashier’s pending actions', async () => {
   const h = browserHarness(); const actions = h.load('services/socket.ts'); const queue = h.load('services/offlineQueue.ts');
   h.socket.connected = false;
@@ -156,4 +219,51 @@ test('a different login cannot flush another cashier’s pending actions', async
   await actions.flushPendingActions();
   assert.equal(h.emitted.length, 0);
   h.login(); assert.equal((await queue.getPendingActions()).length, 1);
+});
+
+test('Force Sync keeps rejected originals and reports only server-confirmed actions', async () => {
+  const h = browserHarness(), actions = h.load('services/socket.ts'), queue = h.load('services/offlineQueue.ts');
+  h.socket.connected = false;
+  await actions.emitAction('sync_inventory', [{ id: 'rice', currentStock: null }]);
+  await actions.emitAction('settle_bill', { billNumber: 'INDEPENDENT', orderNumber: 'INDEPENDENT' });
+  const original = (await queue.getPendingActions())[0];
+  h.setAck(async type => type === 'sync_inventory' ? { status: 'ERROR', message: 'Invalid inventory quantity' } : { status: 'OK' });
+  h.socket.connected = true;
+  const first = await actions.syncPendingNow();
+  assert.equal(first.confirmed, 1); assert.equal(first.pending, 1); assert.equal(first.failed, 1);
+  const pending = await queue.getPendingActions();
+  assert.equal(pending[0].id, original.id); assert.equal(pending[0].actionId, original.actionId);
+  const emitted = h.emitted.length;
+  const again = await actions.syncPendingNow();
+  assert.equal(again.confirmed, 0); assert.equal(again.failed, 1); assert.equal(h.emitted.length, emitted);
+  h.socket.connected = false;
+  await assert.rejects(actions.syncPendingNow(), /no connection/);
+});
+
+test('inventory reloads retain purchase conversions and quarantine invalid saved quantities', () => {
+  const { normalizeInventoryItem } = browserHarness().load('services/inventoryData.ts');
+  const rice = normalizeInventoryItem({ id: 'rice', unit: 'g', currentStock: 2000, costPrice: 0.05, minThreshold: 500 });
+  assert.equal(rice.purchaseUnit, 'kg'); assert.equal(rice.conversionFactor, 1000);
+  assert.equal(rice.costPerUnit, 0.05); assert.equal(rice.reorderLevel, 500);
+  const packaging = normalizeInventoryItem({ unit: 'pcs', currentStock: 20, purchaseUnit: 'box', conversionFactor: 50, lastVendor: 'Supplier' });
+  assert.equal(packaging.conversionFactor, 50); assert.equal(packaging.lastVendor, 'Supplier');
+  const corrupted = normalizeInventoryItem({ unit: 'g', currentStock: null, costPerUnit: NaN, conversionFactor: null });
+  assert.equal(corrupted.stockNeedsReview, true); assert.ok(Number.isFinite(corrupted.currentStock * corrupted.costPerUnit));
+  assert.equal(normalizeInventoryItem(corrupted).stockNeedsReview, true);
+});
+
+test('PO intake queues an invoice total without speculative stock changes or duplicate snapshot writes', async () => {
+  const h = browserHarness(), inventory = h.load('store/useInventoryStore.ts'), queue = h.load('services/offlineQueue.ts');
+  inventory.initializeInventorySync();
+  inventory.applyInventorySnapshot([{ id: 'rice', name: 'Rice', category: 'PRODUCE', unit: 'g', currentStock: 1000, costPrice: 0.05, minThreshold: 100, revision: 0 }]);
+  h.socket.connected = false;
+  assert.equal((await inventory.useInventoryStore.getState().addStockPO('rice', 2, 120, 'Supplier')).status, 'QUEUED');
+  const pending = await queue.getPendingActions();
+  assert.equal(pending.length, 1); assert.equal(pending[0].type, 'receive_inventory_purchase');
+  assert.equal(pending[0].payload.conversionFactor, 1000); assert.equal(pending[0].payload.invoiceCost, 120);
+  assert.equal(inventory.useInventoryStore.getState().ingredients[0].currentStock, 1000);
+  assert.equal((await inventory.useInventoryStore.getState().addStockPO('rice', NaN, 120)).status, 'ERROR');
+  assert.equal((await queue.getPendingActions()).length, 1);
+  assert.equal(inventory.useInventoryStore.getState().addIngredient({ name: 'Invalid ingredient', currentStock: 0, reorderLevel: 0, costPerUnit: 0, conversionFactor: 0, unit: 'g', purchaseUnit: 'kg' }), false);
+  assert.equal((await queue.getPendingActions()).length, 1);
 });

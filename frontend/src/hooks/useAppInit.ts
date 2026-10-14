@@ -6,6 +6,7 @@ import { isServerConfigured, getOperatingMode } from '../services/serverConfig';
 import { startAndroidMasterServer, stopAndroidMasterServer } from '../services/localServer';
 import { hydrateTenantStores } from '../store/tenantSession';
 import { initializeCatalogConfig, suspendCatalogConfig } from '../store/catalogConfig';
+import { initializeInventorySync, suspendInventorySync } from '../store/useInventoryStore';
 
 export function useAppInit() {
   const [showSetup, setShowSetup] = useState(!isServerConfigured());
@@ -32,6 +33,7 @@ export function useAppInit() {
     let cancelled = false;
     socket.disconnect();
     suspendCatalogConfig();
+    suspendInventorySync();
     setReadyTenant(null);
     if (currentUser?.restaurantId) {
       resetSessionSettings();
@@ -42,6 +44,7 @@ export function useAppInit() {
         await useSettingsStore.getState().fetchSettings();
         if (cancelled) return;
         initializeCatalogConfig();
+        initializeInventorySync();
         setReadyTenant(currentUser.restaurantId);
         if (getOperatingMode() !== 'ANDROID_MASTER') socket.connect();
       });

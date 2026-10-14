@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Printer, Check, X, AlertCircle, Loader2, Zap, ChevronDown } from 'lucide-react';
 import { isTauri, listSerialPorts, kickCashDrawer, buildBillReceipt, printReceipt } from '../services/tauriCommands';
+import { getPrinterProfile, savePrinterProfile } from '../services/printerProfile';
 
 interface PrinterSettingsProps {
   restaurantName: string;
@@ -8,8 +9,8 @@ interface PrinterSettingsProps {
 
 export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName }) => {
   const [ports, setPorts] = useState<string[]>([]);
-  const [receiptPort, setReceiptPort] = useState(localStorage.getItem('karvaan_receipt_port') || '');
-  const [drawerPort, setDrawerPort] = useState(localStorage.getItem('karvaan_drawer_port') || '');
+  const [receiptPort, setReceiptPort] = useState(getPrinterProfile().receiptPort || '');
+  const [drawerPort, setDrawerPort] = useState(getPrinterProfile().drawerPort || '');
   const [scanning, setScanning] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
   const [testMsg, setTestMsg] = useState('');
@@ -27,8 +28,7 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
   }, [isDesktop]);
 
   const savePorts = () => {
-    localStorage.setItem('karvaan_receipt_port', receiptPort);
-    localStorage.setItem('karvaan_drawer_port', drawerPort);
+    savePrinterProfile({ ...getPrinterProfile(), receiptPort, drawerPort });
     alert('Printer settings saved!');
   };
 

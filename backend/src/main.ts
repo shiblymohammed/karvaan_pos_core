@@ -44,6 +44,7 @@ import { AppModule } from './app.module';
 import { join } from 'path';
 import { json, urlencoded } from 'express';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { upgradeLocalDatabase } from './prisma/upgrade-local';
 function getLocalIPs(): string[] {
   const interfaces = os.networkInterfaces();
   const ips: string[] = [];
@@ -58,6 +59,7 @@ function getLocalIPs(): string[] {
 }
 
 async function bootstrap() {
+  if (process.env.IS_CLOUD !== 'true') await upgradeLocalDatabase(process.env.DATABASE_URL, path.join(backendRoot, 'prisma', 'schema.prisma'), dataDirectory);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.useStaticAssets(process.env.UPLOAD_DIR, {

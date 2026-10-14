@@ -19,6 +19,9 @@ export interface PredefinedDiscount {
 }
 
 interface SettingsState {
+  receiptName?: string;
+  receiptAddress?: string;
+  receiptGstin?: string;
   paidAddons?: any[];
   floorConfig?: any[];
   tableConfig?: any[];

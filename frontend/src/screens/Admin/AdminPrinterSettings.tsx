@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { apiClient } from '../../services/apiClient';
 import { AdminLabelStudio } from './AdminLabelStudio';
 import { toast } from '../../store/useToastStore';
+import { getPrinterProfile, savePrinterProfile, canBackendPrintLocally } from '../../services/printerProfile';
+import { isTauri, printNetworkReceipt, EscPos } from '../../services/tauriCommands';
 
 export interface PrinterConfig {
   id: string;
@@ -16,9 +18,9 @@ export interface PrinterConfig {
 }
 
 export const AdminPrinterSettings: React.FC = () => {
-  const [printers, setPrinters] = useState<PrinterConfig[]>([
-    { id: '1', name: 'Main Cashier', role: 'CASHIER', ip: '192.168.1.100', port: '9100', paperSize: '80mm', status: 'IDLE' }
-  ]);
+  const [printers, setPrinters] = useState<PrinterConfig[]>(() => getPrinterProfile().printers);
+  const [receiptPrinterId, setReceiptPrinterId] = useState(() => getPrinterProfile().receiptPrinterId || '');
+  const [kitchenPrinterId, setKitchenPrinterId] = useState(() => getPrinterProfile().kitchenPrinterId || '');
   const [errorMessage, setErrorMessage] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [labelPrinter, setLabelPrinter] = useState<any>({ CUP: {}, BAG: {}, KOT: {} });
@@ -58,7 +60,8 @@ export const AdminPrinterSettings: React.FC = () => {
       const p = printers.find(x => x.id === id);
       if (!p?.ip) throw new Error('IP is required');
       
-      const res = await apiClient.post('/printer/test', { ip: p.ip, port: p.port });
+      if (!isTauri() && !canBackendPrintLocally()) throw new Error('Use the desktop app to reach this restaurant’s local printers while connected to the cloud.');
+      const res = isTauri() ? { success: !!await printNetworkReceipt(p.ip, Number(p.port || 9100), new EscPos().init().text('Karvaan printer test').feed(3).cut().build()) } : await apiClient.post('/printer/test', { ip: p.ip, port: p.port });
       if (res?.success) {
         updatePrinter(id, { status: 'SUCCESS' });
         toast.success(`Successfully connected to ${p.ip}`);
@@ -74,6 +77,7 @@ export const AdminPrinterSettings: React.FC = () => {
   };
 
   const scanNetworkForPrinters = async () => {
+    if (!canBackendPrintLocally()) { toast.info('Enter the printer IP from its network settings, then test it using the desktop app.'); return; }
     setIsScanning(true);
     try {
       const res = await apiClient.get('/printer/scan');
@@ -101,7 +105,8 @@ export const AdminPrinterSettings: React.FC = () => {
   };
 
   const handleSaveSettings = () => {
-    toast.success('All Printer Settings Saved to Network Profile!');
+    savePrinterProfile({ ...getPrinterProfile(), printers: printers.map(({ status, ...printer }) => printer), receiptPrinterId, kitchenPrinterId });
+    toast.success('Printer profile saved for this terminal and restaurant.');
   };
 
   return (
@@ -142,6 +147,10 @@ export const AdminPrinterSettings: React.FC = () => {
         </div>
 
         {/* Printer List */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-2xl bg-white/70 p-4">
+          <label className="text-sm font-bold">Receipt printer<select value={receiptPrinterId} onChange={event => setReceiptPrinterId(event.target.value)} className="block w-full mt-2 rounded-lg p-2"><option value="">Use browser or configured serial printer</option>{printers.map(printer => <option key={printer.id} value={printer.id}>{printer.name}</option>)}</select></label>
+          <label className="text-sm font-bold">Kitchen printer<select value={kitchenPrinterId} onChange={event => setKitchenPrinterId(event.target.value)} className="block w-full mt-2 rounded-lg p-2"><option value="">Use browser or configured serial printer</option>{printers.map(printer => <option key={printer.id} value={printer.id}>{printer.name}</option>)}</select></label>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <AnimatePresence>
             {printers.map((printer) => (

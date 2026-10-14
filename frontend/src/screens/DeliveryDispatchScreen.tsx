@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useDeliveryStore, DeliveryOrder } from '../store/useDeliveryStore';
 import { useStaffStore } from '../store/useStaffStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { ReturnOrderModal } from '../components/ReturnOrderModal';
 import { useToastStore } from '../store/useToastStore';
+import { authorizedFetch } from '../services/authFetch';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const statusConfig: Record<string, { label: string; bar: string; badge: string; text: string }> = {
@@ -259,6 +260,19 @@ export const DeliveryDispatchScreen: React.FC = () => {
   const [returnModalOrder, setReturnModalOrder] = useState<DeliveryOrder | null>(null);
   const [completedReceipt, setCompletedReceipt] = useState<{ order: DeliveryOrder; method: string; collected: number } | null>(null);
   const [selectedRiderSummary, setSelectedRiderSummary] = useState<any | null>(null);
+  const [remittance, setRemittance] = useState<any | null>(null);
+  const [remittanceError, setRemittanceError] = useState('');
+  const [remitting, setRemitting] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setRemittance(null); setRemittanceError('');
+    if (selectedRiderSummary) void authorizedFetch(`/billing/rider-remittance/${encodeURIComponent(selectedRiderSummary.id)}`).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Collections could not be loaded');
+      if (!cancelled) setRemittance(data);
+    }).catch(error => { if (!cancelled) setRemittanceError(error.message); });
+    return () => { cancelled = true; };
+  }, [selectedRiderSummary?.id, currentUser?.id, orders]);
   const [showRidersMobile, setShowRidersMobile] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
@@ -295,9 +309,10 @@ export const DeliveryDispatchScreen: React.FC = () => {
     ? myOrders.find(o => o.deliveryBoyId === currentUser?.id && o.status === 'OUT_FOR_DELIVERY')
     : null;
 
-  const handleCollectPaymentSubmit = (orderId: string, method: 'CASH' | 'UPI' | 'CARD' | 'SPLIT', splitAmounts?: { cash: number; upi: number }) => {
+  const handleCollectPaymentSubmit = async (orderId: string, method: 'CASH' | 'UPI' | 'CARD' | 'SPLIT', splitAmounts?: { cash: number; upi: number }) => {
     const collected = method === 'SPLIT' ? (splitAmounts ? splitAmounts.cash + splitAmounts.upi : collectAmount) : collectAmount;
-    collectPayment(orderId, method, collected);
+    const result = await collectPayment(orderId, method, collected, splitAmounts ? { CASH: splitAmounts.cash, UPI: splitAmounts.upi } : undefined);
+    if (result.status !== 'OK') { if (result.status === 'ERROR') showToast(result.message || 'Payment was not recorded', 'error'); return; }
     const order = orders.find(o => o.id === orderId);
     if (order) {
       // Fix 2: Do NOT updateDeliveryBoy here — removeOrder handles rider availability safely
@@ -310,24 +325,19 @@ export const DeliveryDispatchScreen: React.FC = () => {
     setTimeout(() => removeOrder(orderId), 5000);
   };
 
-  const handleMarkDeliveredPrepaidWithReceipt = (order: DeliveryOrder) => {
+  const handleMarkDeliveredPrepaidWithReceipt = async (order: DeliveryOrder) => {
     // Fix 6: use 'PREPAID' label, not 'UPI'
-    collectPayment(order.id, 'PREPAID', order.grandTotal);
+    const result = await collectPayment(order.id, 'PREPAID', order.grandTotal);
+    if (result.status !== 'OK') { if (result.status === 'ERROR') showToast(result.message || 'Delivery was not completed', 'error'); return; }
     setCompletedReceipt({ order, method: 'PREPAID (Online)', collected: order.grandTotal });
     setTimeout(() => removeOrder(order.id), 5000);
   };
 
   // Fix 5: Rider self-unassign
   const handleRiderUnassign = (orderId: string) => {
-    useDeliveryStore.getState().updateOrderStatus(orderId, 'READY');
+    void useDeliveryStore.getState().assignDeliveryBoy(orderId, '', '');
     const order = orders.find(o => o.id === orderId);
     // Clear rider assignment
-    useDeliveryStore.setState(state => ({
-      orders: state.orders.map(o => o.id === orderId
-        ? { ...o, deliveryBoyId: undefined, deliveryBoyName: undefined, status: 'READY', updatedAt: new Date().toISOString() }
-        : o
-      )
-    }));
     showToast('Order unassigned — back to Ready queue.', 'info');
   };
 
@@ -646,19 +656,21 @@ export const DeliveryDispatchScreen: React.FC = () => {
                 </button>
               </div>
               {(() => {
-                const riderOrders = orders.filter(o => o.deliveryBoyId === selectedRiderSummary.id && o.status === 'DELIVERED');
-                const cashInHand = riderOrders.filter(o => o.paymentMethod === 'CASH').reduce((s, o) => s + (o.collectedAmount || o.grandTotal), 0);
-                const upiTotal = riderOrders.filter(o => o.paymentMethod === 'UPI' || o.paymentMethod === 'CARD').reduce((s, o) => s + (o.collectedAmount || o.grandTotal), 0);
+                if (remittanceError) return <p role="alert">{remittanceError}</p>;
+                if (!remittance) return <p role="status">Loading recorded collections…</p>;
+                const cashInHand = remittance.cash;
+                const upiTotal = remittance.digital;
                 return (
                   <div className="space-y-4">
                     <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 space-y-2">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Today's Summary</p>
-                      {[['Cash Collected', `₹${cashInHand.toFixed(0)}`], ['UPI / Card', `₹${upiTotal.toFixed(0)}`], ['Total Trips', `${riderOrders.length}`]].map(([l, v]) => (
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Since last remittance</p>
+                      {[['Cash Collected', `₹${cashInHand.toFixed(2)}`], ['UPI / Card', `₹${upiTotal.toFixed(2)}`], ['Recorded Collections', `${remittance.trips}`]].map(([l, v]) => (
                         <div key={l} className="flex justify-between items-center text-sm font-bold text-slate-600">
                           <span>{l}</span><span className="text-slate-800">{v}</span>
                         </div>
                       ))}
                     </div>
+                    {remittance.legacyCount > 0 && <p className="text-sm text-amber-700">{remittance.legacyCount} older cash deliveries need manual reconciliation; their collector was not recorded.</p>}
                     <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-5 text-center">
                       <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Cash to Remit</p>
                       <p className="text-4xl font-black text-orange-600">₹{cashInHand.toFixed(0)}</p>
@@ -668,13 +680,15 @@ export const DeliveryDispatchScreen: React.FC = () => {
                         className="flex-1 py-3.5 bg-white hover:bg-slate-50 text-slate-600 font-black text-sm rounded-2xl border border-slate-200 transition-colors shadow-sm cursor-pointer">
                         Cancel
                       </button>
-                      <button onClick={() => {
-                        const orderIds = riderOrders.map(o => o.id);
-                        removeOrders(orderIds);
-                        showToast("Shift closed and orders cleared!", 'success');
+                      <button disabled={remitting || !remittance.trips || isRiderMode} onClick={async () => {
+                        setRemitting(true);
+                        const result = await emitAction('remit_rider_cash', { riderId: selectedRiderSummary.id, amount: cashInHand, deliveryIds: remittance.deliveryIds });
+                        setRemitting(false);
+                        if (result.status === 'ERROR') { showToast(result.message || 'Remittance was not recorded', 'error'); return; }
+                        showToast(result.status === 'OK' ? 'Cash remittance recorded.' : 'Remittance awaiting server confirmation.', result.status === 'OK' ? 'success' : 'info');
                         setSelectedRiderSummary(null);
-                      }} className="flex-[2] py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-sm rounded-2xl shadow-md shadow-orange-200 transition-all active:scale-95 cursor-pointer">
-                        Confirm Remittance
+                      }} className="flex-[2] py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-sm rounded-2xl shadow-md shadow-orange-200 transition-all active:scale-95 cursor-pointer disabled:opacity-50">
+                        {remitting ? 'Confirming…' : 'Confirm Cash Received'}
                       </button>
                     </div>
                   </div>

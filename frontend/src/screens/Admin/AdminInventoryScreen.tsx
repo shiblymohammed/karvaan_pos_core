@@ -9,6 +9,10 @@ import {
 import { useInventoryStore, Ingredient, Recipe, RecipeItem } from '../../store/useInventoryStore';
 import { useMenuStore } from '../../store/useMenuStore';
 import CustomSelect from '../../components/shared/CustomSelect';
+import { toast } from '../../store/useToastStore';
+import { authorizedFetch } from '../../services/authFetch';
+import { applyInventorySnapshot } from '../../store/useInventoryStore';
+import { getActionContext, sameContext } from '../../services/offlineQueue';
 
 export const AdminInventoryScreen: React.FC = () => {
   const { 
@@ -30,6 +34,21 @@ export const AdminInventoryScreen: React.FC = () => {
   const [poUnits, setPoUnits] = useState<number>(10);
   const [poCost, setPoCost] = useState<number>(0);
   const [poVendor, setPoVendor] = useState<string>('');
+  const [poSaving, setPoSaving] = useState(false);
+  const [reloadingStock, setReloadingStock] = useState(false);
+  const reloadStock = async () => {
+    setReloadingStock(true);
+    try {
+      const context = getActionContext();
+      const response = await authorizedFetch('/billing/inventory');
+      const rows = await response.json();
+      if (!response.ok) throw new Error(rows.message || 'Stock could not be loaded');
+      if (!sameContext(context, getActionContext())) return;
+      applyInventorySnapshot(rows);
+      toast.info('Current server stock loaded. Review older pending changes before removing them.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Stock could not be loaded'); }
+    finally { setReloadingStock(false); }
+  };
 
   // New Ingredient Modal State
   const [showNewIngModal, setShowNewIngModal] = useState<boolean>(false);
@@ -109,18 +128,22 @@ export const AdminInventoryScreen: React.FC = () => {
     });
   };
 
-  const submitPO = () => {
-    if (!poTargetId || poUnits <= 0) return;
-    addStockPO(poTargetId, poUnits, poCost > 0 ? poCost : undefined, poVendor);
-    setShowPoModal(false);
-    setPoUnits(10);
-    setPoCost(0);
-    setPoVendor('');
+  const submitPO = async () => {
+    if (!poTargetId || poSaving) return;
+    setPoSaving(true);
+    try {
+      const result = await addStockPO(poTargetId, poUnits, poCost === 0 ? undefined : poCost, poVendor);
+      if (result.status === 'ERROR') throw new Error(result.message || 'Purchase was not recorded');
+      if (result.status === 'OK') toast.success('Purchase confirmed and stock updated.');
+      else toast.info('Purchase saved on this device. Stock awaits server confirmation.');
+      setShowPoModal(false); setPoUnits(10); setPoCost(0); setPoVendor('');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Purchase was not recorded'); }
+    finally { setPoSaving(false); }
   };
 
   const submitNewIngredient = () => {
     if (!newIngForm.name) return;
-    addIngredient(newIngForm);
+    if (!addIngredient(newIngForm)) { toast.error('Enter valid stock, cost, reorder level, and a positive purchase conversion.'); return; }
     setShowNewIngModal(false);
     setNewIngForm({
       name: '',
@@ -189,6 +212,7 @@ export const AdminInventoryScreen: React.FC = () => {
 
       {/* Navigation Tabs (Swipeable on Mobile) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+        <button disabled={reloadingStock} onClick={() => void reloadStock()} className="px-4 py-2 rounded-full bg-white border border-slate-200 text-xs font-bold flex items-center gap-2 disabled:opacity-50"><RefreshCw className="h-4 w-4" />{reloadingStock ? 'Loading…' : 'Reload Server Stock'}</button>
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide snap-x w-full sm:w-auto">
           {(['STOCK', 'RECIPES', 'PREP', 'WASTE'] as const).map((tab) => {
             const labels: Record<string, string> = {
@@ -369,7 +393,7 @@ export const AdminInventoryScreen: React.FC = () => {
                         onClick={() => {
                           setPoTargetId(ing.id);
                           setPoUnits(10);
-                          setPoCost((ing.costPerUnit || 0) * ing.conversionFactor);
+                          setPoCost(0);
                           setPoVendor(ing.lastVendor || '');
                           setShowPoModal(true);
                         }}
@@ -882,6 +906,7 @@ export const AdminInventoryScreen: React.FC = () => {
                     Adds <span className="text-violet-600 font-black">+{(poUnits * (ingredients.find(i => i.id === poTargetId)?.conversionFactor || 1)).toLocaleString()}</span> {ingredients.find(i => i.id === poTargetId)?.unit} to cooking stock
                   </span>
                 </div>
+                <p className="mt-2 text-xs text-slate-500">1 {ingredients.find(i => i.id === poTargetId)?.purchaseUnit} = {ingredients.find(i => i.id === poTargetId)?.conversionFactor} {ingredients.find(i => i.id === poTargetId)?.unit}. Invoice cost is divided by all received base units.</p>
               </div>
 
               <div>
@@ -916,10 +941,10 @@ export const AdminInventoryScreen: React.FC = () => {
               </button>
               <button
                 onClick={submitPO}
-                disabled={poUnits <= 0}
+                disabled={poSaving || !Number.isFinite(poUnits) || poUnits <= 0 || !Number.isFinite(poCost) || poCost < 0}
                 className="flex-[2] py-3.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:bg-slate-300 disabled:text-slate-500 text-white font-black text-sm rounded-2xl shadow-md shadow-violet-200 transition-transform active:scale-95 cursor-pointer flex items-center justify-center gap-2 order-1 sm:order-2"
               >
-                <CheckCircle2 className="h-4 w-4" /> Add to Stock
+                <CheckCircle2 className="h-4 w-4" /> {poSaving ? 'Confirming…' : 'Add to Stock'}
               </button>
             </div>
           </motion.div>

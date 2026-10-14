@@ -14,9 +14,9 @@ Choose one backend mode for the cashier PC. Two processes cannot share port 3001
 
 Use this mode when the backend must run while the cashier app is closed. Use the frontend in a browser against the managed backend.
 
-1. Install Node.js, copy backend and scripts, and configure backend/.env from .env.example.
-2. Back up the active database before schema updates. Prisma CLI operates on its configured URL; local runtime uses AppData. Apply schema changes to the intended database explicitly.
-3. scripts/deploy-backend.bat installs dependencies, generates Prisma, applies the configured schema, builds, and starts PM2. npm run start:prod runs dist/src/main.js directly.
+1. Install Node.js 22.12 or newer, copy backend and scripts, and configure backend/.env from .env.example.
+2. Back up the active database before schema updates. Local runtime uses AppData and creates an additional restore point before upgrading. Prisma CLI commands operate on their configured URL, which can refer to a different database.
+3. scripts/deploy-backend.bat installs lockfile dependencies, generates Prisma, builds, and starts PM2. Local startup backs up and upgrades the active database. Use Docker for cloud deployment. npm run start:prod runs dist/src/main.js directly.
 4. PM2 restarts a crashed backend. pm2 save preserves its process list. Windows reboot startup requires a configured Windows service or scheduled task.
 5. Do not also launch a desktop build that starts a bundled backend on port 3001.
 

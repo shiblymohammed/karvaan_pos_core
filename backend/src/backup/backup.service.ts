@@ -61,7 +61,7 @@ export class BackupService implements OnModuleInit {
     try { this.schedulerRegistry.deleteCronJob(jobName); } catch {}
     if (settings.enabled) {
       const [hour, minute] = settings.time.split(':');
-      const job = new CronJob(`${minute} ${hour} * * *`, () => { void this.createBackup(restaurantId, 'scheduled').catch(error => this.logger.error(error.message)); });
+      const job = new CronJob(`${minute} ${hour} * * *`, () => { void this.createBackup(restaurantId, 'scheduled').catch(error => this.logger.error(error.message)); }, null, false, 'Asia/Kolkata');
       this.schedulerRegistry.addCronJob(jobName, job);
       job.start();
     }

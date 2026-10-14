@@ -1,146 +1,62 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { tenantStorage } from './tenantStorage';
-import { socket, emitAction } from '../services/socket';
-import { useSettingsStore } from './useSettingsStore';
+import { emitAction, ActionResult } from '../services/socket';
+import { toast } from './useToastStore';
 
 export type OrderType = 'DINE_IN' | 'PARCEL' | 'DELIVERY';
 export type DeliveryStatus = 'RECEIVED' | 'PREPARING' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
-
-
-
 export interface DeliveryOrder {
-  id: string;
-  orderNumber: string;
-  orderType: 'PARCEL' | 'DELIVERY';
-  customerName: string;
-  customerPhone: string;
-  deliveryAddress?: string;
-  deliveryFee?: number;
-  items: Array<{ name: string; quantity: number; price: number; notes?: string }>;
-  subtotal: number;
-  grandTotal: number;
-  status: DeliveryStatus;
-  paymentStatus: 'PENDING' | 'COLLECTED';  // COD = PENDING until collected at door
-  paymentMethod?: 'CASH' | 'UPI' | 'CARD' | 'SPLIT' | 'PREPAID'; // collected at delivery
-  collectedAmount?: number;
-  deliveryBoyId?: string;
-  deliveryBoyName?: string;
-  waiterName?: string;
-  placedAt: string;
-  updatedAt: string;
+  id: string; orderNumber: string; billNumber?: string; orderType: 'PARCEL' | 'DELIVERY';
+  customerName: string; customerPhone: string; deliveryAddress?: string; deliveryFee?: number;
+  items: Array<{ productId?: string; name: string; quantity: number; price: number; notes?: string; addons?: any[] }>;
+  subtotal: number; discount?: number; grandTotal: number; status: DeliveryStatus;
+  paymentStatus: 'PENDING' | 'COLLECTED'; paymentMethod?: 'CASH' | 'UPI' | 'CARD' | 'SPLIT' | 'PREPAID';
+  collectedAmount?: number; deliveryBoyId?: string; deliveryBoyName?: string; waiterName?: string;
+  placedAt: string; updatedAt: string; revision?: number; pendingConfirmation?: boolean;
 }
-
 interface DeliveryState {
   orders: DeliveryOrder[];
-
-  // Order management
-  addOrder: (order: Omit<DeliveryOrder, 'id' | 'placedAt' | 'updatedAt'> & { orderNumber?: string }) => DeliveryOrder;
-  updateOrderStatus: (id: string, status: DeliveryStatus) => void;
-  collectPayment: (id: string, method: 'CASH' | 'UPI' | 'CARD' | 'SPLIT' | 'PREPAID', amount: number) => void;
-  assignDeliveryBoy: (orderId: string, deliveryBoyId: string, deliveryBoyName?: string) => void;
-  removeOrder: (id: string) => void;
-  removeOrders: (ids: string[]) => void;
+  addOrder: (order: Omit<DeliveryOrder, 'id' | 'placedAt' | 'updatedAt'>) => Promise<ActionResult>;
+  updateOrderStatus: (id: string, status: DeliveryStatus) => Promise<ActionResult>;
+  collectPayment: (id: string, method: 'CASH' | 'UPI' | 'CARD' | 'SPLIT' | 'PREPAID', amount: number, tenders?: Record<string, number>) => Promise<ActionResult>;
+  assignDeliveryBoy: (id: string, riderId: string, riderName?: string) => Promise<ActionResult>;
+  removeOrder: (id: string) => Promise<ActionResult>;
+  removeOrders: (ids: string[]) => Promise<void>;
 }
 
-export const useDeliveryStore = create<DeliveryState>()(
-  persist(
-    (set, get) => ({
-      orders: [],
-
-      addOrder: (orderData) => {
-        const prefix = useSettingsStore.getState().orderPrefix;
-        const orderNum = orderData.orderNumber || `${prefix}-${Date.now().toString().slice(-5)}`;
-        const newOrder: DeliveryOrder = {
-          ...orderData,
-          id: `dord-${Date.now()}`,
-          orderNumber: orderNum,
-          placedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          updatedAt: new Date().toISOString(),
-        };
-        set((state) => ({ orders: [newOrder, ...state.orders] }));
-        emitAction('sync_delivery_orders', get().orders);
-        return newOrder;
-      },
-
-      updateOrderStatus: (id, status) => {
-        set((state) => ({
-          orders: state.orders.map((o) =>
-            o.id === id ? { ...o, status, updatedAt: new Date().toISOString() } : o
-          ),
-        }));
-        emitAction('sync_delivery_orders', get().orders);
-      },
-
-      collectPayment: (id, method, amount) => {
-        set((state) => ({
-          orders: state.orders.map((o) =>
-            o.id === id
-              ? { ...o, paymentStatus: 'COLLECTED', paymentMethod: method, collectedAmount: amount, status: 'DELIVERED', updatedAt: new Date().toISOString() }
-              : o
-          ),
-        }));
-        emitAction('sync_delivery_orders', get().orders);
-
-        // Build a "completed" parked entry so FOH can see it settled
-        const order = get().orders.find((o) => o.id === id);
-        if (order) {
-          import('./useKdsStore').then(({ useKdsStore }) => {
-            useKdsStore.getState().clearTableTickets(order.orderNumber);
-          });
-          import('./cartStore').then(({ useCartStore }) => {
-            const currentHeld = useCartStore.getState().heldOrders;
-            const completedParked = {
-              id: `park-del-${order.id}`,
-              name: `${order.orderNumber} (Delivery)`,
-              items: order.items.map((i, idx) => ({
-                productId: `prod-del-${idx}`,
-                name: i.name,
-                price: i.price,
-                quantity: i.quantity,
-                status: 'SENT' as const,
-              })),
-              tableId: null,
-              tableName: '🛵 Delivery Completed',
-              customerName: order.customerName,
-              orderType: 'DELIVERY' as const,
-              deliveryAddress: order.deliveryAddress,
-              deliveryFee: order.deliveryFee,
-              timestamp: order.placedAt || new Date().toLocaleTimeString(),
-              deliveryStatus: 'COLLECTED',
-              collectedMethod: method,
-            };
-            const nextHeld = [completedParked, ...currentHeld.filter(o => o.id !== `park-del-${order.id}`)];
-            useCartStore.setState({ heldOrders: nextHeld });
-            emitAction('sync_parked_orders', nextHeld);
-          });
-        }
-      },
-
-      assignDeliveryBoy: (orderId, deliveryBoyId, deliveryBoyName?: string) => {
-        const name = deliveryBoyName || 'Assigned Rider';
-
-        set((state) => ({
-          orders: state.orders.map((o) =>
-            o.id === orderId
-              ? { ...o, deliveryBoyId, deliveryBoyName: name, status: 'OUT_FOR_DELIVERY', updatedAt: new Date().toISOString() }
-              : o
-          ),
-        }));
-        emitAction('sync_delivery_orders', get().orders);
-      },
-
-      removeOrder: (id) => {
-        set((state) => ({ orders: state.orders.filter((o) => o.id !== id) }));
-        emitAction('sync_delivery_orders', get().orders);
-      },
-
-      removeOrders: (ids) => {
-        set((state) => ({ orders: state.orders.filter((o) => !ids.includes(o.id)) }));
-        emitAction('sync_delivery_orders', get().orders);
-      },
-    }),
-    { name: 'pos-delivery-storage', storage: createJSONStorage(() => tenantStorage) }
-  )
-);
-
+export const useDeliveryStore = create<DeliveryState>()(persist((set, get) => {
+  const update = async (id: string, changes: any): Promise<ActionResult> => {
+    const row = get().orders.find(row => row.id === id);
+    if (!row) return { status: 'ERROR', message: 'Delivery not found' };
+    const payload = { id, ...changes, expectedRevision: row.revision || 0 };
+    set({ orders: get().orders.map(item => item.id === id ? { ...item, ...(changes.status ? { status: changes.status } : {}), ...(changes.riderId !== undefined ? { deliveryBoyId: changes.riderId, deliveryBoyName: changes.riderName } : {}), revision: (row.revision || 0) + 1, pendingConfirmation: true } : item) });
+    const result = await emitAction('update_delivery', payload);
+    if (result.status === 'ERROR') set({ orders: get().orders.map(item => item.id === id ? row : item) });
+    if (result.status === 'OK' && changes.archived) set({ orders: get().orders.filter(item => item.id !== id) });
+    if (result.status === 'QUEUED') toast.info('Delivery change saved on this device; awaiting confirmation.');
+    return result;
+  };
+  return {
+    orders: [],
+    addOrder: async order => {
+      const id = crypto.randomUUID();
+      const row: DeliveryOrder = { ...order, id, placedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), revision: 0, pendingConfirmation: true, paymentStatus: 'PENDING' };
+      set({ orders: [row, ...get().orders] });
+      const result = await emitAction('create_delivery', { ...order, id, billNumber: order.billNumber || `DEL-${order.orderNumber}` });
+      if (result.status === 'ERROR') set({ orders: get().orders.filter(row => row.id !== id) });
+      return result;
+    },
+    updateOrderStatus: (id, status) => update(id, { status }),
+    assignDeliveryBoy: (id, riderId, riderName) => update(id, { riderId: riderId || null, riderName: riderName || null, status: riderId ? 'OUT_FOR_DELIVERY' : 'READY' }),
+    collectPayment: async (id, method, amount, tenders) => {
+      const order = get().orders.find(order => order.id === id);
+      if (!order) return { status: 'ERROR', message: 'Delivery not found' };
+      const result = await emitAction('collect_delivery_payment', { id, orderNumber: order.orderNumber, paymentMethod: method === 'PREPAID' ? order.paymentMethod || 'UPI' : method, amount, tenders, complete: true });
+      if (result.status === 'QUEUED') toast.info('Payment saved on this device; awaiting the server before closing delivery.');
+      return result;
+    },
+    removeOrder: id => update(id, { archived: true }),
+    removeOrders: async ids => { for (const id of ids) await get().removeOrder(id); },
+  };
+}, { name: 'pos-delivery-storage', storage: createJSONStorage(() => tenantStorage) }));

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Menu as MenuIcon, Users, Settings, LogOut, Keyboard, BookOpen, Package, CloudOff, LayoutGrid } from 'lucide-react';
-import { getQueueCount, getPendingActions, clearAction } from '../services/offlineQueue';
-import { socket, emitAction } from '../services/socket';
+import { getQueueCount } from '../services/offlineQueue';
+import { syncPendingNow } from '../services/socket';
 import { motion } from 'framer-motion';
 import { toast } from '../store/useToastStore';
 
@@ -23,6 +23,7 @@ export const AdminPortalScreen: React.FC = () => {
     return (localStorage.getItem('adminActiveTab') as AdminTab) || 'MENU';
   });
   const [offlineCount, setOfflineCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     const updateCount = async () => setOfflineCount(await getQueueCount());
@@ -36,20 +37,17 @@ export const AdminPortalScreen: React.FC = () => {
   }, [activeTab]);
 
   const handleForceSync = async () => {
-    if (!socket.connected) {
-      toast.error("Cannot sync: No connection to server.");
-      return;
-    }
-    const pending = await getPendingActions();
-    if (pending.length === 0) {
-      toast.info("No pending actions to sync.");
-      return;
-    }
-    for (const action of pending) {
-      emitAction(action.type, action.payload);
-      if (action.id) await clearAction(action.id);
-    }
-    toast.success(`Successfully synced ${pending.length} actions.`);
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const result = await syncPendingNow();
+      setOfflineCount(result.pending);
+      if (result.failed) toast.warning(`${result.confirmed} confirmed; ${result.pending} still pending. Review rejected actions in the top panel.`);
+      else if (result.pending) toast.info(`${result.confirmed} confirmed; ${result.pending} awaiting server confirmation.`);
+      else if (result.confirmed) toast.success(`Server confirmed ${result.confirmed} actions.`);
+      else toast.info('No pending actions to sync.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Sync could not be completed.'); }
+    finally { setSyncing(false); }
   };
 
   return (
@@ -106,16 +104,17 @@ export const AdminPortalScreen: React.FC = () => {
             <div className="shrink-0 lg:w-full lg:mt-4 p-2.5 lg:p-3 bg-rose-50 border border-rose-200 rounded-xl flex lg:flex-col items-center lg:items-start gap-3 lg:gap-0">
               <div className="flex items-center gap-2 lg:mb-2">
                 <CloudOff className="h-4 w-4 text-rose-500" />
-                <p className="text-xs font-black text-rose-600 hidden lg:block">Offline Sync Pending</p>
+                <p className="text-xs font-black text-rose-600 hidden lg:block">Server Confirmation Pending</p>
               </div>
               <p className="text-[10px] font-bold text-rose-500 lg:mb-2 whitespace-nowrap">
                 {offlineCount} action{offlineCount !== 1 ? 's' : ''} waiting.
               </p>
               <button
                 onClick={handleForceSync}
+                disabled={syncing}
                 className="py-1 lg:py-1.5 px-3 lg:w-full bg-rose-500 hover:bg-rose-600 text-white text-[10px] lg:text-xs font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
               >
-                Force Sync
+                {syncing ? 'Checking…' : 'Force Sync'}
               </button>
             </div>
           )}

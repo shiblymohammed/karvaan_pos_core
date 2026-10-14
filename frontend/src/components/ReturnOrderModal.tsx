@@ -4,10 +4,14 @@ import {
   DollarSign, X, ShieldAlert, CreditCard, Banknote, BookOpen,
   ArrowRight, Bike, Utensils, ShoppingBag, Plus, Minus
 } from 'lucide-react';
-import { useInventoryStore } from '../store/useInventoryStore';
-import { useLedgerStore } from '../store/useLedgerStore';
+import { authorizedFetch } from '../services/authFetch';
+import { emitAction } from '../services/socket';
+import { useAuthStore } from '../store/useAuthStore';
+import { toast } from '../store/useToastStore';
 
 export interface ReturnItem {
+  id?: string;
+  refundUnit?: number;
   name: string;
   quantity: number;
   price: number;
@@ -40,11 +44,30 @@ interface ReturnOrderModalProps {
 export const ReturnOrderModal: React.FC<ReturnOrderModalProps> = ({
   isOpen,
   onClose,
-  orderData,
+  orderData: suppliedOrder,
   onConfirmReturn
 }) => {
-  const { restockForOrder } = useInventoryStore();
-  const { addEntry } = useLedgerStore();
+  const [invoice, setInvoice] = useState<ReturnOrderData | null>(null);
+  const orderData = invoice || suppliedOrder;
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionId, setActionId] = useState(() => crypto.randomUUID());
+  const [managerPin, setManagerPin] = useState('');
+  const user = useAuthStore(state => state.currentUser);
+  const needsAuthorization = !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user?.role) && !user?.permissions?.canVoid;
+
+  useEffect(() => {
+    let current = true;
+    setInvoice(null); setManagerPin(''); setActionId(crypto.randomUUID());
+    if (!isOpen || !suppliedOrder?.billNumber) return;
+    setLoading(true);
+    void authorizedFetch(`/billing/invoice/${encodeURIComponent(suppliedOrder.billNumber)}`).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Saved invoice could not be loaded');
+      if (current) setInvoice({ ...data, grandTotal: data.grandTotal - data.refundedAmount, items: data.items.filter((line: any) => line.remainingQuantity > 0).map((line: any) => ({ ...line, quantity: line.remainingQuantity, refundUnit: line.refundTotal / line.quantity })) });
+    }).catch(error => { if (current) toast.error(error.message); }).finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [isOpen, suppliedOrder?.billNumber]);
 
   const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
   const [stockAction, setStockAction] = useState<'RESTOCK' | 'WASTE'>('WASTE');
@@ -102,52 +125,44 @@ export const ReturnOrderModal: React.FC<ReturnOrderModalProps> = ({
   const returnedItemsList: ReturnItem[] = orderData.items
     .map((item, idx) => {
       const qty = selectedItems[`${item.name}-${idx}`] || 0;
-      return qty > 0 ? { name: item.name, quantity: qty, price: item.price } : null;
+      return qty > 0 ? { id: item.id, name: item.name, quantity: qty, price: item.price, refundUnit: item.refundUnit } : null;
     })
     .filter(Boolean) as ReturnItem[];
 
-  const refundSubtotal = returnedItemsList.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+  const refundSubtotal = returnedItemsList.reduce((sum, i) => sum + ((i.refundUnit ?? i.price) * i.quantity), 0);
   const isFullOrder = returnedItemsList.length === orderData.items.length && 
     returnedItemsList.every((ri, idx) => ri.quantity === orderData.items[idx].quantity);
 
   const totalRefundAmount = isFullOrder && orderData.grandTotal ? orderData.grandTotal : refundSubtotal;
 
-  const handleSubmit = () => {
-    if (returnedItemsList.length === 0) return;
-
-    // 1. Execute inventory restock or spoilage logging in useInventoryStore
-    restockForOrder(
-      returnedItemsList,
-      orderData.orderType || 'DINE_IN',
-      stockAction,
-      reason,
-      `Manager Return (${orderData.billNumber || 'Order'})`
-    );
-
-    // 2. Handle ledger credit if refunding to Customer Ledger
-    if (refundDest === 'LEDGER' && orderData.customerName) {
-      addEntry({
-        customerId: `cust-return-${Date.now()}`,
-        customerName: orderData.customerName,
-        customerPhone: orderData.customerPhone || '',
-        amount: -totalRefundAmount, // Negative amount represents a Credit note / Balance reduction!
-        billNumber: `REF-${orderData.billNumber || Date.now().toString().slice(-5)}`,
-        date: new Date().toLocaleDateString()
-      });
-    }
-
-    // 3. Invoke callback to update screen UI / order status
-    if (onConfirmReturn) {
-      onConfirmReturn(returnedItemsList, stockAction, reason, refundDest, isFullOrder);
-    }
-
-    onClose();
+  const handleSubmit = async () => {
+    if (!invoice || !returnedItemsList.length || submitting) return;
+    setSubmitting(true);
+    try {
+      let authorization;
+      if (needsAuthorization) {
+        const response = await authorizedFetch('/auth/authorize-refund', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: managerPin, actionId, billNumber: orderData.billNumber }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Manager authorization failed');
+        authorization = data.authorization;
+      }
+      const result = await emitAction('record_return', { actionId, billNumber: orderData.billNumber, items: returnedItemsList.map(item => ({ id: item.id, quantity: item.quantity })), action: stockAction, reason, refundDest, authorization });
+      if (result.status === 'ERROR') throw new Error(result.message || 'Return was not recorded');
+      if (result.status === 'OK') {
+        toast.success('Return recorded: ₹' + Number(result.data?.totalRefund || 0).toFixed(2));
+        onConfirmReturn?.(returnedItemsList, stockAction, reason, refundDest, isFullOrder);
+      } else toast.info('Return saved on this device; awaiting server confirmation.');
+      onClose();
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Return was not recorded'); }
+    finally { setSubmitting(false); }
   };
 
   return (
     <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
       <div className="bg-pos-card w-full max-w-2xl p-6 rounded-3xl border border-pos-border shadow-2xl flex flex-col gap-5 animate-in fade-in zoom-in-95 duration-200 text-pos-text max-h-[90vh] overflow-hidden">
         
+        {loading && <p role="status">Loading saved invoice and prior returns…</p>}
+        {needsAuthorization && <label className="text-sm">Manager PIN for this refund<input type="password" inputMode="numeric" value={managerPin} onChange={event => setManagerPin(event.target.value)} className="ml-3 rounded-lg p-2 bg-pos-bg" autoComplete="off" /></label>}
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-pos-border pb-4 shrink-0">
           <div className="flex items-center gap-3">
@@ -407,7 +422,7 @@ export const ReturnOrderModal: React.FC<ReturnOrderModalProps> = ({
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={returnedItemsList.length === 0}
+              disabled={!invoice || loading || submitting || returnedItemsList.length === 0}
               className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:opacity-40 text-white font-black rounded-xl text-xs uppercase tracking-wider shadow-lg cursor-pointer active:scale-95 transition-all flex items-center gap-2"
             >
               <RotateCcw className="h-4 w-4" /> Confirm Return & {stockAction === 'RESTOCK' ? 'Restock' : 'Log Waste'}

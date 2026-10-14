@@ -4,6 +4,7 @@ import { PrismaService } from './prisma/prisma.service';
 import { KdsGateway } from './kds/kds.gateway';
 import { BillingService } from './billing/billing.service';
 import { BillingController } from './billing/billing.controller';
+import { WorkflowService } from './billing/workflow.service';
 import { BackupModule } from './backup/backup.module';
 import { HistoryModule } from './history/history.module';
 import { SyncModule } from './sync/sync.module';
@@ -30,6 +31,6 @@ import { PrinterModule } from './printer/printer.module';
   ],
 
   controllers: [BillingController],
-  providers: [KdsGateway, BillingService],
+  providers: [KdsGateway, BillingService, WorkflowService],
 })
 export class AppModule {}

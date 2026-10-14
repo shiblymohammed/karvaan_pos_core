@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import * as net from 'net';
 import * as os from 'os';
 
@@ -11,10 +11,15 @@ export interface PrintJobData {
   items?: any[];
   grandTotal?: number;
   notes?: string;
+  data?: number[];
 }
 
 @Injectable()
 export class PrinterService {
+  private validateTarget(ip: string, port: number) {
+    if (process.env.IS_CLOUD === 'true') throw new BadRequestException('Cloud printing requires the restaurant desktop bridge. The VPS cannot access the restaurant LAN.');
+    if (net.isIP(ip) !== 4 || !(ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('127.') || /^172\.(1[6-9]|2\d|3[01])\./.test(ip)) || !Number.isInteger(port) || port < 1 || port > 65535) throw new BadRequestException('Invalid local printer IP or port');
+  }
   private readonly logger = new Logger(PrinterService.name);
   private printQueue: { job: PrintJobData; resolve: (value: boolean) => void }[] = [];
   private isPrinting = false;
@@ -38,6 +43,7 @@ export class PrinterService {
    * Tests TCP connection to a printer
    */
   async testConnection(ip: string, port: number = 9100): Promise<boolean> {
+    this.validateTarget(ip, port);
     return new Promise((resolve) => {
       const socket = new net.Socket();
       socket.setTimeout(2000); // 2 second timeout for testing
@@ -72,6 +78,7 @@ export class PrinterService {
    * Scans the local network for devices with port 9100 open
    */
   async scanNetwork(port: number = 9100): Promise<{ip: string, name: string}[]> {
+    if (process.env.IS_CLOUD === 'true') throw new BadRequestException('Use the restaurant’s local server to scan printers');
     this.logger.log(`[Printer] Scanning network for open port ${port}...`);
     const foundPrinters: {ip: string, name: string}[] = [];
     
@@ -128,6 +135,9 @@ export class PrinterService {
    * Sends a KOT or Receipt job to the printer
    */
   async printJob(job: PrintJobData): Promise<boolean> {
+    this.validateTarget(job.ip, job.port);
+    if (job.data && (!Array.isArray(job.data) || !job.data.length || job.data.length > 1000000 || job.data.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255))) throw new BadRequestException('Invalid receipt bytes');
+    if (this.printQueue.length >= 100) throw new ServiceUnavailableException('Printer queue is full. Retry when pending jobs finish.');
     return new Promise((resolve) => {
       this.printQueue.push({ job, resolve });
       this.processQueue();
@@ -142,6 +152,15 @@ export class PrinterService {
 
     const socket = new net.Socket();
     socket.setTimeout(3000);
+    let finished = false;
+    const finish = (success: boolean) => {
+      if (finished) return;
+      finished = true;
+      if (success) socket.end(); else socket.destroy();
+      resolve(success);
+      this.isPrinting = false;
+      void this.processQueue();
+    };
 
       socket.on('connect', () => {
         this.logger.log(`[Printer] Connected for job type ${job.type} at ${job.ip}:${job.port}`);
@@ -155,28 +174,19 @@ export class PrinterService {
         }
 
         buffer = Buffer.concat([buffer, this.CMD.LF, this.CMD.LF, this.CMD.LF, this.CMD.LF, this.CMD.CUT]);
+        if (job.data) buffer = Buffer.from(job.data);
         
-        socket.write(buffer, () => {
-          socket.end();
-          resolve(true);
-          this.isPrinting = false;
-          this.processQueue();
-        });
+        socket.write(buffer, error => finish(!error));
       });
 
       socket.on('error', (err) => {
         this.logger.error(`[Printer] Failed to print to ${job.ip}:${job.port} - ${err.message}`);
-        resolve(false);
-        this.isPrinting = false;
-        this.processQueue();
+        finish(false);
       });
 
       socket.on('timeout', () => {
         this.logger.error(`[Printer] Timeout while printing to ${job.ip}:${job.port}`);
-        socket.destroy();
-        resolve(false);
-        this.isPrinting = false;
-        this.processQueue();
+        finish(false);
       });
 
       socket.connect(job.port, job.ip);

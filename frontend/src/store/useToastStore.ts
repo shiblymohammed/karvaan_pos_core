@@ -18,7 +18,8 @@ export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
   addToast: (message, type = 'INFO') => {
     const id = Date.now().toString() + Math.random().toString();
-    set((state) => ({ toasts: [...state.toasts, { id, type, message }] }));
+    set((state) => state.toasts.some(toast => toast.type === type && toast.message === message)
+      ? state : { toasts: [...state.toasts.slice(-3), { id, type, message }] });
     
     // Auto remove after 4 seconds
     setTimeout(() => {

@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { KdsGateway } from '../kds/kds.gateway';
 import { getBusinessDayBounds } from '../utils/date.util';
+import { billTotals, paymentAllocation, ledgerView, readJson, ensurePersistedItemsPresent, financialSummary, immutableHistoryBill } from './financial';
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
@@ -163,7 +164,7 @@ export class BillingService {
     }, restaurantId, cashierId);
     return { bill, order: await this.prisma.order.findUnique({ where: { id: order.id } }) };
   }
-  private async pricedItems(tx: any, items: any[], restaurantId: string) {
+  async pricedItems(tx: any, items: any[], restaurantId: string) {
     if (!Array.isArray(items) || !items.length || items.length > 500) throw new BadRequestException('Order must contain valid items');
     const raw = await tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } } });
     let settings: any = {};
@@ -175,7 +176,13 @@ export class BillingService {
     const lines = [];
     for (const item of items) {
       if (!item || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 10000) throw new BadRequestException('Invalid item quantity');
-      const product = await tx.product.findUnique({ where: { id: item.productId } });
+      let product = await tx.product.findUnique({ where: { id: item.productId } });
+      if (typeof item.productId === 'string' && item.productId.startsWith('standalone-')) {
+        const addon = addonCatalog.find((a: any) => `standalone-${a.id}` === item.productId && a.isActive !== false);
+        if (!addon || !Number.isFinite(addon.price) || addon.price < 0) throw new BadRequestException('This standalone add-on is no longer available');
+        const category = await tx.category.upsert({ where: { restaurantId_name: { restaurantId, name: 'Add-ons' } }, update: {}, create: { restaurantId, name: 'Add-ons' } });
+        product = await tx.product.upsert({ where: { id: `addon:${restaurantId}:${addon.id}` }, update: { name: `+ ${addon.name}`, price: addon.price }, create: { id: `addon:${restaurantId}:${addon.id}`, restaurantId, categoryId: category.id, name: `+ ${addon.name}`, price: addon.price, isAvailable: false } });
+      }
       if (!product || product.restaurantId !== restaurantId) throw new BadRequestException('Product not found in this restaurant');
       const addons = (item.addons || []).map((addon: any) => {
         const match = addonCatalog.find((a: any) => a.id === addon.id && a.isActive !== false);
@@ -224,7 +231,20 @@ export class BillingService {
     if (!restaurantId || typeof data?.billNumber !== 'string' || !data.billNumber || typeof data.orderNumber !== 'string' || !data.orderNumber) {
       throw new BadRequestException('Bill and order identifiers are required');
     }
-    const bill = await this.prisma.$transaction(async tx => {
+    const bill = await this.prisma.$transaction(tx => this.checkoutInTransaction(tx, data, restaurantId, cashierId), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 });
+    // A notification failure must not turn a committed sale into a failed checkout.
+    try {
+      const inventory = await this.prisma.inventoryItem.findMany({ where: { restaurantId, isActive: true } });
+      this.kdsGateway.server.to(restaurantId).emit('inventory_updated', inventory);
+      this.kdsGateway.server.to(restaurantId).emit('ledger_updated', await ledgerView(this.prisma, restaurantId));
+      if (data.tableId) this.kdsGateway.server.to(restaurantId).emit('table_updated', { tableId: data.tableId, status: 'AVAILABLE' });
+      const order = await this.prisma.order.findUnique({ where: { id: bill.orderId }, include: { items: { include: { product: true } }, table: true } });
+      if (order && ['RECEIVED', 'COOKING', 'READY'].includes(order.status)) this.kdsGateway.server.to(restaurantId).emit('kds_new_ticket', this.kdsGateway.ticket(order));
+    } catch {}
+    return bill;
+  }
+  async checkoutInTransaction(tx: any, data: any, restaurantId: string, cashierId: string, storedPricing?: any) {
+      if (!restaurantId || typeof data?.billNumber !== 'string' || !data.billNumber || typeof data.orderNumber !== 'string' || !data.orderNumber) throw new BadRequestException('Bill and order identifiers are required');
       const existingBill = await tx.bill.findUnique({ where: { restaurantId_billNumber: { restaurantId, billNumber: data.billNumber } }, include: { order: true } });
       if (existingBill) {
         if (existingBill.order.orderNumber !== data.orderNumber) throw new BadRequestException('Bill identifier is already used by another order');
@@ -232,64 +252,67 @@ export class BillingService {
       }
       const cashier = await tx.user.findUnique({ where: { id: cashierId } });
       if (!cashier?.isActive || cashier.restaurantId !== restaurantId) throw new UnauthorizedException('Invalid cashier');
-      const { lines, settings } = await this.pricedItems(tx, data.items, restaurantId);
-      const itemSubtotal = roundMoney(lines.reduce((sum, line) => sum + line.price * line.quantity, 0));
+      const { lines, settings } = storedPricing || await this.pricedItems(tx, data.items, restaurantId);
       const discount = data.discount ?? 0;
-      if (!Number.isFinite(discount) || discount < 0 || discount > itemSubtotal) throw new BadRequestException('Invalid discount');
       let permissions: any = {};
       try { permissions = JSON.parse(cashier.permissions || '{}'); } catch {}
-      if (discount > 0 && !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(cashier.role) && !permissions.canDiscount) throw new UnauthorizedException('Discount permission is required');
+      if (discount > 0 && !storedPricing && !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(cashier.role) && !permissions.canDiscount) throw new UnauthorizedException('Discount permission is required');
       const orderType = data.orderType || 'DINE_IN';
       if (!['DINE_IN', 'PARCEL', 'DELIVERY'].includes(orderType)) throw new BadRequestException('Invalid order type');
       const table = data.tableId ? await tx.table.findUnique({ where: { id: data.tableId } }) : null;
       if (data.tableId && (!table || table.restaurantId !== restaurantId)) throw new BadRequestException('Invalid dining table');
-      const tableConfig = settings.tableConfig?.find((t: any) => t.id === table?.id);
-      const floor = settings.floorConfig?.find((f: any) => f.id === tableConfig?.floorId);
-      const surcharge = floor ? roundMoney(floor.surchargeType === 'PERCENTAGE' ? itemSubtotal * floor.surchargeValue / 100 : floor.surchargeValue) : 0;
-      const packaging = orderType === 'PARCEL' ? settings.parcelChargeAmount || 0 : 0;
-      const deliveryFee = orderType === 'DELIVERY' ? data.deliveryFee ?? 0 : 0;
-      if (![surcharge, packaging, deliveryFee].every(v => Number.isFinite(v) && v >= 0)) throw new BadRequestException('Invalid service charge');
-      const subtotal = roundMoney(itemSubtotal + surcharge + packaging);
-      const tax = roundMoney(lines.reduce((sum, line) => sum + line.price * line.quantity * (1 - discount / (itemSubtotal || 1)) * line.product.gstRate / 100, 0) + (surcharge + packaging) * 0.05);
-      const cgst = roundMoney(tax / 2);
-      const sgst = roundMoney(tax - cgst);
-      const grandTotal = roundMoney(subtotal - discount + cgst + sgst + deliveryFee);
-      if (data.grandTotal !== undefined && (!Number.isFinite(data.grandTotal) || Math.abs(data.grandTotal - grandTotal) > 0.02)) throw new BadRequestException('Prices or charges have changed; review the cart before checkout');
-      const paymentMethod = data.method || data.paymentMethod || 'CASH';
-      if (!['CASH', 'CARD', 'UPI', 'CREDIT', 'SPLIT'].includes(paymentMethod)) throw new BadRequestException('Invalid payment method');
-      if (data.tenders) {
-        const amounts = Object.entries(data.tenders);
-        if (!amounts.every(([method, amount]) => ['CASH', 'CARD', 'UPI', 'CREDIT'].includes(method) && Number.isFinite(amount) && Number(amount) >= 0) || amounts.reduce((sum, [, amount]) => sum + Number(amount), 0) + 0.01 < grandTotal) throw new BadRequestException('Insufficient or invalid payment');
-      }
-      const existingOrder = await tx.order.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } }, include: { bill: true } });
+      const totals = billTotals(lines, settings, { ...data, orderType }, table?.id);
+      const { itemSubtotal, surcharge, packaging, deliveryFee, subtotal, cgst, sgst, grandTotal } = totals;
+      const tenders = paymentAllocation(data, grandTotal);
+      const paymentMethod = Object.keys(tenders).length > 1 ? 'SPLIT' : Object.keys(tenders)[0] || 'CASH';
+      const existingOrder = await tx.order.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } }, include: { bill: true, items: true } });
       if (existingOrder?.bill) throw new BadRequestException('This order is already settled');
+      if (table?.currentOrderId && table.currentOrderId !== existingOrder?.id) throw new BadRequestException('This table has a different active order. Reload the table before payment.');
+      if (existingOrder) {
+        if (data.expectedOrderVersion && new Date(data.expectedOrderVersion).getTime() !== existingOrder.updatedAt.getTime()) throw new BadRequestException('This order changed on another terminal. Reload it before payment.');
+        ensurePersistedItemsPresent(existingOrder.items, lines.map(i => ({ ...i, productId: i.product.id })));
+      }
       const status = existingOrder?.status || (data.items.some((item: any) => item.status === 'NEW') ? 'COOKING' : 'SERVED');
-      const orderValues = { status, totalAmount: subtotal, discount, tableId: table?.id || null, orderType, items: { create: lines.map(i => ({ productId: i.product.id, quantity: i.quantity, price: i.price, notes: i.notes, addons: JSON.stringify(i.addons), status: 'SERVED' })) } };
+      const billedItems = lines.map(i => ({ id: randomUUID(), productId: i.product.id, quantity: i.quantity, price: i.price, notes: i.notes, addons: JSON.stringify(i.addons), status: status === 'COOKING' ? 'SENT' : 'SERVED' }));
+      const orderValues = { status, totalAmount: subtotal, discount, tableId: table?.id || null, orderType, items: { create: billedItems } };
       const order = existingOrder
         ? await tx.order.update({ where: { id: existingOrder.id }, data: { ...orderValues, items: { deleteMany: {}, ...orderValues.items } } })
         : await tx.order.create({ data: { restaurantId, orderNumber: data.orderNumber, ...orderValues } });
-      const saved = await tx.bill.create({ data: { restaurantId, billNumber: data.billNumber, orderId: order.id, orderType, subtotal, discount, cgst, sgst, grandTotal, deliveryFee, paymentMethod, cashierId, customerName: data.customerName || null, customerPhone: data.customerPhone || null, waiterName: data.waiter || null } });
-      for (const line of lines) {
-        const recipe = await tx.recipeIngredient.findMany({ where: { productId: line.product.id }, include: { inventoryItem: true } });
-        for (const ingredient of recipe) {
-          if (ingredient.inventoryItem.restaurantId !== restaurantId) throw new BadRequestException('Invalid recipe inventory');
-          const quantity = line.quantity * ingredient.quantity;
-          await tx.inventoryItem.update({ where: { id: ingredient.inventoryItemId }, data: { currentStock: { decrement: quantity } } });
+      const snapshots = [];
+      let allocated = 0;
+      let allocatedCgst = 0, allocatedSgst = 0;
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        const recipe = line.recipe || await tx.recipeIngredient.findMany({ where: { productId: line.product.id } });
+        const lineAmount = line.price * line.quantity;
+        const refundTotal = index === lines.length - 1 ? roundMoney(grandTotal - allocated) : roundMoney(lineAmount * (1 - discount / (itemSubtotal || 1)) * (1 + line.product.gstRate / 100) + ((surcharge + packaging) * 1.05 + deliveryFee) * lineAmount / (itemSubtotal || 1));
+        allocated = roundMoney(allocated + refundTotal);
+        const lineTax = lineAmount * (1 - discount / (itemSubtotal || 1)) * line.product.gstRate / 100 + (surcharge + packaging) * 0.05 * lineAmount / (itemSubtotal || 1);
+        const refundCgst = index === lines.length - 1 ? roundMoney(cgst - allocatedCgst) : roundMoney(lineTax / 2);
+        const refundSgst = index === lines.length - 1 ? roundMoney(sgst - allocatedSgst) : roundMoney(lineTax / 2);
+        allocatedCgst = roundMoney(allocatedCgst + refundCgst); allocatedSgst = roundMoney(allocatedSgst + refundSgst);
+        snapshots.push({ id: billedItems[index].id, productId: line.product.id, name: line.product.name, price: line.price, quantity: line.quantity, gstRate: line.product.gstRate, notes: line.notes, addons: line.addons, refundTotal, refundCgst, refundSgst, recipe: recipe.map(r => ({ inventoryItemId: r.inventoryItemId, quantity: r.quantity })) });
+      }
+      const saved = await tx.bill.create({ data: { restaurantId, billNumber: data.billNumber, orderId: order.id, orderType, subtotal, discount, cgst, sgst, grandTotal, deliveryFee, paymentMethod, tenders: JSON.stringify(tenders), invoiceItems: JSON.stringify(snapshots), cashierId, customerName: data.customerName || null, customerPhone: data.customerPhone || null, waiterName: data.waiter || null } });
+      if (tenders.CREDIT > 0 && (!data.customerName?.trim() || !data.customerPhone?.trim())) throw new BadRequestException('Customer name and phone are required for credit');
+      if (data.customerPhone?.trim()) {
+        const customer = await tx.customer.upsert({ where: { restaurantId_mobile: { restaurantId, mobile: data.customerPhone.trim() } }, update: { name: data.customerName?.trim() || 'Guest', totalSpend: { increment: grandTotal }, creditBalance: { increment: tenders.CREDIT || 0 } }, create: { restaurantId, mobile: data.customerPhone.trim(), name: data.customerName?.trim() || 'Guest', totalSpend: grandTotal, creditBalance: tenders.CREDIT || 0 } });
+        await tx.order.update({ where: { id: order.id }, data: { customerId: customer.id } });
+        if (tenders.CREDIT > 0) await tx.ledgerEntry.create({ data: { id: `credit:${saved.id}`, customerId: customer.id, customerName: customer.name, amount: tenders.CREDIT, type: 'CREDIT', billNumber: saved.billNumber, recordedBy: cashierId } });
+      }
+      const delivery = ['DELIVERY', 'PARCEL'].includes(orderType) ? await tx.deliveryOrder.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } } }) : null;
+      if (!delivery?.inventoryConsumed) for (const snapshot of snapshots) {
+        for (const ingredient of snapshot.recipe) {
+          const stock = await tx.inventoryItem.findUnique({ where: { id: ingredient.inventoryItemId } });
+          if (stock?.restaurantId !== restaurantId) throw new BadRequestException('Invalid recipe inventory');
+          const quantity = snapshot.quantity * ingredient.quantity;
+          await tx.inventoryItem.update({ where: { id: ingredient.inventoryItemId }, data: { currentStock: { decrement: quantity }, revision: { increment: 1 } } });
           await tx.stockLog.create({ data: { itemId: ingredient.inventoryItemId, type: 'OUT', quantityChange: -quantity, orderId: order.id, notes: `POS Checkout #${saved.billNumber}` } });
         }
       }
       if (table) await tx.table.update({ where: { id: table.id }, data: { status: 'AVAILABLE', currentOrderId: null } });
       return saved;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 });
-    // A notification failure must not turn a committed sale into a failed checkout.
-    try {
-      const inventory = await this.prisma.inventoryItem.findMany({ where: { restaurantId } });
-      this.kdsGateway.server.to(restaurantId).emit('inventory_updated', inventory);
-      if (data.tableId) this.kdsGateway.server.to(restaurantId).emit('table_updated', { tableId: data.tableId, status: 'AVAILABLE' });
-      const order = await this.prisma.order.findUnique({ where: { id: bill.orderId }, include: { items: { include: { product: true } }, table: true } });
-      if (order && ['RECEIVED', 'COOKING', 'READY'].includes(order.status)) this.kdsGateway.server.to(restaurantId).emit('kds_new_ticket', this.kdsGateway.ticket(order));
-    } catch {}
-    return bill;
+
   }
   // 4. Get Today's Dashboard Sales Summary
   async getDailyDashboardSummary(restaurantId: string) {
@@ -304,18 +327,7 @@ export class BillingService {
     const grossRevenue = aggregate._sum.grandTotal || 0;
     const totalOrders = aggregate._count.id;
 
-    const paymentGroups = await this.prisma.bill.groupBy({
-      by: ['paymentMethod'],
-      where: { restaurantId, settledAt: { gte: start, lte: end } },
-      _sum: { grandTotal: true }
-    });
-
-    let cashRevenue = 0, cardRevenue = 0, upiRevenue = 0;
-    for (const group of paymentGroups) {
-      if (group.paymentMethod === 'CASH') cashRevenue = group._sum.grandTotal || 0;
-      if (group.paymentMethod === 'CARD') cardRevenue = group._sum.grandTotal || 0;
-      if (group.paymentMethod === 'UPI') upiRevenue = group._sum.grandTotal || 0;
-    }
+    const summary = await financialSummary(this.prisma, restaurantId, start, end);
 
     const activeOrdersCount = await this.prisma.order.count({
       where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } },
@@ -326,14 +338,16 @@ export class BillingService {
 
     return {
       grossRevenue: Number(grossRevenue.toFixed(2)),
+      refundTotal: summary.refundTotal, netRevenue: summary.netRevenue, repayments: summary.repayments,
+      collectionBreakdown: summary.collections,
       totalOrders,
       averageOrderValue: totalOrders > 0 ? Number((grossRevenue / totalOrders).toFixed(2)) : 0,
       activeOrdersCount,
       occupiedTablesCount,
       paymentBreakdown: {
-        cash: Number(cashRevenue.toFixed(2)),
-        card: Number(cardRevenue.toFixed(2)),
-        upi: Number(upiRevenue.toFixed(2)),
+        cash: summary.byPayment.CASH || 0,
+        card: summary.byPayment.CARD || 0,
+        upi: summary.byPayment.UPI || 0,
       },
     };
   }
@@ -371,6 +385,6 @@ export class BillingService {
       orderBy: { settledAt: 'desc' }
     });
 
-    return bills;
+    return bills.map(immutableHistoryBill);
   }
 }

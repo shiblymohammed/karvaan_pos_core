@@ -12,6 +12,9 @@ echo.
 
 cd /d "%~dp0..\backend"
 
+node -e "const [major,minor]=process.versions.node.split('.').map(Number); if(major<22 || (major===22 && minor<12)) { console.error('Install Node.js 22.12 or newer before deploying.'); process.exit(1); }"
+if errorlevel 1 exit /b 1
+
 REM ─── Check .env exists ───────────────────────────────────────
 if not exist ".env" (
     echo.
@@ -26,9 +29,9 @@ if not exist ".env" (
 )
 
 echo [1/6] Installing NPM dependencies...
-call npm install --legacy-peer-deps
+call npm ci
 if %errorlevel% neq 0 (
-    echo ERROR: npm install failed. Check the output above.
+    echo ERROR: Dependency installation failed. Check the output above.
     pause
     exit /b 1
 )
@@ -41,10 +44,8 @@ if errorlevel 1 exit /b 1
 echo       Done.
 
 echo.
-echo [3/6] Pushing database schema (creates dev.db if missing)...
-call npx prisma db push
-if errorlevel 1 exit /b 1
-echo       Done.
+echo [3/6] Local database will be backed up and upgraded automatically on startup.
+echo       Use the Docker deployment for a cloud backend.
 
 echo.
 echo [4/6] Building NestJS backend...

@@ -31,11 +31,36 @@ export function getActionContext(): ActionContext {
 export function sameContext(a: ActionContext, b: ActionContext) {
   return a.restaurantId === b.restaurantId && a.userId === b.userId && a.serverUrl === b.serverUrl;
 }
+
+export function actionResources(type: string, payload: any): string[] {
+  const resources: string[] = [];
+  const orderNumber = payload?.orderNumber || payload?.order?.orderNumber;
+  if (orderNumber) resources.push(`order:${orderNumber}`);
+  if (payload?.billNumber) resources.push(`bill:${payload.billNumber}`);
+  if (payload?.tableId || payload?.order?.tableId) resources.push(`table:${payload.tableId || payload.order.tableId}`);
+  if (['park_order', 'remove_parked_order'].includes(type)) resources.push(`park:${payload?.id || payload?.order?.id}`);
+  if (['create_delivery', 'update_delivery', 'collect_delivery_payment'].includes(type)) resources.push(`delivery:${payload?.id}`);
+  if (type === 'ledger_payment') resources.push(`ledger:${payload?.entryId}`);
+  if (type === 'remit_rider_cash') resources.push(`rider:${payload?.riderId}`);
+  if (type === 'sync_menu') resources.push('menu');
+  if (type === 'apply_inventory_changes') for (const row of payload?.changes || []) resources.push(`stock:${row.id}`);
+  if (type === 'receive_inventory_purchase') resources.push(`stock:${payload?.id}`);
+  if (type === 'update_kds_status' && !orderNumber) resources.push(`kitchen:${payload?.orderId}`);
+  return resources.length ? resources : [`type:${type}`];
+}
+
+export async function replaceActionPayload(id: number, payload: any) {
+  const db = await initDB();
+  const action = await db.get('actions', id);
+  if (!action || !sameContext(action, getActionContext())) throw new Error('This pending action belongs to another session');
+  await db.put('actions', { ...action, payload, error: undefined });
+  changed();
+}
 const changed = () => window.dispatchEvent(new CustomEvent('offline-queue-updated'));
 export const enqueueAction = async (type: string, payload: any, context = getActionContext()) => {
   const db = await initDB();
-  if (type === 'settle_bill') {
-    const existing = (await getPendingActions(context)).find(a => a.type === type && a.payload.billNumber === payload.billNumber);
+  if (type === 'settle_bill' || type === 'remit_rider_cash') {
+    const existing = (await getPendingActions(context)).find(a => a.type === type && (type === 'settle_bill' ? a.payload.billNumber === payload.billNumber : a.payload.riderId === payload.riderId));
     if (existing) {
       if (existing.error) await db.put('actions', { ...existing, payload, error: undefined });
       return existing.id!;

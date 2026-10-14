@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Get, Param, Query, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { BillingService } from './billing.service';
+import { WorkflowService } from './workflow.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GetUser } from '../auth/get-user.decorator';
 import { ADMIN_ROLES, Roles, RolesGuard } from '../auth/roles.guard';
@@ -7,7 +8,30 @@ import { ADMIN_ROLES, Roles, RolesGuard } from '../auth/roles.guard';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('billing')
 export class BillingController {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(private readonly billingService: BillingService, private readonly workflows: WorkflowService) {}
+
+  @Get('ledger')
+  @Roles(...ADMIN_ROLES, 'CASHIER')
+  getLedger(@GetUser() user: any) { return this.workflows.ledger(user.restaurantId); }
+
+  @Get('rider-remittance/:riderId')
+  @Roles(...ADMIN_ROLES, 'CASHIER', 'DELIVERY')
+  getRiderRemittance(@Param('riderId') riderId: string, @GetUser() user: any) { return this.workflows.riderRemittanceSummary(riderId, user); }
+
+  @Get('menu')
+  getMenu(@GetUser() user: any) { return this.workflows.menu(user.restaurantId); }
+
+  @Get('inventory')
+  @Roles(...ADMIN_ROLES, 'CASHIER', 'KITCHEN')
+  getInventory(@GetUser() user: any) { return this.workflows.inventoryState(user.restaurantId); }
+
+  @Get('invoice/:billNumber')
+  @Roles(...ADMIN_ROLES, 'CASHIER')
+  getInvoice(@Param('billNumber') billNumber: string, @GetUser() user: any) { return this.workflows.invoice(billNumber, user.restaurantId); }
+
+  @Get('active-order/:orderNumber')
+  @Roles(...ADMIN_ROLES, 'CASHIER', 'WAITER')
+  getActiveOrder(@Param('orderNumber') orderNumber: string, @Query('tableId') tableId: string, @GetUser() user: any) { return this.workflows.activeOrder(orderNumber, user.restaurantId, tableId); }
 
   @Post('order')
   @Roles(...ADMIN_ROLES, 'CASHIER', 'WAITER')

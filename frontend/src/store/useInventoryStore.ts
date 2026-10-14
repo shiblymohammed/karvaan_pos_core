@@ -1,16 +1,19 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { tenantStorage } from './tenantStorage';
-import { socket, emitAction } from '../services/socket';
+import { emitAction, ActionResult } from '../services/socket';
+import { normalizeInventoryItem } from '../services/inventoryData';
 
 export interface Ingredient {
+  stockNeedsReview?: boolean;
+  revision?: number;
   id: string;
   name: string;
   category: 'DAIRY' | 'MEAT' | 'PRODUCE' | 'DRY_GOODS' | 'BEVERAGE' | 'SPICES' | 'PACKAGING';
   currentStock: number; // in cooking/recipe unit (e.g., g, ml, pcs)
   reorderLevel: number;
-  unit: 'g' | 'ml' | 'pcs'; // base unit used in recipes
-  purchaseUnit: 'kg' | 'l' | 'pack' | 'sack' | 'box';
+  unit: 'g' | 'ml' | 'pcs' | 'kg' | 'l'; // base unit used in recipes
+  purchaseUnit: 'kg' | 'l' | 'pack' | 'sack' | 'box' | 'g' | 'ml' | 'pcs';
   conversionFactor: number; // e.g., 1 kg = 1000 g -> factor is 1000
   costPerUnit: number; // cost per base unit (e.g., ₹0.45 per g)
   lastVendor?: string;
@@ -49,10 +52,10 @@ interface InventoryState {
   wasteLogs: WasteLog[];
 
   // Ingredient Actions
-  addIngredient: (ing: Omit<Ingredient, 'id' | 'updatedAt'>) => void;
+  addIngredient: (ing: Omit<Ingredient, 'id' | 'updatedAt'>) => boolean;
   updateIngredient: (id: string, updates: Partial<Ingredient>) => void;
   deleteIngredient: (id: string) => void;
-  addStockPO: (id: string, addedPurchaseUnits: number, purchaseCostPerPurchaseUnit?: number, vendorName?: string) => void;
+  addStockPO: (id: string, addedPurchaseUnits: number, totalInvoiceCost?: number, vendorName?: string) => Promise<ActionResult>;
 
   // Recipe Actions
   saveRecipe: (recipe: Recipe) => void;
@@ -191,13 +194,14 @@ export const useInventoryStore = create<InventoryState>()(
       ],
 
       addIngredient: (ing) => {
+        if (!ing.name.trim() || ![ing.currentStock, ing.reorderLevel, ing.costPerUnit].every(value => Number.isFinite(value) && value >= 0) || !Number.isFinite(ing.conversionFactor) || ing.conversionFactor <= 0) return false;
         const newIng: Ingredient = {
           ...ing,
-          id: `ing-${Date.now()}`,
+          id: `ing-${crypto.randomUUID()}`,
           updatedAt: new Date().toISOString(),
         };
         set((state) => ({ ingredients: [newIng, ...state.ingredients] }));
-        emitAction('sync_inventory', get().ingredients);
+        return true;
       },
 
       updateIngredient: (id, updates) => {
@@ -206,7 +210,6 @@ export const useInventoryStore = create<InventoryState>()(
             i.id === id ? { ...i, ...updates, updatedAt: new Date().toISOString() } : i
           ),
         }));
-        emitAction('sync_inventory', get().ingredients);
       },
 
       deleteIngredient: (id) => {
@@ -217,29 +220,14 @@ export const useInventoryStore = create<InventoryState>()(
             ingredients: r.ingredients.filter((item) => item.ingredientId !== id),
           })),
         }));
-        emitAction('sync_inventory', get().ingredients);
         emitAction('sync_recipes', get().recipes);
       },
 
-      addStockPO: (id, addedPurchaseUnits, purchaseCostPerPurchaseUnit, vendorName) => {
-        set((state) => ({
-          ingredients: state.ingredients.map((i) => {
-            if (i.id !== id) return i;
-            const addedBaseUnits = addedPurchaseUnits * i.conversionFactor;
-            let newCostPerUnit = i.costPerUnit;
-            if (purchaseCostPerPurchaseUnit && purchaseCostPerPurchaseUnit > 0) {
-              newCostPerUnit = purchaseCostPerPurchaseUnit / i.conversionFactor;
-            }
-            return {
-              ...i,
-              currentStock: i.currentStock + addedBaseUnits,
-              costPerUnit: newCostPerUnit,
-              lastVendor: vendorName || i.lastVendor,
-              updatedAt: new Date().toISOString(),
-            };
-          }),
-        }));
-        emitAction('sync_inventory', get().ingredients);
+      addStockPO: async (id, addedPurchaseUnits, totalInvoiceCost, vendorName) => {
+        const row = get().ingredients.find(item => item.id === id);
+        if (!row || row.stockNeedsReview) return { status: 'ERROR', message: 'Reload this ingredient from the server before receiving stock.' };
+        if (!Number.isFinite(addedPurchaseUnits) || addedPurchaseUnits <= 0 || !Number.isFinite(row.conversionFactor) || row.conversionFactor <= 0 || (totalInvoiceCost !== undefined && (!Number.isFinite(totalInvoiceCost) || totalInvoiceCost < 0))) return { status: 'ERROR', message: 'Enter a valid received quantity, conversion, and invoice total.' };
+        return emitAction('receive_inventory_purchase', { id, purchaseUnits: addedPurchaseUnits, purchaseUnit: row.purchaseUnit, conversionFactor: row.conversionFactor, invoiceCost: totalInvoiceCost, vendor: vendorName });
       },
 
       saveRecipe: (recipe) => {
@@ -285,7 +273,6 @@ export const useInventoryStore = create<InventoryState>()(
           ),
           wasteLogs: [newLog, ...state.wasteLogs],
         }));
-        emitAction('sync_inventory', get().ingredients);
         emitAction('sync_waste', get().wasteLogs);
       },
 
@@ -331,7 +318,6 @@ export const useInventoryStore = create<InventoryState>()(
         });
 
         set({ ingredients: updatedIngredients });
-        emitAction('sync_inventory', updatedIngredients);
       },
 
       restockForOrder: (items, orderType, action = 'RESTOCK', reason = 'CUSTOMER_RETURN', loggedBy = 'Cashier Staff') => {
@@ -398,7 +384,6 @@ export const useInventoryStore = create<InventoryState>()(
 
         if (action === 'RESTOCK') {
           set({ ingredients: updatedIngredients });
-          emitAction('sync_inventory', updatedIngredients);
         }
       },
 
@@ -439,7 +424,39 @@ export const useInventoryStore = create<InventoryState>()(
         return ((sellingPrice - cost) / sellingPrice) * 100;
       },
     }),
-    { name: 'pos-inventory-storage', storage: createJSONStorage(() => tenantStorage) }
+    { name: 'pos-inventory-storage', storage: createJSONStorage(() => tenantStorage), merge: (saved: any, current) => ({ ...current, ...saved, ingredients: (saved?.ingredients || current.ingredients).map((row: any) => normalizeInventoryItem(row)) }) }
   )
 );
 
+
+let inventorySyncEnabled = false;
+let applyingInventorySnapshot = false;
+export function suspendInventorySync() { inventorySyncEnabled = false; }
+export function initializeInventorySync() { inventorySyncEnabled = true; }
+export function applyInventorySnapshot(rows: any[]) {
+  applyingInventorySnapshot = true;
+  try {
+    const previous = new Map(useInventoryStore.getState().ingredients.map(row => [row.id, row]));
+    useInventoryStore.setState({ ingredients: rows.filter(row => row.isActive !== false).map(row => normalizeInventoryItem(row, previous.get(row.id))) });
+  }
+  finally { applyingInventorySnapshot = false; }
+}
+const inventoryDetails = (row: Ingredient) => ({ name: row.name, category: row.category, unit: row.unit, minThreshold: row.reorderLevel ?? 0, costPrice: row.costPerUnit ?? 0, purchaseUnit: row.purchaseUnit, conversionFactor: row.conversionFactor, lastVendor: row.lastVendor || '' });
+useInventoryStore.subscribe((state, previous) => {
+  if (!inventorySyncEnabled || applyingInventorySnapshot || state.ingredients === previous.ingredients) return;
+  const before = new Map(previous.ingredients.map(row => [row.id, row]));
+  const after = new Map(state.ingredients.map(row => [row.id, row]));
+  const changes: any[] = [];
+  for (const row of state.ingredients) {
+    const old = before.get(row.id);
+    const delta = Number((row.currentStock - (old?.currentStock || 0)).toFixed(6));
+    const detailsChanged = !old || JSON.stringify(inventoryDetails(old)) !== JSON.stringify(inventoryDetails(row));
+    if (delta || detailsChanged) changes.push({ id: row.id, delta, expectedRevision: old?.revision || 0, ...(detailsChanged ? { metadata: inventoryDetails(row) } : {}) });
+  }
+  for (const row of previous.ingredients) if (!after.has(row.id)) changes.push({ id: row.id, expectedRevision: row.revision || 0, remove: true });
+  if (!changes.length) return;
+  applyingInventorySnapshot = true;
+  useInventoryStore.setState({ ingredients: state.ingredients.map(row => changes.some(change => change.id === row.id) ? { ...row, revision: (row.revision || 0) + 1 } : row) });
+  applyingInventorySnapshot = false;
+  void emitAction('apply_inventory_changes', { changes });
+});

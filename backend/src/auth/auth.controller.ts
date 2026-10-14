@@ -34,6 +34,12 @@ export class AuthController {
     return this.authService.authorizeManager(user.restaurantId, body.pin);
   }
 
+  @Post('authorize-refund')
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  authorizeRefund(@Body() body: any, @GetUser() user: any) {
+    return this.authService.authorizeRefund(user, body);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async me(@GetUser() user: any) {

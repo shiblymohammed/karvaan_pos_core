@@ -31,6 +31,7 @@ export interface Category {
 }
 
 interface MenuState {
+  serverRevision: number;
   products: Product[];
   categories: Category[];
 
@@ -78,6 +79,7 @@ export const useMenuStore = create<MenuState>()(
   persist(
     (set) => ({
       products: INITIAL_PRODUCTS,
+      serverRevision: 0,
       categories: INITIAL_CATEGORIES,
 
       // ─── Product Actions ───────────────────────────────────────────────────────
