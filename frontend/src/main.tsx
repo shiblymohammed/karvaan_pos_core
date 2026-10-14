@@ -6,9 +6,23 @@ import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import './index.css';
 
-// Automatically register PWA Service Worker for offline caching and web app installation
+// Automatically register PWA Service Worker for offline caching and zero-touch auto-updates
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !(window as any).__TAURI__) {
-  registerSW({ immediate: true });
+  const updateSW = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      // Auto-activate the new release immediately without requiring app reinstallation
+      updateSW(true);
+    },
+    onRegistered(registration) {
+      if (registration) {
+        // Poll for new releases every 15 minutes in the background
+        setInterval(() => {
+          registration.update().catch(() => {});
+        }, 15 * 60 * 1000);
+      }
+    },
+  });
 }
 
 // Initialize TanStack Query client for data caching and offline synchronization
