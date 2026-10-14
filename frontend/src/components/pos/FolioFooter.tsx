@@ -43,7 +43,7 @@ export const FolioFooter: React.FC<FolioFooterProps> = ({
   const hasNewItems = items.some(i => i.status === 'NEW');
 
   return (
-    <div className="flex flex-col shrink-0 p-3 pb-8 md:p-4 md:pb-4 bg-transparent z-10 border-t border-white/30 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] rounded-t-[20px] md:rounded-none mt-1">
+    <div className="flex flex-col shrink-0 p-3 pb-[max(2rem,calc(1rem+env(safe-area-inset-bottom,0px)))] md:p-4 md:pb-4 bg-transparent z-10 border-t border-white/30 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] rounded-t-[20px] md:rounded-none mt-1">
       
       {/* Order Summary Card */}
       <div className="flex flex-col space-y-1 md:space-y-3 p-3 md:p-4 bg-white/60 backdrop-blur-xl rounded-[14px] md:rounded-2xl border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.04)] mb-2 md:mb-4">

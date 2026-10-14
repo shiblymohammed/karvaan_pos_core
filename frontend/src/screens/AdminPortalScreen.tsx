@@ -54,7 +54,7 @@ export const AdminPortalScreen: React.FC = () => {
 
   return (
 
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] overflow-hidden text-slate-800">
+    <div className="flex flex-col lg:flex-row h-full bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] overflow-hidden text-slate-800 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0">
       {/* Admin Sidebar */}
       <aside className="w-full lg:w-64 bg-white/70 backdrop-blur-xl border-b lg:border-b-0 lg:border-r border-white/60 shadow-lg flex flex-col p-3 lg:p-4 z-10 shrink-0">
         <div className="hidden lg:block mb-6 px-2">

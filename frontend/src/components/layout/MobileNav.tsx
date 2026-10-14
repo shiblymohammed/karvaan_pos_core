@@ -40,8 +40,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenMore }) => {
   };
 
   return (
-    <div className={`md:hidden fixed bottom-0 left-0 right-0 p-3 z-30 pointer-events-none transition-transform duration-300 ease-out will-change-transform ${isMobileCartOpen || isModalOpen ? 'translate-y-[120%]' : 'translate-y-0'}`}>
-      <nav className="flex items-center justify-around bg-[#151e32] pb-safe pt-2 pb-2 px-2 rounded-[28px] border border-white/10 shadow-2xl pointer-events-auto">
+    <div className={`md:hidden fixed bottom-0 left-0 right-0 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] z-30 pointer-events-none transition-transform duration-300 ease-out will-change-transform ${isMobileCartOpen || isModalOpen ? 'translate-y-[120%]' : 'translate-y-0'}`}>
+      <nav className="flex items-center justify-around bg-[#151e32] py-1.5 px-2 rounded-[28px] border border-white/10 shadow-2xl pointer-events-auto">
         {currentUser.role === 'DELIVERY' ? (
           <div className="w-full text-center text-purple-400 font-bold text-sm py-2">Delivery Rider Mode</div>
         ) : currentUser.role === 'KITCHEN' ? (

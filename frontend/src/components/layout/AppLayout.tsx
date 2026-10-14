@@ -22,7 +22,7 @@ export const AppLayout: React.FC = () => {
   const [isMobileNavMoreOpen, setIsMobileNavMoreOpen] = useState(false);
 
   return (
-    <div className="flex flex-col md:flex-row h-[100dvh] bg-carbon-lines text-kv-dark font-sans selection:bg-kv-primary selection:text-white overflow-hidden transition-colors duration-300 p-0 md:py-4 md:pr-4 gap-0 md:gap-4 relative">
+    <div className="flex flex-col md:flex-row h-[100dvh] bg-carbon-lines text-kv-dark font-sans selection:bg-kv-primary selection:text-white overflow-hidden transition-colors duration-300 p-0 pt-[env(safe-area-inset-top,0px)] md:py-4 md:pr-4 gap-0 md:gap-4 relative">
       <ToastContainer />
       <PendingActionsBanner />
       <PWAInstallPrompt />

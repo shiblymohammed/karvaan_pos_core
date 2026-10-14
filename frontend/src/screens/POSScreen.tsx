@@ -372,12 +372,12 @@ export const POSScreen: React.FC = () => {
       {/* LEFT: Product Catalog or Parked Orders */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
 
-        {/* Desktop Notch Tabs */}
-        <div className="hidden md:block absolute top-0 left-1/2 -translate-x-1/2 z-50">
-          <div className="flex items-center bg-white/70 backdrop-blur-xl p-1 rounded-b-2xl shadow-lg border border-t-0 border-white/80 gap-1">
+        {/* Notch Tabs (Desktop + Mobile) */}
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 z-40 w-auto max-w-[94vw]">
+          <div className="flex items-center bg-white/80 backdrop-blur-xl p-1 rounded-full shadow-md border border-white/80 gap-1">
             <button
               onClick={() => setShowParkedOrders(false)}
-              className={`relative px-4 py-1.5 text-xs rounded-full font-bold transition-all z-10 ${!showParkedOrders ? 'text-white' : 'text-slate-600 hover:text-slate-800'}`}
+              className={`relative px-3.5 py-1 text-xs rounded-full font-bold transition-all z-10 ${!showParkedOrders ? 'text-white' : 'text-slate-600 hover:text-slate-800'}`}
             >
               {!showParkedOrders && (
                 <motion.div layoutId="notchTab" className="absolute inset-0 bg-slate-800 rounded-full shadow-md -z-10" transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
@@ -386,7 +386,7 @@ export const POSScreen: React.FC = () => {
             </button>
             <button
               onClick={() => setShowParkedOrders(true)}
-              className={`relative flex items-center gap-1.5 px-4 py-1.5 text-xs rounded-full font-bold transition-all z-10 ${showParkedOrders ? 'text-white' : 'text-slate-600 hover:text-slate-800'}`}
+              className={`relative flex items-center gap-1.5 px-3.5 py-1 text-xs rounded-full font-bold transition-all z-10 ${showParkedOrders ? 'text-white' : 'text-slate-600 hover:text-slate-800'}`}
             >
               {showParkedOrders && (
                 <motion.div layoutId="notchTab" className="absolute inset-0 bg-slate-800 rounded-full shadow-md -z-10" transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
@@ -402,7 +402,7 @@ export const POSScreen: React.FC = () => {
         </div>
 
         {showParkedOrders ? (
-          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-2 md:pt-10">
+          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-10 md:pt-14">
             <div className="flex-1 p-4 md:p-6 pb-[240px] lg:pb-6 overflow-y-auto">
               <ParkedOrdersView onClose={() => setShowParkedOrders(false)} />
             </div>
@@ -421,54 +421,24 @@ export const POSScreen: React.FC = () => {
           />
         )}
 
-        {/* Mobile Sticky Bottom Bar */}
-        {!isMobileCartOpen && (
-          <div className="lg:hidden absolute bottom-4 left-4 right-4 z-40 flex flex-col gap-2">
-            {/* Mobile tab toggle */}
-            <div className="md:hidden flex bg-white/70 backdrop-blur-xl p-1 rounded-2xl shadow-lg border border-white/50 w-full animate-in slide-in-from-bottom-4">
+        {/* Floating Mobile Cart Island - Positioned cleanly above MobileNav */}
+        {!isMobileCartOpen && items.length > 0 && (
+          <div className="lg:hidden fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] left-3 right-3 z-20 animate-in slide-in-from-bottom-6 duration-200">
+            <div className="bg-[#0d212b]/95 backdrop-blur-md text-white p-2.5 px-3.5 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{items.length} Item{items.length !== 1 ? 's' : ''}</span>
+                <span className="text-base font-black text-[#b5ef85]">₹{grandTotal.toFixed(2)}</span>
+              </div>
               <button
-                onClick={() => setShowParkedOrders(false)}
-                className={`flex-1 relative py-2.5 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 ${!showParkedOrders ? 'text-white' : 'text-slate-500'}`}
+                onClick={() => setIsMobileCartOpen(true)}
+                className="bg-[#b5ef85] text-[#0d212b] px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 hover:bg-[#a2db74] active:scale-95 transition-all shadow-lg cursor-pointer"
               >
-                {!showParkedOrders && (
-                  <motion.div layoutId="mobileNotchTab" className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10" transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
-                )}
-                Menu Catalogue
-              </button>
-              <button
-                onClick={() => setShowParkedOrders(true)}
-                className={`flex-1 relative flex items-center justify-center gap-1.5 py-2.5 text-[13px] rounded-xl font-bold transition-all z-10 text-center active:scale-95 ${showParkedOrders ? 'text-white' : 'text-slate-500'}`}
-              >
-                {showParkedOrders && (
-                  <motion.div layoutId="mobileNotchTab" className="absolute inset-0 bg-slate-800 rounded-xl shadow-md -z-10" transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
-                )}
-                Parked Orders
-                {heldOrders.length > 0 && (
-                  <span className={`${showParkedOrders ? 'bg-[#b5ef85] text-slate-900' : 'bg-slate-200 text-slate-500'} text-[10px] font-black px-1.5 py-0.5 rounded-full transition-colors`}>
-                    {heldOrders.length}
-                  </span>
-                )}
+                <span>View Cart</span>
+                <div className="w-4 h-4 bg-[#0d212b]/10 rounded-full flex items-center justify-center">
+                  <ChevronUp className="w-3 h-3" />
+                </div>
               </button>
             </div>
-
-            {/* Cart island */}
-            {items.length > 0 && (
-              <div className="bg-[#0d212b] text-white p-3 px-4 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 animate-in slide-in-from-bottom-8">
-                <div className="flex flex-col">
-                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">{items.length} Item{items.length !== 1 ? 's' : ''}</span>
-                  <span className="text-lg font-black text-[#b5ef85]">₹{grandTotal.toFixed(2)}</span>
-                </div>
-                <button
-                  onClick={() => setIsMobileCartOpen(true)}
-                  className="bg-[#b5ef85] text-[#0d212b] px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-[#a2db74] active:scale-95 transition-all shadow-lg"
-                >
-                  <span>View Cart</span>
-                  <div className="w-5 h-5 bg-[#0d212b]/10 rounded-full flex items-center justify-center">
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  </div>
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>
