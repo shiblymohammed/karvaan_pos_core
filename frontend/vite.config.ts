@@ -16,25 +16,29 @@ export default defineConfig({
     // which causes the Tauri app to serve stale old code even after a fresh rebuild.
     ...(!IS_TAURI ? [VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
+      injectRegister: 'auto',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'Karvaan POS Core Edition',
-        short_name: 'KarvaanPOS',
+        name: 'Karvaan POS – Core Edition',
+        short_name: 'Karvaan POS',
         description: 'Zero-latency, real-time cloud and offline-first restaurant POS terminal.',
         theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',
-        orientation: 'landscape',
+        orientation: 'any',
+        start_url: '/',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any maskable',
           },
           {
-            src: 'pwa-512x512.png',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'any maskable',
           },
         ],
       },

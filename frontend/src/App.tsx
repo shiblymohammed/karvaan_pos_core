@@ -8,6 +8,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { ToastContainer } from './components/ToastContainer';
 import { PendingActionsBanner } from './components/PendingActionsBanner';
 import { SetupScreen } from './screens/SetupScreen';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 
 // Re-export ScreenType from shared path constants so nothing downstream breaks
 export type { ScreenType } from './components/layout/screenPaths';
@@ -54,6 +55,7 @@ export const App: React.FC = () => {
           <FullLoginScreen />
         </Suspense>
         {showSetup && <SetupScreen onComplete={() => setShowSetup(false)} />}
+        <PWAInstallPrompt />
       </div>
     );
   }
