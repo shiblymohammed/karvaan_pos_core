@@ -126,7 +126,7 @@ export const App: React.FC = () => {
         <Route path="/app/qr" element={<QROrderScreen />} />
         <Route path="/app/dashboard" element={<AdminDashboard />} />
         <Route path="/app/customers" element={<AdminCustomerScreen />} />
-        <Route path="/app/inventory" element={<AdminInventoryScreen />} />
+        <Route path="/app/inventory" element={<Navigate to="/app/admin" replace />} />
         <Route path="/app/admin" element={<AdminPortalScreen />} />
         {/* Catch-all → default screen */}
         <Route path="*" element={<Navigate to={defaultPath} replace />} />

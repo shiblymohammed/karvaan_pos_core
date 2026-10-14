@@ -15,7 +15,7 @@ export const SCREEN_PATHS: Record<ScreenType, string> = {
   QR: '/app/qr',
   DASHBOARD: '/app/dashboard',
   CUSTOMERS: '/app/customers',
-  INVENTORY: '/app/inventory',
+  INVENTORY: '/app/admin',
   ADMIN: '/app/admin',
   SETTINGS: '/app/admin', // alias
 };
