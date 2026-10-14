@@ -16,34 +16,6 @@ export interface KdsTicket {
   readyAt?: string;
 }
 
-const MOCK_INITIAL_TICKETS: KdsTicket[] = [
-  {
-    id: 'kot-101',
-    orderNumber: 'KOT-1042',
-    tableNumber: 'T1',
-    items: [
-      { name: 'Margherita Pepperoni Pizza', quantity: 1, notes: 'Extra crispy crust', status: 'COOKING' },
-      { name: 'Belgian Chocolate Shake', quantity: 2, status: 'COOKING' },
-    ],
-    firedAt: new Date(Date.now() - 6 * 60000).toISOString(),
-    status: 'COOKING',
-    elapsedMinutes: 6,
-  },
-  {
-    id: 'kot-102',
-    orderNumber: 'KOT-1043',
-    tableNumber: 'VIP-1',
-    items: [
-      { name: 'Four Cheese Truffle Pizza', quantity: 2, notes: 'No garlic oil', status: 'COOKING' },
-      { name: 'Smoked Chicken Burger', quantity: 3, status: 'COOKING' },
-      { name: 'Hazelnut Cold Coffee', quantity: 3, status: 'COOKING' },
-    ],
-    firedAt: new Date(Date.now() - 12 * 60000).toISOString(),
-    status: 'COOKING',
-    elapsedMinutes: 12,
-  },
-];
-
 interface KdsState {
   tickets: KdsTicket[];
   addTicket: (ticket: Omit<KdsTicket, 'status' | 'elapsedMinutes'>) => void;
@@ -56,7 +28,7 @@ interface KdsState {
 export const useKdsStore = create<KdsState>()(
   persist(
     (set, get) => ({
-      tickets: MOCK_INITIAL_TICKETS,
+      tickets: [],
 
   addTicket: (ticket) => {
     set((state) => ({
@@ -91,7 +63,7 @@ export const useKdsStore = create<KdsState>()(
     }
 
     // Broadcast to all other devices
-    emitAction('update_kds_status', { orderId: id, status });
+    emitAction('update_kds_status', { orderId: id, orderNumber: ticket?.orderNumber, status });
   },
 
   updateElapsedTimes: () => {
@@ -118,10 +90,7 @@ export const useKdsStore = create<KdsState>()(
   clearTableTickets: (tableName) => {
     set((state) => ({
       tickets: state.tickets.filter((t) => {
-        if (tableName.includes('Takeaway') || tableName === 'Walk-in' || tableName.includes('Delivery') || tableName.includes('Parcel') || t.orderType === 'DELIVERY' || t.orderType === 'PARCEL') {
-          return !(t.tableNumber === tableName && t.status === 'SERVED');
-        }
-        return t.tableNumber !== tableName;
+        return !(t.tableNumber === tableName && t.status === 'SERVED');
       }),
     }));
     // Broadcast to all other devices

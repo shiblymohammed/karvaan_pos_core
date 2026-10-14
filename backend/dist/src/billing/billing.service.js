@@ -13,11 +13,13 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillingService = void 0;
+const crypto_1 = require("crypto");
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
 const kds_gateway_1 = require("../kds/kds.gateway");
 const date_util_1 = require("../utils/date.util");
+const roundMoney = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
 let BillingService = class BillingService {
     constructor(prisma, kdsGateway) {
         this.prisma = prisma;
@@ -32,6 +34,8 @@ let BillingService = class BillingService {
         let totalAmount = 0.0;
         const orderItemsData = [];
         for (const item of data.items) {
+            if (!Number.isInteger(item.quantity) || item.quantity <= 0)
+                throw new common_1.BadRequestException('Invalid item quantity');
             const product = await this.prisma.product.findUnique({
                 where: { id: item.productId }
             });
@@ -48,8 +52,14 @@ let BillingService = class BillingService {
             });
         }
         const order = await this.prisma.$transaction(async (tx) => {
-            const orderCount = await tx.order.count({ where: { restaurantId: data.restaurantId } });
-            const orderNumber = `KORD-${1000 + orderCount + 1}`;
+            const orderNumber = `KORD-${(0, crypto_1.randomUUID)()}`;
+            for (const [model, id] of [['table', data.tableId], ['user', data.waiterId], ['customer', data.customerId]]) {
+                if (id) {
+                    const related = await tx[model].findUnique({ where: { id } });
+                    if (!related || related.restaurantId !== data.restaurantId)
+                        throw new common_1.BadRequestException('Invalid restaurant reference');
+                }
+            }
             const newOrder = await tx.order.create({
                 data: {
                     orderNumber,
@@ -78,7 +88,7 @@ let BillingService = class BillingService {
         }, {
             isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable,
         });
-        this.kdsGateway.server.emit('kds_new_ticket', {
+        this.kdsGateway.server.to(data.restaurantId).emit('kds_new_ticket', {
             id: order.id,
             restaurantId: order.restaurantId,
             orderNumber: order.orderNumber,
@@ -92,7 +102,7 @@ let BillingService = class BillingService {
             firedAt: order.createdAt,
         });
         if (order.tableId) {
-            this.kdsGateway.server.emit('table_updated', {
+            this.kdsGateway.server.to(data.restaurantId).emit('table_updated', {
                 tableId: order.tableId,
                 restaurantId: order.restaurantId,
                 status: 'OCCUPIED',
@@ -110,8 +120,9 @@ let BillingService = class BillingService {
             throw new common_1.NotFoundException(`Order ID ${orderId} not found.`);
         }
         const subtotal = order.totalAmount;
-        const gstRate = 0.05;
-        const totalGst = (subtotal - discountAmount) * gstRate;
+        if (!Number.isFinite(discountAmount) || discountAmount < 0 || discountAmount > subtotal)
+            throw new common_1.BadRequestException('Invalid discount');
+        const totalGst = order.items.reduce((sum, item) => sum + item.price * item.quantity * (1 - discountAmount / (subtotal || 1)) * item.product.gstRate / 100, 0);
         const cgst = Number((totalGst / 2).toFixed(2));
         const sgst = Number((totalGst / 2).toFixed(2));
         const grandTotal = Number((subtotal - discountAmount + cgst + sgst).toFixed(2));
@@ -126,168 +137,168 @@ let BillingService = class BillingService {
         };
     }
     async settleBill(data, restaurantId, cashierId) {
-        const preview = await this.calculateBillPreview(data.orderId, restaurantId, data.discount || 0);
-        const settledBill = await this.prisma.$transaction(async (tx) => {
-            const billCount = await tx.bill.count({ where: { restaurantId } });
-            const billNumber = `INV-${2026000 + billCount + 1}`;
-            const bill = await tx.bill.create({
-                data: {
-                    billNumber,
-                    orderId: data.orderId,
-                    restaurantId,
-                    subtotal: preview.subtotal,
-                    cgst: preview.cgst,
-                    sgst: preview.sgst,
-                    discount: preview.discount,
-                    grandTotal: preview.grandTotal,
-                    paymentMethod: data.paymentMethod,
-                    cashierId: cashierId || null,
-                },
-            });
-            const order = await tx.order.update({
-                where: { id: data.orderId },
-                data: { status: 'SERVED' },
-                include: { items: { include: { product: { include: { recipeItems: true } } } }, table: true },
-            });
-            if (order.tableId) {
-                await tx.table.update({
-                    where: { id: order.tableId },
-                    data: { status: 'AVAILABLE', currentOrderId: null },
-                });
-            }
-            for (const item of order.items) {
-                if (!item.product.recipeItems || item.product.recipeItems.length === 0)
-                    continue;
-                for (const recipeItem of item.product.recipeItems) {
-                    const deductQty = item.quantity * recipeItem.quantity;
-                    await tx.inventoryItem.update({
-                        where: { id: recipeItem.inventoryItemId },
-                        data: { currentStock: { decrement: deductQty } },
-                    });
-                    await tx.stockLog.create({
-                        data: {
-                            itemId: recipeItem.inventoryItemId,
-                            type: 'OUT',
-                            quantityChange: -deductQty,
-                            notes: `Automated POS deduction for Bill #${billNumber} (${item.quantity}x ${item.product.name})`,
-                        },
-                    });
-                }
-            }
-            return { bill, order };
-        }, {
-            isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable,
-        });
-        if (settledBill.order.tableId) {
-            this.kdsGateway.server.emit('table_updated', {
-                tableId: settledBill.order.tableId,
-                restaurantId,
-                status: 'AVAILABLE',
-            });
-        }
-        return settledBill;
+        const order = await this.prisma.order.findFirst({ where: { id: data.orderId, restaurantId }, include: { items: true, bill: true } });
+        if (!order)
+            throw new common_1.NotFoundException('Order not found');
+        const bill = await this.processDirectCheckout({
+            billNumber: order.bill?.billNumber || `INV-${order.id}`, orderNumber: order.orderNumber, orderType: order.orderType,
+            tableId: order.tableId, discount: data.discount || 0, paymentMethod: data.paymentMethod,
+            items: order.items.map(item => ({ productId: item.productId, quantity: item.quantity, notes: item.notes, addons: item.addons ? JSON.parse(item.addons) : [] })),
+        }, restaurantId, cashierId);
+        return { bill, order: await this.prisma.order.findUnique({ where: { id: order.id } }) };
     }
-    async processDirectCheckout(billData, restaurantId) {
-        const settledBill = await this.prisma.$transaction(async (tx) => {
-            let orderId = null;
-            let existingOrder = await tx.order.findUnique({
-                where: { restaurantId_orderNumber: { restaurantId, orderNumber: billData.orderNumber } }
+    async pricedItems(tx, items, restaurantId) {
+        if (!Array.isArray(items) || !items.length || items.length > 500)
+            throw new common_1.BadRequestException('Order must contain valid items');
+        const raw = await tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } } });
+        let settings = {};
+        try {
+            settings = JSON.parse(raw?.data || '{}');
+        }
+        catch { }
+        const addonCatalog = settings.paidAddons || [
+            { id: 'a1', name: 'Extra Mayonnaise', price: 20 }, { id: 'a2', name: 'Extra Cheese Slice', price: 30 },
+            { id: 'a3', name: 'Peri Peri Dip', price: 15 }, { id: 'a4', name: 'Double Patty', price: 120 }, { id: 'a5', name: 'Hazelnut Syrup', price: 40 },
+        ];
+        const lines = [];
+        for (const item of items) {
+            if (!item || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 10000)
+                throw new common_1.BadRequestException('Invalid item quantity');
+            const product = await tx.product.findUnique({ where: { id: item.productId } });
+            if (!product || product.restaurantId !== restaurantId)
+                throw new common_1.BadRequestException('Product not found in this restaurant');
+            const addons = (item.addons || []).map((addon) => {
+                const match = addonCatalog.find((a) => a.id === addon.id && a.isActive !== false);
+                if (!match || !Number.isFinite(match.price) || match.price < 0)
+                    throw new common_1.BadRequestException('Invalid add-on');
+                return { id: match.id, name: match.name, price: match.price };
             });
-            if (existingOrder) {
-                orderId = existingOrder.id;
-                await tx.order.update({
-                    where: { id: orderId },
-                    data: { status: 'SERVED', discount: billData.discount || 0 }
-                });
-            }
-            else {
-                const orderItemsData = [];
-                let totalAmount = 0.0;
-                if (billData.items) {
-                    for (const item of billData.items) {
-                        if (item.productId && item.productId !== 'unknown') {
-                            const product = await tx.product.findUnique({ where: { id: item.productId } });
-                            if (product) {
-                                totalAmount += (product.price * item.quantity);
-                                orderItemsData.push({
-                                    productId: product.id,
-                                    quantity: item.quantity,
-                                    price: product.price,
-                                    notes: item.notes || null,
-                                });
-                            }
-                        }
-                    }
-                }
-                const newOrder = await tx.order.create({
-                    data: {
-                        orderNumber: billData.orderNumber,
-                        restaurantId,
-                        totalAmount: Number((billData.subtotal || totalAmount).toFixed(2)),
-                        status: 'SERVED',
-                        orderType: billData.orderType || 'DINE_IN',
-                        items: { create: orderItemsData }
-                    }
-                });
-                orderId = newOrder.id;
-            }
-            const bill = await tx.bill.upsert({
-                where: { restaurantId_billNumber: { restaurantId, billNumber: billData.billNumber } },
-                update: {},
-                create: {
-                    billNumber: billData.billNumber,
-                    orderId,
-                    orderType: billData.orderType || 'DINE_IN',
-                    subtotal: Number((billData.subtotal || 0).toFixed(2)),
-                    cgst: Number((billData.cgst || 0).toFixed(2)),
-                    sgst: Number((billData.sgst || 0).toFixed(2)),
-                    discount: Number((billData.discount || 0).toFixed(2)),
-                    deliveryFee: Number((billData.deliveryFee || 0).toFixed(2)),
-                    grandTotal: Number((billData.grandTotal || 0).toFixed(2)),
-                    paymentMethod: billData.method || billData.paymentMethod || 'CASH',
-                    customerName: billData.customerName || null,
-                    customerPhone: billData.customerPhone || null,
-                    waiterName: billData.waiter || null,
-                    settledAt: new Date(),
-                    restaurantId,
-                }
-            });
-            const orderWithItems = await tx.order.findUnique({
-                where: { id: orderId },
-                include: { items: { include: { product: { include: { recipeItems: true } } } } }
-            });
-            if (orderWithItems) {
-                for (const item of orderWithItems.items) {
-                    if (!item.product.recipeItems || item.product.recipeItems.length === 0)
-                        continue;
-                    for (const recipeItem of item.product.recipeItems) {
-                        const deductQty = item.quantity * recipeItem.quantity;
-                        const invItem = await tx.inventoryItem.findUnique({ where: { id: recipeItem.inventoryItemId } });
-                        if (invItem) {
-                            const newStock = Math.max(0, invItem.currentStock - deductQty);
-                            await tx.inventoryItem.update({
-                                where: { id: recipeItem.inventoryItemId },
-                                data: { currentStock: newStock },
-                            });
-                            await tx.stockLog.create({
-                                data: {
-                                    itemId: recipeItem.inventoryItemId,
-                                    type: 'OUT',
-                                    quantityChange: -deductQty,
-                                    notes: `POS Checkout #${bill.billNumber} (${item.quantity}x ${item.product.name})`,
-                                },
-                            });
-                        }
-                    }
+            const price = roundMoney(product.price + addons.reduce((sum, a) => sum + a.price, 0));
+            lines.push({ product, quantity: item.quantity, price, notes: typeof item.notes === 'string' ? item.notes : null, addons });
+        }
+        return { lines, settings };
+    }
+    async saveKitchenOrder(data, restaurantId, waiterId) {
+        if (!data?.id || !data.orderNumber)
+            throw new common_1.BadRequestException('Kitchen ticket ID and order number are required');
+        return this.prisma.$transaction(async (tx) => {
+            const key = { restaurantId_settingKey: { restaurantId, settingKey: `kot:${data.id}` } };
+            const receipt = await tx.systemSetting.findUnique({ where: key });
+            if (receipt)
+                return tx.order.findUniqueOrThrow({ where: { id: JSON.parse(receipt.data).orderId }, include: { items: { include: { product: true } }, table: true } });
+            const { lines } = await this.pricedItems(tx, data.items, restaurantId);
+            let existing = await tx.order.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } }, include: { bill: true } });
+            if (existing?.bill)
+                throw new common_1.BadRequestException('Order is already settled');
+            let table = null;
+            if (data.tableNumber)
+                table = await tx.table.findFirst({ where: { restaurantId, tableNumber: data.tableNumber } });
+            const tableId = table?.id || null;
+            if (!existing && table?.currentOrderId) {
+                const activeTableOrder = await tx.order.findUnique({ where: { id: table.currentOrderId }, include: { bill: true } });
+                if (activeTableOrder && !activeTableOrder.bill) {
+                    existing = activeTableOrder;
                 }
             }
-            return bill;
-        }, {
-            isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable,
+            const items = lines.map(i => ({ productId: i.product.id, quantity: i.quantity, price: i.price, notes: i.notes, addons: JSON.stringify(i.addons), status: 'SENT' }));
+            const addedTotal = roundMoney(lines.reduce((sum, i) => sum + i.price * i.quantity, 0));
+            const order = existing
+                ? await tx.order.update({ where: { id: existing.id }, data: { status: 'COOKING', totalAmount: { increment: addedTotal }, items: { create: items } } })
+                : await tx.order.create({ data: { restaurantId, orderNumber: data.orderNumber, orderType: data.orderType || 'DINE_IN', waiterId, tableId, status: 'COOKING', totalAmount: addedTotal, items: { create: items } } });
+            await tx.systemSetting.create({ data: { restaurantId, settingKey: `kot:${data.id}`, data: JSON.stringify({ orderId: order.id }) } });
+            if (tableId)
+                await tx.table.update({ where: { id: tableId }, data: { status: 'OCCUPIED', currentOrderId: order.id } });
+            return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: { include: { product: true } }, table: true } });
         });
-        const updatedInventory = await this.prisma.inventoryItem.findMany({ where: { restaurantId } });
-        this.kdsGateway.server.emit('inventory_updated', updatedInventory);
-        return settledBill;
+    }
+    async processDirectCheckout(data, restaurantId, cashierId) {
+        if (!restaurantId || typeof data?.billNumber !== 'string' || !data.billNumber || typeof data.orderNumber !== 'string' || !data.orderNumber) {
+            throw new common_1.BadRequestException('Bill and order identifiers are required');
+        }
+        const bill = await this.prisma.$transaction(async (tx) => {
+            const existingBill = await tx.bill.findUnique({ where: { restaurantId_billNumber: { restaurantId, billNumber: data.billNumber } }, include: { order: true } });
+            if (existingBill) {
+                if (existingBill.order.orderNumber !== data.orderNumber)
+                    throw new common_1.BadRequestException('Bill identifier is already used by another order');
+                return existingBill;
+            }
+            const cashier = await tx.user.findUnique({ where: { id: cashierId } });
+            if (!cashier?.isActive || cashier.restaurantId !== restaurantId)
+                throw new common_1.UnauthorizedException('Invalid cashier');
+            const { lines, settings } = await this.pricedItems(tx, data.items, restaurantId);
+            const itemSubtotal = roundMoney(lines.reduce((sum, line) => sum + line.price * line.quantity, 0));
+            const discount = data.discount ?? 0;
+            if (!Number.isFinite(discount) || discount < 0 || discount > itemSubtotal)
+                throw new common_1.BadRequestException('Invalid discount');
+            let permissions = {};
+            try {
+                permissions = JSON.parse(cashier.permissions || '{}');
+            }
+            catch { }
+            if (discount > 0 && !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(cashier.role) && !permissions.canDiscount)
+                throw new common_1.UnauthorizedException('Discount permission is required');
+            const orderType = data.orderType || 'DINE_IN';
+            if (!['DINE_IN', 'PARCEL', 'DELIVERY'].includes(orderType))
+                throw new common_1.BadRequestException('Invalid order type');
+            const table = data.tableId ? await tx.table.findUnique({ where: { id: data.tableId } }) : null;
+            if (data.tableId && (!table || table.restaurantId !== restaurantId))
+                throw new common_1.BadRequestException('Invalid dining table');
+            const tableConfig = settings.tableConfig?.find((t) => t.id === table?.id);
+            const floor = settings.floorConfig?.find((f) => f.id === tableConfig?.floorId);
+            const surcharge = floor ? roundMoney(floor.surchargeType === 'PERCENTAGE' ? itemSubtotal * floor.surchargeValue / 100 : floor.surchargeValue) : 0;
+            const packaging = orderType === 'PARCEL' ? settings.parcelChargeAmount || 0 : 0;
+            const deliveryFee = orderType === 'DELIVERY' ? data.deliveryFee ?? 0 : 0;
+            if (![surcharge, packaging, deliveryFee].every(v => Number.isFinite(v) && v >= 0))
+                throw new common_1.BadRequestException('Invalid service charge');
+            const subtotal = roundMoney(itemSubtotal + surcharge + packaging);
+            const tax = roundMoney(lines.reduce((sum, line) => sum + line.price * line.quantity * (1 - discount / (itemSubtotal || 1)) * line.product.gstRate / 100, 0) + (surcharge + packaging) * 0.05);
+            const cgst = roundMoney(tax / 2);
+            const sgst = roundMoney(tax - cgst);
+            const grandTotal = roundMoney(subtotal - discount + cgst + sgst + deliveryFee);
+            if (data.grandTotal !== undefined && (!Number.isFinite(data.grandTotal) || Math.abs(data.grandTotal - grandTotal) > 0.02))
+                throw new common_1.BadRequestException('Prices or charges have changed; review the cart before checkout');
+            const paymentMethod = data.method || data.paymentMethod || 'CASH';
+            if (!['CASH', 'CARD', 'UPI', 'CREDIT', 'SPLIT'].includes(paymentMethod))
+                throw new common_1.BadRequestException('Invalid payment method');
+            if (data.tenders) {
+                const amounts = Object.entries(data.tenders);
+                if (!amounts.every(([method, amount]) => ['CASH', 'CARD', 'UPI', 'CREDIT'].includes(method) && Number.isFinite(amount) && Number(amount) >= 0) || amounts.reduce((sum, [, amount]) => sum + Number(amount), 0) + 0.01 < grandTotal)
+                    throw new common_1.BadRequestException('Insufficient or invalid payment');
+            }
+            const existingOrder = await tx.order.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } }, include: { bill: true } });
+            if (existingOrder?.bill)
+                throw new common_1.BadRequestException('This order is already settled');
+            const status = existingOrder?.status || (data.items.some((item) => item.status === 'NEW') ? 'COOKING' : 'SERVED');
+            const orderValues = { status, totalAmount: subtotal, discount, tableId: table?.id || null, orderType, items: { create: lines.map(i => ({ productId: i.product.id, quantity: i.quantity, price: i.price, notes: i.notes, addons: JSON.stringify(i.addons), status: 'SERVED' })) } };
+            const order = existingOrder
+                ? await tx.order.update({ where: { id: existingOrder.id }, data: { ...orderValues, items: { deleteMany: {}, ...orderValues.items } } })
+                : await tx.order.create({ data: { restaurantId, orderNumber: data.orderNumber, ...orderValues } });
+            const saved = await tx.bill.create({ data: { restaurantId, billNumber: data.billNumber, orderId: order.id, orderType, subtotal, discount, cgst, sgst, grandTotal, deliveryFee, paymentMethod, cashierId, customerName: data.customerName || null, customerPhone: data.customerPhone || null, waiterName: data.waiter || null } });
+            for (const line of lines) {
+                const recipe = await tx.recipeIngredient.findMany({ where: { productId: line.product.id }, include: { inventoryItem: true } });
+                for (const ingredient of recipe) {
+                    if (ingredient.inventoryItem.restaurantId !== restaurantId)
+                        throw new common_1.BadRequestException('Invalid recipe inventory');
+                    const quantity = line.quantity * ingredient.quantity;
+                    await tx.inventoryItem.update({ where: { id: ingredient.inventoryItemId }, data: { currentStock: { decrement: quantity } } });
+                    await tx.stockLog.create({ data: { itemId: ingredient.inventoryItemId, type: 'OUT', quantityChange: -quantity, orderId: order.id, notes: `POS Checkout #${saved.billNumber}` } });
+                }
+            }
+            if (table)
+                await tx.table.update({ where: { id: table.id }, data: { status: 'AVAILABLE', currentOrderId: null } });
+            return saved;
+        }, { isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 });
+        try {
+            const inventory = await this.prisma.inventoryItem.findMany({ where: { restaurantId } });
+            this.kdsGateway.server.to(restaurantId).emit('inventory_updated', inventory);
+            if (data.tableId)
+                this.kdsGateway.server.to(restaurantId).emit('table_updated', { tableId: data.tableId, status: 'AVAILABLE' });
+            const order = await this.prisma.order.findUnique({ where: { id: bill.orderId }, include: { items: { include: { product: true } }, table: true } });
+            if (order && ['RECEIVED', 'COOKING', 'READY'].includes(order.status))
+                this.kdsGateway.server.to(restaurantId).emit('kds_new_ticket', this.kdsGateway.ticket(order));
+        }
+        catch { }
+        return bill;
     }
     async getDailyDashboardSummary(restaurantId) {
         const { start, end } = (0, date_util_1.getBusinessDayBounds)();

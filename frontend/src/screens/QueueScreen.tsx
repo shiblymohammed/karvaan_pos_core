@@ -6,6 +6,26 @@ import { ChefHat, Utensils, MonitorSpeaker, Volume2, VolumeX, Maximize, Minimize
 import confetti from 'canvas-confetti';
 import { playAudioTone, playTtsAnnouncement } from '../utils/audioHelper';
 
+// Helper to format clean token numbers for customer TV display
+const formatDisplayToken = (num: string): string => {
+  if (!num) return 'N/A';
+  const parts = num.split('-');
+  if (parts.length > 1) {
+    const last = parts[parts.length - 1];
+    return `#${last}`;
+  }
+  return num;
+};
+
+const getTtsToken = (num: string): string => {
+  if (!num) return '';
+  const parts = num.split('-');
+  if (parts.length > 1) {
+    return parts[parts.length - 1];
+  }
+  return num;
+};
+
 // --- Promo Carousel Component ---
 const PromoCarousel = ({ media, interval, bgColor, textOverlay, qrUrl }: { media: any[], interval: number, bgColor: string, textOverlay: string, qrUrl: string }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -156,7 +176,8 @@ export const QueueScreen: React.FC = () => {
 
         // Trigger TTS
         if (orderTvTtsEnabled) {
-          playTtsAnnouncement(`Order number ${newestReady.orderNumber} is ready for pickup`, orderTvTtsVoiceName);
+          const spokenToken = getTtsToken(newestReady.orderNumber);
+          playTtsAnnouncement(`Token ${spokenToken} is ready for pickup`, orderTvTtsVoiceName);
         }
 
         // Trigger Confetti
@@ -494,10 +515,15 @@ export const QueueScreen: React.FC = () => {
                     </div>
 
                     {/* Ticket Body */}
-                    <div className={`flex items-center justify-center overflow-hidden relative z-10 ${isSplit ? 'px-2 py-3' : 'px-2 py-4'}`}>
+                    <div className={`flex flex-col items-center justify-center overflow-hidden relative z-10 ${isSplit ? 'px-2 py-3' : 'px-2 py-4'}`}>
                       <span className={`font-black text-kv-dark tracking-tighter tabular-nums text-center break-words w-full leading-none px-1 ${isSplit ? 'ticket-number' : 'text-2xl sm:text-3xl xl:text-4xl'}`}>
-                        {ticket.orderNumber}
+                        {formatDisplayToken(ticket.orderNumber)}
                       </span>
+                      {ticket.orderNumber.includes('-') && (
+                        <span className="text-[9px] font-bold text-kv-muted/70 tracking-tight mt-1 truncate max-w-full">
+                          {ticket.orderNumber}
+                        </span>
+                      )}
                     </div>
 
                     {/* Ticket Footer */}
@@ -567,10 +593,15 @@ export const QueueScreen: React.FC = () => {
                     </div>
 
                     {/* Ticket Body */}
-                    <div className={`flex items-center justify-center overflow-hidden relative z-10 ${isSplit ? 'px-2 py-3' : 'px-2 py-4'}`}>
+                    <div className={`flex flex-col items-center justify-center overflow-hidden relative z-10 ${isSplit ? 'px-2 py-3' : 'px-2 py-4'}`}>
                       <span className={`font-black tracking-tighter tabular-nums text-center break-words w-full leading-none drop-shadow-sm px-1 ${isSplit ? 'ticket-number' : 'text-2xl sm:text-3xl xl:text-4xl'}`}>
-                        {ticket.orderNumber}
+                        {formatDisplayToken(ticket.orderNumber)}
                       </span>
+                      {ticket.orderNumber.includes('-') && (
+                        <span className="text-[9px] font-bold text-[#2e5904]/70 tracking-tight mt-1 truncate max-w-full">
+                          {ticket.orderNumber}
+                        </span>
+                      )}
                     </div>
 
                     {/* Stamped Ready Badge */}
@@ -634,10 +665,15 @@ export const QueueScreen: React.FC = () => {
                   </h2>
                   <p className="text-lg font-bold text-kv-muted mb-6 z-10">Please collect your order</p>
                   
-                  <div className="bg-kv-surface rounded-2xl py-6 px-12 border-4 border-dashed border-[#b5ef85] z-10 w-full flex items-center justify-center">
+                  <div className="bg-kv-surface rounded-2xl py-6 px-12 border-4 border-dashed border-[#b5ef85] z-10 w-full flex flex-col items-center justify-center">
                     <span className="text-7xl font-black text-kv-dark tracking-tighter tabular-nums drop-shadow-sm truncate">
-                      {showPopup.ticket.orderNumber}
+                      {formatDisplayToken(showPopup.ticket.orderNumber)}
                     </span>
+                    {showPopup.ticket.orderNumber.includes('-') && (
+                      <span className="text-sm font-bold text-kv-muted/70 tracking-normal mt-1 truncate max-w-full">
+                        Order #{showPopup.ticket.orderNumber}
+                      </span>
+                    )}
                   </div>
                   
                   {showPopup.ticket.customerName && (

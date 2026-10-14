@@ -14,6 +14,7 @@ interface SettlementModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (tenders: TenderState) => void;
+  isProcessing?: boolean;
   totalAmount: number;
   initialMethod: PaymentMethod;
   hasCustomer: boolean;
@@ -21,7 +22,7 @@ interface SettlementModalProps {
 }
 
 const SettlementModal: React.FC<SettlementModalProps> = ({
-  isOpen, onClose, onConfirm, totalAmount, initialMethod, hasCustomer, onRequestCustomer
+  isOpen, onClose, onConfirm, totalAmount, initialMethod, hasCustomer, onRequestCustomer, isProcessing = false
 }) => {
   const [activeMethod, setActiveMethod] = useState<PaymentMethod>(initialMethod);
   const [tenders, setTenders] = useState<TenderState>({ CASH: 0, UPI: 0, CARD: 0, CREDIT: 0 });
@@ -74,7 +75,7 @@ const SettlementModal: React.FC<SettlementModalProps> = ({
       } else if (e.key.toLowerCase() === 'c') {
         handleNumpad('C');
       } else if (e.key === 'Enter' && canConfirm) {
-        onConfirm(tenders);
+        if (!isProcessing) onConfirm(tenders);
       } else if (e.key === 'Escape') {
         onClose();
       }
@@ -82,7 +83,7 @@ const SettlementModal: React.FC<SettlementModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, activeMethod, canConfirm, tenders, handleNumpad, onConfirm, onClose]);
+  }, [isOpen, activeMethod, canConfirm, tenders, handleNumpad, onConfirm, onClose, isProcessing]);
 
 
   const handleMethodSelect = (method: PaymentMethod) => {
@@ -288,7 +289,7 @@ const SettlementModal: React.FC<SettlementModalProps> = ({
 
             <button
               onClick={() => onConfirm(tenders)}
-              disabled={!canConfirm}
+              disabled={!canConfirm || isProcessing}
               className="relative overflow-hidden w-full py-4 md:py-4 bg-gradient-to-br from-emerald-400 to-emerald-600 border border-emerald-400/30 border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:brightness-110 hover:-translate-y-0.5 disabled:hover:brightness-100 disabled:hover:translate-y-0 disabled:from-slate-200 disabled:to-slate-300 disabled:text-slate-400 disabled:border-transparent text-white rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(16,185,129,0.3)] hover:shadow-[0_8px_32px_rgba(16,185,129,0.4)] disabled:shadow-none transition-all active:scale-[0.96] disabled:active:scale-100 tracking-wide uppercase focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/50 group"
             >
               {/* Shine effect */}

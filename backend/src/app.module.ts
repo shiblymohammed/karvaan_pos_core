@@ -30,6 +30,6 @@ import { PrinterModule } from './printer/printer.module';
   ],
 
   controllers: [BillingController],
-  providers: [PrismaService, KdsGateway, BillingService],
+  providers: [KdsGateway, BillingService],
 })
 export class AppModule {}

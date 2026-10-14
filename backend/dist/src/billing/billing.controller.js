@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const billing_service_1 = require("./billing.service");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const get_user_decorator_1 = require("../auth/get-user.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 let BillingController = class BillingController {
     constructor(billingService) {
         this.billingService = billingService;
@@ -24,7 +25,7 @@ let BillingController = class BillingController {
     async createOrder(dto, user) {
         if (!user.restaurantId)
             throw new common_1.UnauthorizedException('No restaurant context');
-        return this.billingService.createOrder({ ...dto, restaurantId: user.restaurantId });
+        return this.billingService.createOrder({ ...dto, restaurantId: user.restaurantId, waiterId: user.id });
     }
     async getBillPreview(orderId, discount, user) {
         if (!user.restaurantId)
@@ -50,6 +51,7 @@ let BillingController = class BillingController {
 exports.BillingController = BillingController;
 __decorate([
     (0, common_1.Post)('order'),
+    (0, roles_guard_1.Roles)(...roles_guard_1.ADMIN_ROLES, 'CASHIER', 'WAITER'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
@@ -67,6 +69,7 @@ __decorate([
 ], BillingController.prototype, "getBillPreview", null);
 __decorate([
     (0, common_1.Post)('settle'),
+    (0, roles_guard_1.Roles)(...roles_guard_1.ADMIN_ROLES, 'CASHIER'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
@@ -75,6 +78,7 @@ __decorate([
 ], BillingController.prototype, "settleBill", null);
 __decorate([
     (0, common_1.Get)('dashboard'),
+    (0, roles_guard_1.Roles)(...roles_guard_1.ADMIN_ROLES),
     __param(0, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -82,6 +86,7 @@ __decorate([
 ], BillingController.prototype, "getDashboardSummary", null);
 __decorate([
     (0, common_1.Get)('history'),
+    (0, roles_guard_1.Roles)(...roles_guard_1.ADMIN_ROLES, 'CASHIER'),
     __param(0, (0, common_1.Query)('startDate')),
     __param(1, (0, common_1.Query)('endDate')),
     __param(2, (0, get_user_decorator_1.GetUser)()),
@@ -90,7 +95,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], BillingController.prototype, "getOrderHistory", null);
 exports.BillingController = BillingController = __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, common_1.Controller)('billing'),
     __metadata("design:paramtypes", [billing_service_1.BillingService])
 ], BillingController);

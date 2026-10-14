@@ -1,0 +1,1 @@
+✅ Backend Sidecar spawned: "\\\\?\\C:\\Users\\shibi\\Documents\\dev\\karvaan_pos_basic\\desktopApp\\target\\release\\backend\\dist-single\\index.js"

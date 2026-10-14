@@ -7,7 +7,7 @@
  * Usage:
  *   pm2 start ecosystem.config.js --env production  → Start the backend
  *   pm2 save                                         → Save current process list
- *   pm2 startup                                      → Generate Windows startup command
+ *   Configure a Windows service or scheduled task    → Start at Windows boot
  *   pm2 status                                       → Check running status
  *   pm2 logs karvaan-backend                         → View live logs
  *   pm2 restart karvaan-backend                      → Restart after update
@@ -20,7 +20,7 @@ module.exports = {
   apps: [
     {
       name: 'karvaan-backend',
-      script: 'dist/main.js',         // Built output from `npm run build`
+      script: 'dist/src/main.js',         // Built output from `npm run build`
       cwd: __dirname,
 
       // ─── Startup ──────────────────────────────────────────────────────────
@@ -49,15 +49,15 @@ module.exports = {
       env_production: {
         NODE_ENV:             'production',
         PORT:                 process.env.PORT                || '3001',
-        JWT_SECRET:           process.env.JWT_SECRET          || 'CHANGE_ME',
-        DATABASE_URL:         process.env.DATABASE_URL        || 'file:./prisma/dev.db',
+        JWT_SECRET:           process.env.JWT_SECRET,
+        DATABASE_URL:         process.env.DATABASE_URL        || 'file:./dev.db',
         IS_CLOUD:             process.env.IS_CLOUD            || 'false',
         RESTAURANT_ID:        process.env.RESTAURANT_ID       || '',
         VPS_SYNC_URL:         process.env.VPS_SYNC_URL        || '',
         CLOUD_SYNC_API_KEY:   process.env.CLOUD_SYNC_API_KEY  || '',
         CLOUDINARY_URL:       process.env.CLOUDINARY_URL      || '',
-        SUPER_ADMIN_USERNAME: process.env.SUPER_ADMIN_USERNAME || 'admin',
-        SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD || 'password123',
+        SUPER_ADMIN_USERNAME: process.env.SUPER_ADMIN_USERNAME,
+        SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD,
       },
       env_development: {
         NODE_ENV: 'development',

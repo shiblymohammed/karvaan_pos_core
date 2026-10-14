@@ -191,6 +191,7 @@ export const useMenuStore = create<MenuState>()(
     }),
     {
       name: 'karvaan-menu-store',
+      storage: createJSONStorage(() => tenantStorage),
     }
   )
 );

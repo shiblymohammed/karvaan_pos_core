@@ -16,7 +16,7 @@
 
 const STORAGE_KEY = 'karvaan_server_url';
 const OP_MODE_KEY = 'karvaan_op_mode';
-const DEFAULT_URL = 'http://localhost:3001';
+const DEFAULT_URL = 'http://127.0.0.1:3001';
 
 export type OperatingMode = 'NODE_SERVER' | 'ANDROID_MASTER' | 'WAITER_CLIENT';
 
@@ -38,7 +38,15 @@ export function getServerUrl(): string {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored && stored.trim()) return stored.trim();
 
-  // 3. Fallback: same machine
+  // 3. Cloud web deployment: if loaded via domain or IP in browser, default to same origin
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const origin = window.location.origin;
+    if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      return origin;
+    }
+  }
+
+  // 4. Fallback: local development / desktop app
   return DEFAULT_URL;
 }
 
@@ -54,7 +62,7 @@ export function clearServerUrl(): void {
 
 export function isServerConfigured(): boolean {
   const mode = getOperatingMode();
-  if (mode === 'ANDROID_MASTER') return true;
+  if (mode === 'ANDROID_MASTER') return false;
 
   // Configured if either env var is set OR user has saved a URL via Setup Screen
   const envUrl = import.meta.env.VITE_BACKEND_URL as string | undefined;
@@ -83,3 +91,17 @@ export async function probeServer(url: string): Promise<{ ok: boolean; latencyMs
   }
 }
 
+const TERMINAL_ID_KEY = 'karvaan_terminal_id';
+
+export function getTerminalId(): string {
+  let tid = localStorage.getItem(TERMINAL_ID_KEY);
+  if (!tid || !tid.trim()) {
+    tid = `T${Math.floor(100 + Math.random() * 900)}`;
+    localStorage.setItem(TERMINAL_ID_KEY, tid);
+  }
+  return tid.trim();
+}
+
+export function setTerminalId(id: string): void {
+  localStorage.setItem(TERMINAL_ID_KEY, id.trim());
+}

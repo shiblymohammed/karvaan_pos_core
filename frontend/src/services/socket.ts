@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import { getServerUrl } from './serverConfig';
-import { enqueueAction, getPendingActions, clearAction } from './offlineQueue';
-import { useSettingsStore } from '../store/useSettingsStore';
+import { enqueueAction, getPendingActions, clearAction, getActionContext, sameContext, markActionError } from './offlineQueue';
+import { useSettingsStore, applyRemoteSettings } from '../store/useSettingsStore';
 
 
 // ─── Backend WebSocket Connection ─────────────────────────────────────────────
@@ -38,81 +38,77 @@ export function emitSettleBill(billData: {
   customerName?: string;
   customerPhone?: string;
   items?: any[];
+  tableId?: string | null;
 }) {
-  emitAction('settle_bill', billData);
-  console.log(`💾 [POS] Bill ${billData.billNumber} emitted for persistence via emitAction.`);
+  return emitAction('settle_bill', billData);
 }
 
 
 import { getOperatingMode } from './serverConfig';
+import { toast } from '../store/useToastStore';
 import { apiClient } from './apiClient';
 
-socket.on('connect', async () => {
-  console.log('📡 [POS] Connected to Backend WebSocket:', socket.id);
-  
-  // 1. Flush offline queue first
-  const pendingActions = await getPendingActions();
-  if (pendingActions.length > 0) {
-    console.log(`🚀 [POS] Flushing ${pendingActions.length} pending actions from offline queue...`);
-    for (const action of pendingActions) {
-      emitAction(action.type, action.payload);
-      if (action.id) await clearAction(action.id);
-    }
-  }
-});
+export interface ActionResult { status: 'OK' | 'QUEUED' | 'ERROR'; data?: any; message?: string; }
+let flushing: Promise<Map<number, ActionResult>> | null = null;
 
-/**
- * Universal emitter for actions.
- * If NODE_SERVER: Uses WebSocket.
- * If WAITER_CLIENT: Uses HTTP POST to the Android Master's local server.
- * If ANDROID_MASTER: Directly executes locally (handled internally by apiClient).
- */
-export function emitAction(type: string, payload: any) {
-  const mode = getOperatingMode();
-  
-  if (mode === 'NODE_SERVER') {
-    if (socket.connected) {
-      socket.emit(type, payload);
-    } else {
-      enqueueAction(type, payload);
-    }
-  } else {
-    // WAITER_CLIENT or ANDROID_MASTER
-    apiClient.post('/api/action', { type, payload })
-      .catch(err => {
-        console.warn(`[Client] Failed to send action ${type} to master:`, err);
-        enqueueAction(type, payload);
-      });
-  }
-}
-
-// ─── Master Sync Polling (For Waiter Client Mode) ───────────────────────────
-let syncInterval: any = null;
-
-export function startMasterSyncPolling() {
-  if (getOperatingMode() !== 'WAITER_CLIENT') return;
-  if (syncInterval) return;
-
-  console.log('🔄 [Waiter Client] Starting short-polling to Android Master...');
-  syncInterval = setInterval(async () => {
-    try {
-      const state = await apiClient.get('/api/sync');
-      if (state && state.success) {
-        // We will dispatch a local socket event to reuse the existing socket.on listeners
-        (socket as any)._callbacks['$sync_master_state']?.forEach((cb: any) => cb(state.data));
+export function flushPendingActions(): Promise<Map<number, ActionResult>> {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    const results = new Map<number, ActionResult>();
+    let context;
+    try { context = getActionContext(); } catch { return results; }
+    for (const action of await getPendingActions(context)) {
+      if (action.error) break;
+      if (!socket.connected || !sameContext(context, getActionContext())) break;
+      try {
+        const result: ActionResult = await socket.timeout(15000).emitWithAck(action.type, action.payload);
+        if (!sameContext(context, getActionContext())) break;
+        if (result?.status !== 'OK') {
+          const message = result?.message || 'The server did not save this action';
+          await markActionError(action.id!, message);
+          results.set(action.id!, { status: 'ERROR', message });
+          toast.error(message);
+          window.dispatchEvent(new CustomEvent('offline-action-error', { detail: { actionId: action.id, message } }));
+          break;
+        }
+        await clearAction(action.id!);
+        results.set(action.id!, result);
+      } catch {
+        // A lost acknowledgment can mean the write committed. Retain the stable action for an idempotent retry.
+        break;
       }
-    } catch (err) {
-      // Silently fail, tablet might be asleep
     }
-  }, 3000);
+    return results;
+  })().catch(() => new Map<number, ActionResult>()).finally(() => { flushing = null; });
+  return flushing;
 }
+socket.on('connect', () => { void flushPendingActions(); });
 
-export function stopMasterSyncPolling() {
-  if (syncInterval) {
-    clearInterval(syncInterval);
-    syncInterval = null;
+// Every action is saved locally before it is sent, including actions created while online.
+export async function emitAction(type: string, payload: any): Promise<ActionResult> {
+  try {
+    if (getOperatingMode() === 'ANDROID_MASTER') throw new Error('Tablet server mode is unavailable. Connect to the restaurant backend.');
+    const context = getActionContext();
+    const id = await enqueueAction(type, payload, context);
+    if (!socket.connected) return { status: 'QUEUED' };
+    const results = await flushPendingActions();
+    if (results.has(id)) return results.get(id)!;
+    // An action can be added while an earlier flush is running.
+    if (socket.connected && sameContext(context, getActionContext())) {
+      const next = await flushPendingActions();
+      if (next.has(id)) return next.get(id)!;
+    }
+    return { status: 'QUEUED' };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to save action';
+    window.dispatchEvent(new CustomEvent('offline-action-error', { detail: { message } }));
+    return { status: 'ERROR', message };
   }
 }
+const queueRetry = setInterval(() => { if (socket.connected) void flushPendingActions(); }, 15000);
+// Tablet clients use the same authenticated Socket.IO connection as desktop.
+export function startMasterSyncPolling() {}
+export function stopMasterSyncPolling() {}
 
 socket.on('disconnect', () => {
   console.log('🔌 [POS] Disconnected from Backend WebSocket');
@@ -121,7 +117,10 @@ socket.on('disconnect', () => {
 // We use dynamic imports to avoid circular dependencies with the stores
 // These listeners are set up AFTER all modules have loaded
 
+let listenersInitialized = false;
 export function initSocketListeners() {
+  if (listenersInitialized) return;
+  listenersInitialized = true;
   socket.on('connect', () => {
     // Give stores a moment to load, then push local menu to server if the server is empty
     
@@ -140,6 +139,11 @@ export function initSocketListeners() {
         socket.on('sync_master_state', (masterState: any) => {
           console.log('📥 [POS] Received Master State from Server');
 
+          if (masterState.settings) {
+            applyRemoteSettings(masterState.settings);
+            if (masterState.settings.paidAddons) void import('../store/useAddonStore').then(({ useAddonStore }) => useAddonStore.setState({ addons: masterState.settings.paidAddons }));
+            if (masterState.settings.floorConfig) useTableStore.setState({ floors: masterState.settings.floorConfig });
+          }
           if (masterState.kdsTickets) {
             useKdsStore.setState({ tickets: masterState.kdsTickets });
           }
@@ -180,7 +184,7 @@ export function initSocketListeners() {
             
           }
 
-          if (masterState.tables && masterState.tables.length > 0) {
+          if (masterState.tables) {
             useTableStore.setState({ tables: masterState.tables });
           } else if (masterState.tableStatuses) {
             const currentTables = useTableStore.getState().tables;
@@ -199,7 +203,9 @@ export function initSocketListeners() {
         // --- KDS Ticket created on another terminal ---
         socket.on('kds_new_ticket', (ticket: any) => {
           const currentTickets = useKdsStore.getState().tickets;
-          if (!currentTickets.find(t => t.id === ticket.id)) {
+          if (currentTickets.some(t => t.orderNumber === ticket.orderNumber)) {
+            useKdsStore.setState({ tickets: [ticket, ...currentTickets.filter(t => t.orderNumber !== ticket.orderNumber)] });
+          } else if (!currentTickets.find(t => t.id === ticket.id)) {
             console.log('🍳 [POS] New KDS Ticket from another terminal:', ticket.orderNumber);
             useKdsStore.setState({ tickets: [ticket, ...currentTickets] });
           }
@@ -220,12 +226,13 @@ export function initSocketListeners() {
           console.log('🧹 [POS] Table cleared from another terminal:', payload.tableName);
           useKdsStore.setState({
             tickets: currentTickets.filter(t => {
-              if (payload.tableName.includes('Takeaway') || payload.tableName === 'Walk-in') {
-                return !(t.tableNumber === payload.tableName && t.status === 'SERVED');
-              }
-              return t.tableNumber !== payload.tableName;
+              return !(t.tableNumber === payload.tableName && t.status === 'SERVED');
             })
           });
+        });
+
+        socket.on('kds_table_transferred', (payload: { fromTableName: string; toTableName: string }) => {
+          useKdsStore.setState({ tickets: useKdsStore.getState().tickets.map(t => t.tableNumber === payload.fromTableName ? { ...t, tableNumber: payload.toTableName } : t) });
         });
 
         // --- Parked Orders updated on another terminal ---
@@ -286,7 +293,7 @@ export function initSocketListeners() {
         socket.on('settings_updated', (settings: any) => {
           console.log('⚙️ [POS] Settings updated from another terminal.');
           // Use setState on the store to update immediately without firing the PUT loop
-          useSettingsStore.setState(settings);
+          applyRemoteSettings(settings);
         });
 
         // --- Bill settled on this or another terminal ---

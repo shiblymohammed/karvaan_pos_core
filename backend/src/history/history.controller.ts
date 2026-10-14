@@ -2,8 +2,10 @@ import { Controller, Get, Query, UseGuards, UnauthorizedException } from '@nestj
 import { HistoryService } from './history.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GetUser } from '../auth/get-user.decorator';
+import { ADMIN_ROLES, Roles, RolesGuard } from '../auth/roles.guard';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...ADMIN_ROLES, 'CASHIER')
 @Controller('history')
 export class HistoryController {
   constructor(private readonly historyService: HistoryService) {}

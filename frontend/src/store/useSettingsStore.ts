@@ -1,5 +1,9 @@
 import { create } from 'zustand';
+import { authorizedFetch } from '../services/authFetch';
+import { useAuthStore } from './useAuthStore';
 import { getServerUrl } from '../services/serverConfig';
+
+const settingsKey = () => `pos-settings-${encodeURIComponent(getServerUrl())}-${useAuthStore.getState().currentUser?.restaurantId}`;
 
 export interface PredefinedNote {
   id: string;
@@ -15,6 +19,9 @@ export interface PredefinedDiscount {
 }
 
 interface SettingsState {
+  paidAddons?: any[];
+  floorConfig?: any[];
+  tableConfig?: any[];
   notes: PredefinedNote[];
   discounts: PredefinedDiscount[];
   
@@ -271,13 +278,12 @@ export const useSettingsStore = create<SettingsState>()(
       })),
 
       fetchSettings: async () => {
+        const key = settingsKey();
         try {
-          const res = await fetch(`${getServerUrl()}/settings`);
+          const res = await authorizedFetch('/settings');
           if (res.ok) {
             const data = await res.json();
-            if (Object.keys(data).length > 0) {
-              set(data);
-            }
+            if (settingsKey() === key) applyRemoteSettings(data);
           }
         } catch (e) {
           console.error("Failed to fetch settings from backend", e);
@@ -292,7 +298,15 @@ let lastSyncedData = "";
 
 useSettingsStore.subscribe((state) => {
   clearTimeout(syncTimeout);
+  const session = useAuthStore.getState();
+  if (session.currentUser?.restaurantId) {
+    const values = Object.fromEntries(Object.entries(state).filter(([, value]) => typeof value !== 'function'));
+    localStorage.setItem(settingsKey(), JSON.stringify(values));
+  }
+  if (!session.currentUser?.restaurantId || !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(session.currentUser.role)) return;
+  const tenant = session.currentUser.restaurantId;
   syncTimeout = setTimeout(async () => {
+    if (useAuthStore.getState().currentUser?.restaurantId !== tenant) return;
     // Only extract data, not functions
     const dataToSync: any = {};
     Object.keys(state).forEach(key => {
@@ -303,16 +317,32 @@ useSettingsStore.subscribe((state) => {
 
     const dataString = JSON.stringify(dataToSync);
     if (dataString === lastSyncedData) return; // Prevent infinite loops from socket updates
-    lastSyncedData = dataString;
+
 
     try {
-      await fetch(`${getServerUrl()}/settings`, {
+      const response = await authorizedFetch('/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: dataString
       });
+      if (!response.ok) throw new Error('Settings were not saved');
+      lastSyncedData = dataString;
     } catch (e) {
       console.error("Failed to sync settings to backend", e);
     }
   }, 1000); // debounce 1s
 });
+
+export function applyRemoteSettings(data: any) {
+  const values = Object.fromEntries(Object.entries(data || {}).filter(([key, value]) => typeof (useSettingsStore.getState() as any)[key] !== 'function'));
+  clearTimeout(syncTimeout);
+  useSettingsStore.setState({ ...useSettingsStore.getInitialState(), ...values });
+  clearTimeout(syncTimeout);
+  lastSyncedData = JSON.stringify(Object.fromEntries(Object.entries(useSettingsStore.getState()).filter(([, value]) => typeof value !== 'function')));
+}
+
+export function resetSessionSettings() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(settingsKey()) || '{}'); } catch {}
+  applyRemoteSettings(saved);
+}

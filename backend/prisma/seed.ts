@@ -3,7 +3,13 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Seeding Karvaan POS Database (Multi-Tenant)...');
+  console.log('🌱 Checking Karvaan POS Database (Multi-Tenant)...');
+
+  const existingUser = await prisma.user.findFirst();
+  if (existingUser) {
+    console.log('ℹ️ Database already initialized with users. Skipping seed.');
+    return;
+  }
 
   // 1. Create Super Admin
   const adminUsername = process.env.SUPER_ADMIN_USERNAME || 'admin';

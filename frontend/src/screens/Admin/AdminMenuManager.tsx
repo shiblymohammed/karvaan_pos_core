@@ -1,3 +1,4 @@
+import { authorizedFetch } from '../../services/authFetch';
 import React, { useState, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useMenuStore, Product, Category } from '../../store/useMenuStore';
@@ -81,7 +82,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`http://${window.location.hostname}:3001/upload?type=menu`, {
+      const res = await authorizedFetch('/upload?type=menu', {
         method: 'POST',
         body: formData
       });
@@ -264,7 +265,7 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ initial, onSave, onClose, t
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`http://${window.location.hostname}:3001/upload?type=menu`, {
+      const res = await authorizedFetch('/upload?type=menu', {
         method: 'POST',
         body: formData
       });

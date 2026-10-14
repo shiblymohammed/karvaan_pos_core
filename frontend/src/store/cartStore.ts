@@ -48,6 +48,7 @@ interface CartState {
   customer: { name: string; phone: string } | null;
   orderType: 'DINE_IN' | 'PARCEL' | 'DELIVERY';
   currentOrderNumber: string | null;
+  checkoutBillNumber: string | null;
   deliveryAddress: string;
   deliveryFee: number;
   deliveryStatus: string | null;
@@ -83,6 +84,7 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       items: [],
       currentOrderNumber: null,
+      checkoutBillNumber: null,
       selectedTableId: null,
       selectedTableName: null,
       selectedWaiter: null,
@@ -260,6 +262,7 @@ export const useCartStore = create<CartState>()(
       customer: null,
       discount: 0,
       currentOrderNumber: null,
+      checkoutBillNumber: null,
     });
 
     // Broadcast parked orders to all other devices
@@ -289,7 +292,7 @@ export const useCartStore = create<CartState>()(
         customerName: state.customer?.name,
         items: newItems.map(i => {
           const addonText = i.addons && i.addons.length > 0 ? ` [Add: ${i.addons.map(a => a.name).join(', ')}]` : '';
-          return { name: i.name, quantity: i.quantity, notes: (i.notes || '') + addonText, status: 'COOKING' };
+          return { name: i.name, productId: i.productId, price: i.price, addons: i.addons, quantity: i.quantity, notes: (i.notes || '') + addonText, status: 'COOKING' };
         }),
         firedAt: new Date().toISOString()
       });
@@ -323,6 +326,7 @@ export const useCartStore = create<CartState>()(
       customer: target.customerName ? { name: target.customerName, phone: '' } : null,
       orderType: target.orderType || 'DINE_IN',
       currentOrderNumber: target.orderNumber || null,
+      checkoutBillNumber: null,
       deliveryAddress: target.deliveryAddress || '',
       deliveryFee: target.deliveryFee || 0,
       deliveryStatus: target.deliveryStatus || null,
@@ -335,6 +339,7 @@ export const useCartStore = create<CartState>()(
   },
 
   clearCart: () => {
+    set({ checkoutBillNumber: null });
     const state = get();
     if (state.selectedTableId) {
       useTableStore.getState().setTableStatus(state.selectedTableId, 'AVAILABLE');
@@ -344,7 +349,7 @@ export const useCartStore = create<CartState>()(
       ? (state.selectedTableName || 'Takeaway')
       : (state.orderType === 'PARCEL' ? '📦 Parcel' : '🛵 Delivery');
 
-    useKdsStore.getState().clearTableTickets(kdsTable);
+    if (state.items.every(item => item.status === 'SENT')) useKdsStore.getState().clearTableTickets(kdsTable);
     set({
       items: [], selectedTableId: null, selectedTableName: null, selectedWaiter: null, customer: null, discount: 0, orderType: 'DINE_IN', currentOrderNumber: null, deliveryAddress: '', deliveryFee: 0, deliveryStatus: null, collectedMethod: null
     });

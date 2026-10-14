@@ -43,7 +43,8 @@ export const FullLoginScreen: React.FC = () => {
     try {
       const uTrimmed = username.trim();
       const pTrimmed = password.trim();
-      const success = await fullLogin(uTrimmed, pTrimmed);
+      let success = await fullLogin(uTrimmed, pTrimmed);
+      if (!success && /^\d{4,8}$/.test(pTrimmed)) success = await fullLogin(uTrimmed, undefined, pTrimmed);
       if (!success) {
         triggerErrorShake();
       }

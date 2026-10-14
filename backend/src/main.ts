@@ -1,11 +1,49 @@
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import * as dotenv from 'dotenv';
+import { randomBytes } from 'crypto';
+
+// Both tsc's dist/src layout and the desktop runtime resolve the same backend root.
+const backendRoot = [path.resolve(__dirname, '../..'), path.resolve(__dirname, '..')]
+  .find(root => fs.existsSync(path.join(root, 'prisma', 'schema.prisma')));
+if (!backendRoot) throw new Error('Backend resources are missing');
+process.chdir(backendRoot);
+dotenv.config({ path: path.join(backendRoot, '.env') });
+const desktop = process.env.KARVAAN_DESKTOP === 'true';
+const appData = process.env.APPDATA || path.join(os.homedir(), '.local', 'share');
+const dataDirectory = path.join(appData, 'KarvaanPOS');
+fs.mkdirSync(dataDirectory, { recursive: true });
+const writableEnv = path.join(dataDirectory, '.env');
+if (desktop && fs.existsSync(writableEnv)) dotenv.config({ path: writableEnv });
+
+// Generate a private local secret once. Cloud installations must supply their own secret.
+if (!process.env.JWT_SECRET || ['CHANGE_ME', 'karvaan-super-secret-key-2026'].includes(process.env.JWT_SECRET)) {
+  if (process.env.IS_CLOUD === 'true') throw new Error('Configure JWT_SECRET for the cloud server');
+  const secretPath = path.join(dataDirectory, 'jwt-secret');
+  if (!fs.existsSync(secretPath)) fs.writeFileSync(secretPath, randomBytes(48).toString('hex'), { flag: 'wx', mode: 0o600 });
+  process.env.JWT_SECRET = fs.readFileSync(secretPath, 'utf8').trim();
+}
+// Preserve the existing AppData database used by earlier local installations.
+const activeDatabase = path.join(dataDirectory, 'dev.db');
+if (process.env.IS_CLOUD !== 'true') {
+  const template = path.join(backendRoot, 'prisma', 'dev.db');
+  if (!fs.existsSync(activeDatabase) && fs.existsSync(template)) fs.copyFileSync(template, activeDatabase);
+  process.env.DATABASE_URL = `file:${activeDatabase}`;
+} else if (process.env.DATABASE_URL?.startsWith('file:')) {
+  const configured = process.env.DATABASE_URL.slice(5);
+  process.env.DATABASE_URL = `file:${path.isAbsolute(configured) ? configured : path.resolve(backendRoot, 'prisma', configured)}`;
+}
+// Uploads and generated media must be writable in an installed desktop app.
+process.env.UPLOAD_DIR ||= path.join(dataDirectory, 'uploads');
+fs.mkdirSync(process.env.UPLOAD_DIR, { recursive: true });
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { join } from 'path';
 import { json, urlencoded } from 'express';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
-import * as os from 'os';
-
 function getLocalIPs(): string[] {
   const interfaces = os.networkInterfaces();
   const ips: string[] = [];
@@ -22,7 +60,7 @@ function getLocalIPs(): string[] {
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+  app.useStaticAssets(process.env.UPLOAD_DIR, {
     prefix: '/uploads/',
   });
 
@@ -35,6 +73,9 @@ async function bootstrap() {
   app.use(json({ limit: '500mb' }));
   app.use(urlencoded({ extended: true, limit: '500mb' }));
 
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: false }));
+  app.enableShutdownHooks();
+
   // Apply the global exception filter to sanitize errors
   app.useGlobalFilters(new GlobalExceptionFilter());
 
@@ -46,6 +87,7 @@ async function bootstrap() {
       service: 'Karvaan POS Backend',
       version: '1.0.0',
       timestamp: new Date().toISOString(),
+      localIPs: getLocalIPs(),
     });
   });
 
@@ -64,4 +106,4 @@ async function bootstrap() {
   console.log(`\n   Tip: Set this URL in the POS app Setup Screen on each device.`);
   console.log(`   Or scan the QR code in Admin Network Setup screen.\n`);
 }
-bootstrap();
+bootstrap().catch(error => { console.error('Backend startup failed:', error.message); process.exitCode = 1; });

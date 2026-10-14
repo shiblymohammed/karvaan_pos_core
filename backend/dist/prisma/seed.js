@@ -3,7 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
 async function main() {
-    console.log('🌱 Seeding Karvaan POS Database (Multi-Tenant)...');
+    console.log('🌱 Checking Karvaan POS Database (Multi-Tenant)...');
+    const existingUser = await prisma.user.findFirst();
+    if (existingUser) {
+        console.log('ℹ️ Database already initialized with users. Skipping seed.');
+        return;
+    }
     const adminUsername = process.env.SUPER_ADMIN_USERNAME || 'admin';
     const adminPassword = process.env.SUPER_ADMIN_PASSWORD || 'password123';
     const superAdmin = await prisma.user.create({

@@ -64,7 +64,7 @@ export class UploadService implements OnModuleInit {
   private async uploadAndUpdate(localUrl: string, type: 'category' | 'product', id: string) {
     try {
       const filename = localUrl.replace('/uploads/', '');
-      const filePath = path.join(process.cwd(), 'uploads', filename);
+      const filePath = path.join(process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'), filename);
 
       if (!fs.existsSync(filePath)) {
         this.logger.warn(`File not found for ${type} ${id}: ${filePath}`);

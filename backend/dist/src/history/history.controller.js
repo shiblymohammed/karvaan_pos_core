@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const history_service_1 = require("./history.service");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const get_user_decorator_1 = require("../auth/get-user.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 let HistoryController = class HistoryController {
     constructor(historyService) {
         this.historyService = historyService;
@@ -132,7 +133,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], HistoryController.prototype, "getReturnRecords", null);
 exports.HistoryController = HistoryController = __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_guard_1.Roles)(...roles_guard_1.ADMIN_ROLES, 'CASHIER'),
     (0, common_1.Controller)('history'),
     __metadata("design:paramtypes", [history_service_1.HistoryService])
 ], HistoryController);

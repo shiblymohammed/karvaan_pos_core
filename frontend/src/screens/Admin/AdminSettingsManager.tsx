@@ -1,3 +1,4 @@
+import { authorizedFetch } from '../../services/authFetch';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Wifi, 
@@ -148,7 +149,7 @@ export const AdminSettingsManager: React.FC = () => {
   const [backupSaveMsg, setBackupSaveMsg] = useState('');
 
   useEffect(() => {
-    fetch(`http://${window.location.hostname}:3001/backup/settings`)
+    authorizedFetch('/backup/settings')
       .then(res => res.json())
       .then(data => {
         if (data) {
@@ -206,7 +207,7 @@ export const AdminSettingsManager: React.FC = () => {
     setIsManualSyncing(true);
     setSyncMessage('Syncing with Cloud...');
     try {
-      const response = await fetch(`http://${window.location.hostname}:3001/sync/trigger`, { method: 'POST' });
+      const response = await authorizedFetch('/sync/trigger', { method: 'POST' });
       const data = await response.json();
       if (data.status === 'success') {
         setSyncMessage('Sync Successful');
@@ -252,7 +253,7 @@ export const AdminSettingsManager: React.FC = () => {
   const applyBackupSettings = async () => {
     setIsBackupSaving(true);
     try {
-      const response = await fetch(`http://${window.location.hostname}:3001/backup/settings`, {
+      const response = await authorizedFetch('/backup/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: backupEnabled, time: backupTime, location: backupLocation })
@@ -278,7 +279,7 @@ export const AdminSettingsManager: React.FC = () => {
         const file = files[i];
         const formData = new FormData();
         formData.append('file', file);
-        const response = await fetch(`http://${window.location.hostname}:3001/upload`, { method: 'POST', body: formData });
+        const response = await authorizedFetch('/upload', { method: 'POST', body: formData });
         if (!response.ok) throw new Error(await response.text());
         const data = await response.json();
         store.addOrderTvPromoMedia({

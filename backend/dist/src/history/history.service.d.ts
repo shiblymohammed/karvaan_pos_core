@@ -20,9 +20,9 @@ export declare class HistoryService {
                     product: {
                         name: string;
                     };
-                    price: number;
                     notes: string;
                     quantity: number;
+                    price: number;
                 }[];
             };
             cashier: {
@@ -30,25 +30,25 @@ export declare class HistoryService {
                 role: string;
             };
         } & {
-            id: string;
-            updatedAt: Date;
             restaurantId: string;
+            id: string;
             orderType: string;
             discount: number;
+            updatedAt: Date;
             syncedAt: Date | null;
             orderId: string;
+            customerName: string | null;
+            customerPhone: string | null;
+            paymentMethod: string;
+            grandTotal: number;
+            deliveryFee: number;
             billNumber: string;
             subtotal: number;
             cgst: number;
             sgst: number;
-            deliveryFee: number;
-            grandTotal: number;
-            paymentMethod: string;
-            customerName: string | null;
-            customerPhone: string | null;
+            cashierId: string | null;
             waiterName: string | null;
             settledAt: Date;
-            cashierId: string | null;
         })[];
         pagination: {
             total: number;
@@ -94,18 +94,15 @@ export declare class HistoryService {
                 name: string;
             };
         } & {
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
             restaurantId: string;
+            id: string;
             orderNumber: string;
             status: string;
             notes: string | null;
+            createdAt: Date;
+            updatedAt: Date;
             syncedAt: Date | null;
             items: string;
-            deliveryFee: number;
-            grandTotal: number;
-            paymentMethod: string;
             customerName: string;
             customerPhone: string | null;
             deliveryAddress: string | null;
@@ -113,7 +110,10 @@ export declare class HistoryService {
             deliveryLng: number | null;
             riderId: string | null;
             riderName: string | null;
+            paymentMethod: string;
             paymentStatus: string;
+            grandTotal: number;
+            deliveryFee: number;
             collectedAmount: number | null;
             dispatchedAt: Date | null;
             deliveredAt: Date | null;
@@ -126,29 +126,29 @@ export declare class HistoryService {
         };
     }>;
     getWasteLogs(restaurantId: string, startDate?: string, endDate?: string): Promise<{
+        restaurantId: string;
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        restaurantId: string;
         syncedAt: Date | null;
-        quantity: number;
         orderId: string | null;
-        billNumber: string | null;
+        quantity: number;
         unit: string;
-        reason: string;
         itemName: string;
+        reason: string;
+        billNumber: string | null;
         loggedBy: string | null;
     }[]>;
     getReturnRecords(restaurantId: string, startDate?: string, endDate?: string): Promise<{
+        restaurantId: string;
         id: string;
+        orderType: string;
         createdAt: Date;
         updatedAt: Date;
-        restaurantId: string | null;
-        orderType: string;
         syncedAt: Date | null;
         items: string;
-        billNumber: string;
         reason: string;
+        billNumber: string;
         action: string;
         refundDest: string;
         totalRefund: number;

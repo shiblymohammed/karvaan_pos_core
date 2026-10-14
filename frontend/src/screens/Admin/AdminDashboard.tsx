@@ -1,3 +1,4 @@
+import { authorizedFetch } from '../../services/authFetch';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -102,9 +103,9 @@ export const AdminDashboard: React.FC = () => {
     setLoading(true);
     try {
       const [sumRes, billsRes, itemsRes] = await Promise.all([
-        fetch(`${BACKEND}/history/daily-summary?date=${date}`),
-        fetch(`${BACKEND}/history/bills?startDate=${date}&endDate=${date}&limit=100`),
-        fetch(`${BACKEND}/history/top-items?startDate=${date}&endDate=${date}&limit=10`),
+        authorizedFetch(`/history/daily-summary?date=${date}`),
+        authorizedFetch(`/history/bills?startDate=${date}&endDate=${date}&limit=100`),
+        authorizedFetch(`/history/top-items?startDate=${date}&endDate=${date}&limit=10`),
       ]);
       if (sumRes.ok) setSummary(await sumRes.json());
       if (billsRes.ok) { const d = await billsRes.json(); setBills(d.data || []); }

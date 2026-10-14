@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCartStore } from '../store/cartStore';
+
 import {
   Users, Clock, ArrowRightLeft, Check, Utensils,
   DollarSign, PieChart, Settings, User, X,
@@ -218,7 +220,8 @@ const TableCard: React.FC<{
 });
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNavigateToPOS }) => {
+export const TableMapScreen: React.FC = () => {
+  const navigate = useNavigate();
   const { tables, floors, setTableStatus, transferTable, mergeTable, unmergeTable } = useTableStore();
   const [selectedTable, setSelectedTable] = useState<DiningTable | null>(null);
   const [transferTarget, setTransferTarget] = useState<string>('');
@@ -242,7 +245,7 @@ export const TableMapScreen: React.FC<{ onNavigateToPOS: () => void }> = ({ onNa
     } else {
       setPosTable(targetTable.id, targetTable.number);
     }
-    onNavigateToPOS();
+    navigate('/app/pos');
   };
 
   const handleStatusChange = (tableId: string, newStatus: 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'BILLED') => {

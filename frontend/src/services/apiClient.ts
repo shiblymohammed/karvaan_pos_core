@@ -1,8 +1,4 @@
 import { getOperatingMode, getServerUrl } from './serverConfig';
-import { useCartStore } from '../store/cartStore';
-import { useTableStore } from '../store/useTableStore';
-import { useMenuStore } from '../store/useMenuStore';
-import { useKdsStore } from '../store/useKdsStore';
 import { useAuthStore } from '../store/useAuthStore';
 
 /**
@@ -31,7 +27,7 @@ async function _request(method: string, endpoint: string, body?: any) {
   const mode = getOperatingMode();
 
   if (mode === 'ANDROID_MASTER') {
-    return handleLocalMasterRequest(method, endpoint, body);
+    throw new Error('Tablet server mode is unavailable. Connect to the restaurant backend.');
   }
 
   // Use fetch for NODE_SERVER or WAITER_CLIENT
@@ -64,20 +60,3 @@ async function _request(method: string, endpoint: string, body?: any) {
   return response.json();
 }
 
-/**
- * Handles API requests locally on the Master Tablet bypassing network.
- */
-async function handleLocalMasterRequest(method: string, endpoint: string, body?: any) {
-  console.log(`[Local Master] Intercepted ${method} ${endpoint}`, body);
-  
-  // Example routing for orders
-  if (endpoint.startsWith('/api/orders') && method === 'POST') {
-    // Process the new order directly into local state
-    // In a full implementation, you would add logic here to sync with useCartStore and useKdsStore
-    return { success: true, local: true };
-  }
-
-  // Fallback for unhandled local routes
-  console.warn(`[Local Master] Route ${method} ${endpoint} not implemented locally yet.`);
-  return { success: true };
-}

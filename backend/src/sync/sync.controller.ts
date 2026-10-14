@@ -1,40 +1,26 @@
-import { Controller, Post, Get, Body, HttpCode, HttpStatus, Headers, UnauthorizedException, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, HttpCode, Headers, Query, UseGuards } from '@nestjs/common';
 import { SyncService } from './sync.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ADMIN_ROLES, Roles, RolesGuard } from '../auth/roles.guard';
+import { GetUser } from '../auth/get-user.decorator';
 
 @Controller('sync')
 export class SyncController {
   constructor(private readonly syncService: SyncService) {}
-
   @Post('trigger')
-  @HttpCode(HttpStatus.OK)
-  async triggerSync() {
-    return this.syncService.triggerManualSync();
-  }
-
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  triggerSync(@GetUser() user: any) { return this.syncService.triggerManualSync(user.restaurantId); }
   @Post()
-  @HttpCode(HttpStatus.OK)
-  async receiveSyncData(
-    @Headers('authorization') authHeader: string,
-    @Body() payload: any
-  ) {
-    const token = authHeader?.split(' ')[1];
-    if (token !== (process.env.CLOUD_SYNC_API_KEY || 'default_demo_key')) {
-      throw new UnauthorizedException('Invalid Cloud Sync API Key');
-    }
+  @HttpCode(200)
+  receiveSyncData(@Headers('authorization') header: string, @Body() payload: any) {
+    this.syncService.authenticate(header, payload?.restaurantId);
     return this.syncService.receiveSyncData(payload);
   }
-
   @Get('pull')
-  @HttpCode(HttpStatus.OK)
-  async pullSyncData(
-    @Headers('authorization') authHeader: string,
-    @Query('restaurantId') restaurantId: string,
-    @Query('since') since: string
-  ) {
-    const token = authHeader?.split(' ')[1];
-    if (token !== (process.env.CLOUD_SYNC_API_KEY || 'default_demo_key')) {
-      throw new UnauthorizedException('Invalid Cloud Sync API Key');
-    }
+  pullSyncData(@Headers('authorization') header: string, @Query('restaurantId') restaurantId: string, @Query('since') since: string) {
+    this.syncService.authenticate(header, restaurantId);
     return this.syncService.provideCloudUpdates(restaurantId, since);
   }
 }

@@ -1,62 +1,174 @@
-import { OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
+import { OnGatewayConnection } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
-import { JwtService } from '@nestjs/jwt';
-export declare class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+import { SessionService } from '../auth/session.service';
+export declare class KdsGateway implements OnGatewayConnection {
     private readonly prisma;
     private readonly billingService;
     private readonly jwtService;
+    private readonly sessions;
     server: Server;
-    constructor(prisma: PrismaService, billingService: BillingService, jwtService: JwtService);
-    private activeTickets;
-    private tableStatuses;
+    constructor(prisma: PrismaService, billingService: BillingService, jwtService: JwtService, sessions: SessionService);
+    private authenticate;
+    private run;
+    private list;
+    private owned;
+    private staff;
+    ticket(order: any): {
+        id: any;
+        orderNumber: any;
+        restaurantId: any;
+        orderType: any;
+        tableNumber: any;
+        status: any;
+        firedAt: any;
+        elapsedMinutes: number;
+        items: any;
+    };
     handleConnection(client: Socket): Promise<void>;
-    handleDisconnect(client: Socket): void;
-    handleFireOrder(orderData: any, client: Socket): Promise<{
+    handleFireOrder(data: any, client: Socket): Promise<{
         status: string;
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
+        status: string;
+        message: string;
+        code: number;
+        data?: undefined;
     }>;
-    handleStatusUpdate(payload: {
-        orderId: string;
+    handleStatusUpdate(data: any, client: Socket): Promise<{
         status: string;
-        itemId?: string;
-    }): Promise<{
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
         status: string;
+        message: string;
+        code: number;
+        data?: undefined;
     }>;
-    handleClearTableTickets(payload: {
-        tableName: string;
-    }): Promise<{
+    handleClearTableTickets(data: any, client: Socket): Promise<{
         status: string;
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
+        status: string;
+        message: string;
+        code: number;
+        data?: undefined;
     }>;
-    handleSyncParkedOrders(orders: any[], client: Socket): Promise<{
+    handleSyncParkedOrders(data: any[], client: Socket): Promise<{
         status: string;
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
+        status: string;
+        message: string;
+        code: number;
+        data?: undefined;
     }>;
-    handleTableStatus(payload: {
-        tableId: string;
+    handleTransferTable(data: any, client: Socket): Promise<{
         status: string;
-        subtotal?: number;
-        mergedWith?: string[];
-        mergedInto?: string | null;
-    }): Promise<{
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
         status: string;
+        message: string;
+        code: number;
+        data?: undefined;
     }>;
-    handleSyncDeliveryOrders(orders: any[], client: Socket): Promise<{
+    handleTableStatus(data: any, client: Socket): Promise<{
         status: string;
-    }>;
-    handleSyncStaff(staff: any[], client: Socket): Promise<{
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
         status: string;
+        message: string;
+        code: number;
+        data?: undefined;
     }>;
-    handleSyncInventory(inventory: any[], client: Socket): Promise<{
+    handleSyncDeliveryOrders(data: any[], client: Socket): Promise<{
         status: string;
-    }>;
-    handleSyncRecipes(recipes: any[], client: Socket): Promise<{
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
         status: string;
+        message: string;
+        code: number;
+        data?: undefined;
     }>;
-    handleSyncWaste(wasteLogs: any[], client: Socket): Promise<{
+    handleSyncStaff(data: any[], client: Socket): Promise<{
         status: string;
-    }>;
-    handleSettleBill(billData: any, client: Socket): Promise<{
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
         status: string;
+        message: string;
+        code: number;
+        data?: undefined;
     }>;
-    private getOrCreateOrderId;
+    handleSyncInventory(data: any[], client: Socket): Promise<{
+        status: string;
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
+        status: string;
+        message: string;
+        code: number;
+        data?: undefined;
+    }>;
+    handleSyncRecipes(data: any[], client: Socket): Promise<{
+        status: string;
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
+        status: string;
+        message: string;
+        code: number;
+        data?: undefined;
+    }>;
+    handleSyncMenu(data: any, client: Socket): Promise<{
+        status: string;
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
+        status: string;
+        message: string;
+        code: number;
+        data?: undefined;
+    }>;
+    handleSyncWaste(data: any[], client: Socket): Promise<{
+        status: string;
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
+        status: string;
+        message: string;
+        code: number;
+        data?: undefined;
+    }>;
+    handleSettleBill(data: any, client: Socket): Promise<{
+        status: string;
+        data: any;
+        message?: undefined;
+        code?: undefined;
+    } | {
+        status: string;
+        message: string;
+        code: number;
+        data?: undefined;
+    }>;
 }

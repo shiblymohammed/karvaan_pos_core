@@ -12,9 +12,9 @@ export declare class HistoryController {
                     product: {
                         name: string;
                     };
-                    price: number;
                     notes: string;
                     quantity: number;
+                    price: number;
                 }[];
             };
             cashier: {
@@ -23,11 +23,11 @@ export declare class HistoryController {
             };
         } & {
             id: string;
-            updatedAt: Date;
-            restaurantId: string;
             orderType: string;
             discount: number;
+            updatedAt: Date;
             syncedAt: Date | null;
+            restaurantId: string;
             orderId: string;
             billNumber: string;
             subtotal: number;
@@ -36,11 +36,11 @@ export declare class HistoryController {
             deliveryFee: number;
             grandTotal: number;
             paymentMethod: string;
+            cashierId: string | null;
             customerName: string | null;
             customerPhone: string | null;
             waiterName: string | null;
             settledAt: Date;
-            cashierId: string | null;
         })[];
         pagination: {
             total: number;
@@ -79,14 +79,14 @@ export declare class HistoryController {
             };
         } & {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            restaurantId: string;
             orderNumber: string;
             status: string;
             notes: string | null;
+            createdAt: Date;
+            updatedAt: Date;
             syncedAt: Date | null;
             items: string;
+            restaurantId: string;
             deliveryFee: number;
             grandTotal: number;
             paymentMethod: string;
@@ -113,8 +113,8 @@ export declare class HistoryController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        restaurantId: string;
         syncedAt: Date | null;
+        restaurantId: string;
         quantity: number;
         orderId: string | null;
         billNumber: string | null;
@@ -125,12 +125,12 @@ export declare class HistoryController {
     }[]>;
     getReturnRecords(startDate?: string, endDate?: string, user?: any): Promise<{
         id: string;
+        orderType: string;
         createdAt: Date;
         updatedAt: Date;
-        restaurantId: string | null;
-        orderType: string;
         syncedAt: Date | null;
         items: string;
+        restaurantId: string;
         billNumber: string;
         reason: string;
         action: string;

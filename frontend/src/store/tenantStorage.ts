@@ -4,7 +4,7 @@ export const tenantStorage: StateStorage = {
   getItem: (name: string) => {
     let restaurantId = 'default';
     try {
-      const authData = localStorage.getItem('auth-storage');
+      const authData = localStorage.getItem('pos-auth-storage');
       if (authData) {
         const parsed = JSON.parse(authData);
         restaurantId = parsed.state?.currentUser?.restaurantId || 'default';
@@ -15,7 +15,7 @@ export const tenantStorage: StateStorage = {
   setItem: (name: string, value: string) => {
     let restaurantId = 'default';
     try {
-      const authData = localStorage.getItem('auth-storage');
+      const authData = localStorage.getItem('pos-auth-storage');
       if (authData) {
         const parsed = JSON.parse(authData);
         restaurantId = parsed.state?.currentUser?.restaurantId || 'default';
@@ -26,7 +26,7 @@ export const tenantStorage: StateStorage = {
   removeItem: (name: string) => {
     let restaurantId = 'default';
     try {
-      const authData = localStorage.getItem('auth-storage');
+      const authData = localStorage.getItem('pos-auth-storage');
       if (authData) {
         const parsed = JSON.parse(authData);
         restaurantId = parsed.state?.currentUser?.restaurantId || 'default';

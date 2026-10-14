@@ -9,7 +9,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const schedule_1 = require("@nestjs/schedule");
-const prisma_service_1 = require("./prisma/prisma.service");
 const kds_gateway_1 = require("./kds/kds.gateway");
 const billing_service_1 = require("./billing/billing.service");
 const billing_controller_1 = require("./billing/billing.controller");
@@ -40,7 +39,7 @@ exports.AppModule = AppModule = __decorate([
             printer_module_1.PrinterModule,
         ],
         controllers: [billing_controller_1.BillingController],
-        providers: [prisma_service_1.PrismaService, kds_gateway_1.KdsGateway, billing_service_1.BillingService],
+        providers: [kds_gateway_1.KdsGateway, billing_service_1.BillingService],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

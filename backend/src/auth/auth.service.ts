@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AuthService {
@@ -11,16 +11,23 @@ export class AuthService {
   ) {}
 
   async login(username: string, password?: string, pin?: string) {
+    if (typeof username !== 'string' || !username.trim() ||
+        (!password && !pin) || (password !== undefined && typeof password !== 'string') ||
+        (pin !== undefined && typeof pin !== 'string')) {
+      throw new UnauthorizedException('Username and password or PIN are required');
+    }
     const user = await this.prisma.user.findUnique({
       where: { username },
+      include: { restaurant: true },
     });
 
-    if (!user) {
+    if (!user?.isActive || (user.restaurantId && !user.restaurant?.isActive)) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
     if (password) {
       let isPasswordValid = false;
+      if (!user.password) throw new UnauthorizedException('Invalid credentials');
       if (user.password.startsWith('$2b$') || user.password.startsWith('$2a$')) {
         isPasswordValid = await bcrypt.compare(password, user.password);
       } else {
@@ -63,16 +70,18 @@ export class AuthService {
         name: user.name,
         role: user.role,
         restaurantId: user.restaurantId,
+        permissions: (() => { try { return JSON.parse(user.permissions || '{}'); } catch { return {}; } })(),
       }
     };
   }
 
   async unlock(userId: string, pin: string) {
+    if (typeof userId !== 'string' || typeof pin !== 'string' || !pin) throw new UnauthorizedException('Invalid credentials');
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
 
-    if (!user) {
+    if (!user?.isActive) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -95,5 +104,22 @@ export class AuthService {
     if (!isPinValid) throw new UnauthorizedException('Invalid PIN');
     
     return { success: true };
+  }
+
+  async authorizeManager(restaurantId: string, pin: string) {
+    if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) throw new UnauthorizedException('Invalid authorization PIN');
+    const staff = await this.prisma.user.findMany({ where: { restaurantId, isActive: true } });
+    for (const user of staff) {
+      let permissions: any = {};
+      try { permissions = JSON.parse(user.permissions || '{}'); } catch {}
+      if (!['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user.role) && !permissions.canVoid) continue;
+      if (!user.pin) continue;
+      const valid = user.pin.startsWith('$2') ? await bcrypt.compare(pin, user.pin) : pin === user.pin;
+      if (valid) {
+        if (!user.pin.startsWith('$2')) await this.prisma.user.update({ where: { id: user.id }, data: { pin: await bcrypt.hash(pin, 10) } });
+        return { name: user.name };
+      }
+    }
+    throw new UnauthorizedException('Unauthorized PIN or insufficient permissions');
   }
 }

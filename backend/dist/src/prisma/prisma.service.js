@@ -13,6 +13,7 @@ let PrismaService = class PrismaService extends client_1.PrismaClient {
     async onModuleInit() {
         await this.$connect();
         await this.$queryRawUnsafe(`PRAGMA journal_mode = WAL;`);
+        await this.$queryRawUnsafe(`PRAGMA synchronous = NORMAL;`);
         console.log('✅ [PrismaService] Connected to POS Database successfully (WAL mode enabled).');
     }
     async onModuleDestroy() {

@@ -37,11 +37,13 @@ echo       Done.
 echo.
 echo [2/6] Generating Prisma client...
 call npx prisma generate
+if errorlevel 1 exit /b 1
 echo       Done.
 
 echo.
 echo [3/6] Pushing database schema (creates dev.db if missing)...
 call npx prisma db push
+if errorlevel 1 exit /b 1
 echo       Done.
 
 echo.
@@ -57,19 +59,22 @@ echo       Done.
 echo.
 echo [5/6] Installing PM2 globally (if not installed)...
 call npm install -g pm2 2>nul
+if errorlevel 1 exit /b 1
 echo       Done.
 
 echo.
 echo [6/6] Starting backend with PM2...
 call pm2 delete karvaan-backend 2>nul
 call pm2 start ecosystem.config.js --env production
+if errorlevel 1 exit /b 1
 call pm2 save
+if errorlevel 1 exit /b 1
 echo       Done.
 
 echo.
 echo ============================================================
 echo   Backend is now running on port 3001
-echo   It will auto-restart on crash and on Windows reboot.
+echo   It will auto-restart on crash. Configure a Windows service or scheduled task for boot startup.
 echo.
 echo   Useful PM2 commands:
 echo     pm2 status              - Check running status

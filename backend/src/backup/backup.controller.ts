@@ -1,51 +1,17 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { BackupService } from './backup.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles, RolesGuard } from '../auth/roles.guard';
+import { GetUser } from '../auth/get-user.decorator';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN', 'REST_ADMIN')
 @Controller('backup')
 export class BackupController {
   constructor(private readonly backupService: BackupService) {}
-
-  /**
-   * POST /backup/trigger
-   * Manually trigger a database backup on demand (Admin only in production)
-   */
-  @Post('trigger')
-  async triggerBackup() {
-    return this.backupService.triggerManualBackup();
-  }
-
-  /**
-   * GET /backup/list
-   * Returns list of all backup archive files with size and timestamp
-   */
-  @Get('list')
-  async listBackups() {
-    return this.backupService.listBackups();
-  }
-
-  /**
-   * GET /backup/logs
-   * Returns last 10 backup log entries from database
-   */
-  @Get('logs')
-  async getBackupLogs() {
-    return this.backupService.getBackupLogs();
-  }
-  /**
-   * GET /backup/settings
-   * Returns current backup settings
-   */
-  @Get('settings')
-  async getSettings() {
-    return this.backupService.getSettings();
-  }
-
-  /**
-   * POST /backup/settings
-   * Updates backup settings
-   */
-  @Post('settings')
-  async updateSettings(@Body() settings: any) {
-    return this.backupService.updateSettings(settings);
-  }
+  @Post('trigger') triggerBackup(@GetUser() user: any) { return this.backupService.triggerManualBackup(user.restaurantId); }
+  @Get('list') listBackups(@GetUser() user: any) { return this.backupService.listBackups(user.restaurantId); }
+  @Get('logs') getBackupLogs(@GetUser() user: any) { return this.backupService.getBackupLogs(user.restaurantId); }
+  @Get('settings') getSettings(@GetUser() user: any) { return this.backupService.getSettings(user.restaurantId); }
+  @Post('settings') updateSettings(@Body() settings: any, @GetUser() user: any) { return this.backupService.updateSettings(settings, user.restaurantId); }
 }

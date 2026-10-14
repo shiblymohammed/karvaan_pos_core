@@ -10,14 +10,13 @@ exports.BackupModule = void 0;
 const common_1 = require("@nestjs/common");
 const backup_service_1 = require("./backup.service");
 const backup_controller_1 = require("./backup.controller");
-const prisma_service_1 = require("../prisma/prisma.service");
 let BackupModule = class BackupModule {
 };
 exports.BackupModule = BackupModule;
 exports.BackupModule = BackupModule = __decorate([
     (0, common_1.Module)({
         controllers: [backup_controller_1.BackupController],
-        providers: [backup_service_1.BackupService, prisma_service_1.PrismaService],
+        providers: [backup_service_1.BackupService],
         exports: [backup_service_1.BackupService],
     })
 ], BackupModule);

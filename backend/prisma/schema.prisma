@@ -9,7 +9,7 @@ datasource db {
   // SQLite: zero-setup, single file, ideal for local restaurant PC deployment
   // To migrate to PostgreSQL, change provider to "postgresql" and set DATABASE_URL
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 // ---------------------------------------------------------

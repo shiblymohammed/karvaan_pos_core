@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Lock, Delete, X, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { useStaffStore } from '../store/useStaffStore';
+import { apiClient } from '../services/apiClient';
 
 interface ManagerAuthModalProps {
   isOpen: boolean;
@@ -30,27 +30,23 @@ export const ManagerAuthModal: React.FC<ManagerAuthModalProps> = ({
 
   useEffect(() => {
     if (pin.length === 4) {
-      const staffList = useStaffStore.getState().staff;
-      // Find an active staff member whose PIN matches and has Admin/Manager role OR explicit canVoid permission
-      const authorizedUser = staffList.find(s => 
-        s.pin === pin && 
-        s.isActive && 
-        (s.role === 'ADMIN' || s.role === 'MANAGER' || s.permissions?.canVoid === true)
-      );
-
-      if (authorizedUser) {
+      let cancelled = false;
+      void apiClient.post('/auth/authorize-manager', { pin }).then(authorizedUser => {
+        if (cancelled) return;
         setError(false);
         setPin('');
         onSuccess(authorizedUser.name);
         onClose();
-      } else {
+      }).catch(() => {
+        if (cancelled) return;
         setError(true);
         setErrorMessage('Unauthorized PIN or insufficient permissions');
         setTimeout(() => {
           setPin('');
           setError(false);
         }, 1200);
-      }
+      });
+      return () => { cancelled = true; };
     }
   }, [pin, onSuccess, onClose]);
 

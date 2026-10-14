@@ -1,27 +1,35 @@
-import { Controller, Post, UseInterceptors, UploadedFile, HttpException, HttpStatus, Query } from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, HttpException, HttpStatus, Query, UseGuards } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
 import { v2 as cloudinary } from 'cloudinary';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ADMIN_ROLES, Roles, RolesGuard } from '../auth/roles.guard';
 
 // Configure Cloudinary (requires CLOUDINARY_URL in .env)
 cloudinary.config({
   secure: true
 });
 
-const UPLOAD_DIR = './uploads';
+const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(...ADMIN_ROLES)
 @Controller('upload')
 export class UploadController {
   @Post()
   @UseInterceptors(FileInterceptor('file', {
     limits: {
       fileSize: 1024 * 1024 * 500 // 500 MB limit for videos
+    },
+    fileFilter: (_req, file, cb) => {
+      const allowed = /\.(png|jpe?g|gif|webp|mp4|webm|mov)$/i.test(file.originalname);
+      cb(allowed ? null : new HttpException('Only image and video files are allowed', HttpStatus.BAD_REQUEST), allowed);
     },
     storage: diskStorage({
       destination: UPLOAD_DIR,

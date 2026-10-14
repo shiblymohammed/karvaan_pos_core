@@ -50,7 +50,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const res = await fetch(`${getServerUrl()}/auth/unlock`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${get().accessToken}` },
             body: JSON.stringify({ pin, userId: get().currentUser?.id }),
           });
           

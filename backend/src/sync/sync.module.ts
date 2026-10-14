@@ -7,7 +7,7 @@ import { SettingsModule } from '../settings/settings.module';
 @Module({
   imports: [SettingsModule],
   controllers: [SyncController],
-  providers: [SyncService, PrismaService],
+  providers: [SyncService],
   exports: [SyncService],
 })
 export class SyncModule {}

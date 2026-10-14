@@ -1,53 +1,35 @@
-# Karvaan POS: Client Deployment Guide
+# Karvaan POS deployment
 
-This document outlines the exact steps required to deploy the Karvaan POS system from scratch onto a new client's Windows Cashier PC.
+Choose one backend mode for the cashier PC. Two processes cannot share port 3001.
 
-## Requirements (The USB Drive)
-Before leaving for the client's restaurant, ensure your USB drive contains:
-1. **`backend/`** folder (Contains all backend code, Prisma schema, and `package.json`).
-2. **`scripts/`** folder (Contains `deploy-backend.bat` and `setup-firewall.ps1`).
-3. **`KarvaanPOS_1.0.0_x64-setup.exe`** (The Tauri Desktop App Installer).
-4. **`node-v20.x.x-x64.msi`** (Download the latest LTS version from nodejs.org).
-5. *(Optional)* **`app-debug.apk`** (For Waiter/Rider Android phones).
+## Desktop app with bundled backend
 
----
+1. Prepare a clean database template with private account credentials in backend/prisma/dev.db. Do not distribute a live restaurant database or its WAL files.
+2. Install frontend/backend dependencies and generate the Prisma client. Run npm run tauri:build from frontend. Installers appear under desktopApp/target/release/bundle/nsis.
+3. Install and launch Karvaan POS. Its backend starts with the desktop app and stops when it exits. Keep the app open while tablets are using it.
+4. Choose Standard PC and Localhost in Network Setup. Sign in with the provisioned username and password or PIN.
+5. First launch initializes data under %APPDATA%\KarvaanPOS. Later launches preserve that database. Signing secrets and uploads also live there. Optional installed configuration belongs in %APPDATA%\KarvaanPOS\.env.
 
-## Step 1: Prepare the Client's Cashier PC
-1. Plug in your USB drive.
-2. Install **Node.js** using the `.msi` file. Keep all default settings (Next -> Next -> Finish).
-3. Create a dedicated folder on the client's `C:\` drive (e.g., `C:\KarvaanPOS`).
-4. Copy the `backend/` and `scripts/` folders from your USB drive into `C:\KarvaanPOS\`.
+## Independently managed backend
 
----
+Use this mode when the backend must run while the cashier app is closed. Use the frontend in a browser against the managed backend.
 
-## Step 2: Configure the Network & Backend
-The backend needs to run continuously in the background and be accessible to Waiter tablets over the local Wi-Fi.
+1. Install Node.js, copy backend and scripts, and configure backend/.env from .env.example.
+2. Back up the active database before schema updates. Prisma CLI operates on its configured URL; local runtime uses AppData. Apply schema changes to the intended database explicitly.
+3. scripts/deploy-backend.bat installs dependencies, generates Prisma, applies the configured schema, builds, and starts PM2. npm run start:prod runs dist/src/main.js directly.
+4. PM2 restarts a crashed backend. pm2 save preserves its process list. Windows reboot startup requires a configured Windows service or scheduled task.
+5. Do not also launch a desktop build that starts a bundled backend on port 3001.
 
-1. Navigate to `C:\KarvaanPOS\scripts\`.
-2. Right-click **`setup-firewall.ps1`** -> Select **"Run with PowerShell"**. Click Yes if prompted by Admin privileges. (This opens Port 3001).
-3. Double-click **`deploy-backend.bat`**. 
-   - A terminal will open and install all NPM dependencies.
-   - It will generate the Prisma SQLite database.
-   - It will install PM2 globally and start the backend service.
-   - It will save the PM2 process list so it survives computer reboots.
-   - *(You can close the terminal once it says "PM2 successfully saved")*.
+## Android clients and kitchen displays
 
----
+Connect devices and the cashier PC to the same network. Allow port 3001 using scripts/setup-firewall.ps1 with administrator privileges.
 
-## Step 3: Install the Cashier App
-1. Copy **`KarvaanPOS_1.0.0_x64-setup.exe`** to the PC.
-2. Double-click to install it.
-3. Open Karvaan POS from the Desktop shortcut.
-4. On the Network Setup screen, choose **"Skip (Use Localhost)"**.
-5. Log in with a Cashier or Admin PIN (e.g., `1234` or `9999`).
+Choose Tablet Client, enter http://<cashier-PC-IP>:3001, test, and connect. Sign in with a restaurant account. Legacy Tablet Master mode must be reconfigured as a client; it does not provide a persistent standalone backend.
 
----
+## Recovery and cloud sync
 
-## Step 4: Connect Waiter Phones (Android)
-1. Ensure the Android phone is connected to the exact same Wi-Fi network as the Cashier PC.
-2. On the Cashier PC, open Command Prompt, type `ipconfig`, and note the **IPv4 Address** (e.g., `192.168.1.100`).
-3. Transfer and install **`app-debug.apk`** on the Android phone.
-4. Open the app on the phone.
-5. In the Network Setup screen, enter: `http://[CASHIER_IP_ADDRESS]:3001`
-6. Tap **Test**, then tap **Save & Connect**.
-7. Log in with a Waiter PIN.
+Configure backups as a restaurant administrator. Single-restaurant backups use consistent SQLite snapshots, including committed WAL data. Shared databases produce tenant-only JSON exports. JSON exports require a dedicated import workflow and cannot be opened as SQLite databases.
+
+Review rejected writes in the pending-actions banner and retry after correcting the cause. A queued bill awaits server confirmation. Check server history before removing it: the write may have succeeded before its acknowledgment was interrupted. Unowned legacy queue entries remain in IndexedDB for manual recovery.
+
+Provision the same restaurant and owner on the cloud receiver, configure a private key for that restaurant, and enable sync in settings. Supply JWT_SECRET on cloud servers. Keep production .env files out of installers and source control.

@@ -4,7 +4,6 @@ import {
   AlertCircle, Server, QrCode, Copy, RefreshCw, ArrowRight, Monitor, ChevronRight
 } from 'lucide-react';
 import { getServerUrl, setServerUrl, probeServer, getOperatingMode, setOperatingMode, OperatingMode } from '../services/serverConfig';
-import { getMasterServerUrl } from '../services/localServer';
 import QRCode from 'qrcode';
 
 type ProbeStatus = 'idle' | 'probing' | 'ok' | 'fail';
@@ -12,21 +11,6 @@ type ProbeStatus = 'idle' | 'probing' | 'ok' | 'fail';
 interface SetupScreenProps {
   onComplete: () => void;
 }
-
-const IPDisplay = () => {
-  const [ip, setIp] = useState('Starting server...');
-  useEffect(() => {
-    const int = setInterval(() => {
-      const url = getMasterServerUrl();
-      if (url) {
-        setIp(url);
-        clearInterval(int);
-      }
-    }, 1000);
-    return () => clearInterval(int);
-  }, []);
-  return <>{ip}</>;
-};
 
 // ─── QR Code Canvas ───────────────────────────────────────────────────────────
 const QRCanvas: React.FC<{ value: string }> = ({ value }) => {
@@ -55,7 +39,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
   const [showQR, setShowQR] = useState(false);
   const [networkIPs, setNetworkIPs] = useState<string[]>([]);
 
-  const [opMode, setOpMode] = useState<OperatingMode>(getOperatingMode());
+  const [opMode, setOpMode] = useState<OperatingMode>(getOperatingMode() === 'ANDROID_MASTER' ? 'NODE_SERVER' : getOperatingMode());
   const [masterIp, setMasterIp] = useState<string>('');
 
   // Try to auto-detect local IPs from backend on load
@@ -95,7 +79,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
     setIsConnecting(true);
     setTimeout(() => {
       setOperatingMode(opMode);
-      if (opMode !== 'ANDROID_MASTER') {
+      {
         let finalUrl = url.trim().replace(/\/$/, '');
         if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
           finalUrl = `http://${finalUrl}`;
@@ -124,7 +108,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
   };
 
   const presets = [
-    { label: 'This PC', value: 'http://localhost:3001' },
+    { label: 'This PC', value: 'http://127.0.0.1:3001' },
     { label: 'Home Router', value: 'http://192.168.1.100:3001' },
     { label: 'Alt Router', value: 'http://192.168.0.100:3001' },
   ];
@@ -174,7 +158,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
                 <button 
                   onClick={() => setOpMode('NODE_SERVER')}
                   className={`group relative p-3 rounded-2xl border-2 transition-all duration-300 active:scale-[0.96] flex flex-col items-start gap-2 overflow-hidden focus-visible:outline-none focus-visible:ring-4 ${
-                    opMode === 'NODE_SERVER' || opMode === 'WAITER_CLIENT'
+                    opMode === 'NODE_SERVER'
                       ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-400/30 border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 shadow-[0_8px_24px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/30 text-white' 
                       : 'bg-white border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-200 hover:-translate-y-0.5 shadow-sm'
                   }`}
@@ -189,28 +173,28 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
                   {opMode === 'NODE_SERVER' && <Check className="h-4 w-4 absolute top-3 right-3 text-white drop-shadow-md" />}
                 </button>
 
-                {/* Android Master Mode Button */}
+                {/* Tablet Client Button */}
                 <button 
-                  onClick={() => setOpMode('ANDROID_MASTER')}
+                  onClick={() => setOpMode('WAITER_CLIENT')}
                   className={`group relative p-3 rounded-2xl border-2 transition-all duration-300 active:scale-[0.96] flex flex-col items-start gap-2 overflow-hidden focus-visible:outline-none focus-visible:ring-4 ${
-                    opMode === 'ANDROID_MASTER'
+                    opMode === 'WAITER_CLIENT'
                       ? 'bg-gradient-to-br from-blue-500 to-indigo-600 border-transparent shadow-[0_8px_16px_rgba(59,130,246,0.3)] ring-2 ring-blue-500/30' 
                       : 'bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-200 hover:-translate-y-0.5 shadow-sm'
                   }`}
                 >
-                  <div className={`p-2 rounded-xl shrink-0 transition-colors ${opMode === 'ANDROID_MASTER' ? 'bg-white/20 text-white shadow-inner' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600'}`}>
+                  <div className={`p-2 rounded-xl shrink-0 transition-colors ${opMode === 'WAITER_CLIENT' ? 'bg-white/20 text-white shadow-inner' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600'}`}>
                     <Smartphone className="h-5 w-5" />
                   </div>
                   <div className="text-left z-10">
-                    <p className={`font-black text-sm ${opMode === 'ANDROID_MASTER' ? 'text-white' : 'text-slate-800'}`}>Tablet Master</p>
-                    <p className={`text-[9px] font-bold mt-0.5 ${opMode === 'ANDROID_MASTER' ? 'text-blue-100' : 'text-slate-500'}`}>Host the network</p>
+                    <p className={`font-black text-sm ${opMode === 'WAITER_CLIENT' ? 'text-white' : 'text-slate-800'}`}>Tablet Client</p>
+                    <p className={`text-[9px] font-bold mt-0.5 ${opMode === 'WAITER_CLIENT' ? 'text-blue-100' : 'text-slate-500'}`}>Connect to cashier PC</p>
                   </div>
-                  {opMode === 'ANDROID_MASTER' && <Check className="h-4 w-4 absolute top-3 right-3 text-white drop-shadow-md" />}
+                  {opMode === 'WAITER_CLIENT' && <Check className="h-4 w-4 absolute top-3 right-3 text-white drop-shadow-md" />}
                 </button>
               </div>
 
               {/* Dynamic Content: Standard Mode */}
-              {opMode !== 'ANDROID_MASTER' ? (
+
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col gap-4">
                   
                   {/* Modern Input */}
@@ -300,27 +284,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
                   </div>
 
                 </div>
-              ) : (
-                /* Dynamic Content: Android Master Mode */
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white border-2 border-blue-100 p-6 rounded-[24px] text-center shadow-sm relative overflow-hidden flex-1 flex flex-col justify-center">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-indigo-500" />
-                  
-                  <div className="w-16 h-16 bg-blue-50 rounded-[16px] mx-auto flex items-center justify-center text-blue-500 mb-4 border border-blue-100 shadow-inner">
-                    <Smartphone className="h-8 w-8" />
-                  </div>
-                  <h3 className="text-xl font-black text-slate-800 mb-2">Tablet Host Active</h3>
-                  <p className="text-xs font-bold text-slate-500 mb-6 max-w-xs mx-auto">
-                    This device is acting as the central server for all Waiter apps and KDS displays. Keep the app open.
-                  </p>
-                  
-                  <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                     <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Your Network IP</p>
-                     <p className="text-2xl font-black text-blue-600 tracking-tight drop-shadow-sm">
-                        <IPDisplay />
-                     </p>
-                  </div>
-                </div>
-              )}
+
               
             </div>
               
@@ -336,9 +300,9 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
                 </button>
                 <button 
                   onClick={handleSave} 
-                  disabled={(status !== 'ok' && url !== 'http://localhost:3001' && !url.includes('localhost')) || isConnecting}
+                  disabled={(status !== 'ok' && url !== 'http://127.0.0.1:3001' && !url.includes('127.0.0.1')) || isConnecting}
                   className={`flex-1 py-3.5 text-white rounded-[16px] font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all duration-300 tracking-wide focus-visible:outline-none focus-visible:ring-2 relative overflow-hidden shadow-md group ${
-                    opMode === 'ANDROID_MASTER' 
+                    opMode === 'WAITER_CLIENT' 
                       ? 'bg-gradient-to-br from-blue-500 to-blue-600 border border-blue-400/30 border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:shadow-[0_8px_20px_rgba(59,130,246,0.3)] focus-visible:ring-blue-500/50' 
                       : 'bg-gradient-to-br from-emerald-400 to-emerald-600 border border-emerald-400/30 border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:shadow-[0_8px_20px_rgba(16,185,129,0.3)] focus-visible:ring-emerald-500/50'
                   } hover:-translate-y-0.5 active:scale-[0.96] disabled:hover:translate-y-0 disabled:opacity-50 disabled:grayscale-[50%] disabled:active:scale-100 disabled:shadow-none`}
@@ -348,7 +312,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onComplete }) => {
                     <Loader2 className="h-5 w-5 animate-spin z-10" />
                   ) : (
                     <>
-                      <span className="drop-shadow-sm z-10">{opMode === 'ANDROID_MASTER' ? 'Start Host' : 'Connect'}</span> 
+                      <span className="drop-shadow-sm z-10">{'Connect'}</span> 
                       <ArrowRight className="h-4 w-4 z-10 transition-transform group-hover:translate-x-1" />
                     </>
                   )}

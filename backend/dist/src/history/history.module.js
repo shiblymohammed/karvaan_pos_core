@@ -10,14 +10,13 @@ exports.HistoryModule = void 0;
 const common_1 = require("@nestjs/common");
 const history_service_1 = require("./history.service");
 const history_controller_1 = require("./history.controller");
-const prisma_service_1 = require("../prisma/prisma.service");
 let HistoryModule = class HistoryModule {
 };
 exports.HistoryModule = HistoryModule;
 exports.HistoryModule = HistoryModule = __decorate([
     (0, common_1.Module)({
         controllers: [history_controller_1.HistoryController],
-        providers: [history_service_1.HistoryService, prisma_service_1.PrismaService],
+        providers: [history_service_1.HistoryService],
         exports: [history_service_1.HistoryService],
     })
 ], HistoryModule);

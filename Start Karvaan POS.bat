@@ -1,22 +1,16 @@
 @echo off
-title Karvaan POS Server
-echo ========================================================
-echo Starting Karvaan POS Backend Server...
-echo Do not close this window! If you close it, waiter tablets will disconnect.
-echo ========================================================
-
+setlocal
+title Karvaan POS
 cd /d "%~dp0backend"
-
-:: Start the backend silently using start /B or just let it run in this terminal
-start /B npm run start:prod
-
-:: Wait 3 seconds to ensure backend is up
-timeout /t 3 /nobreak >nul
-
-echo Starting POS Desktop App...
-cd /d "%~dp0frontend\src-tauri\target\release"
-
-:: Launch Tauri app
-start "" karvaan-pos.exe
-
-echo All systems running! You can minimize this window.
+if exist "%~dp0desktopApp\target\release\karvaan-pos.exe" (
+  start "" "%~dp0desktopApp\target\release\karvaan-pos.exe"
+  exit /b 0
+)
+if not exist "dist\src\main.js" (
+  call npm run build
+  if errorlevel 1 exit /b 1
+)
+start "Karvaan POS Backend" /MIN cmd /c npm run start:prod
+echo Backend started. Run npm run dev from frontend for the browser interface.
+echo To build the desktop application, run npm run tauri:build from frontend.
+endlocal
