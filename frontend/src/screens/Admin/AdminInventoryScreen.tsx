@@ -12,6 +12,8 @@ import CustomSelect from '../../components/shared/CustomSelect';
 import { toast } from '../../store/useToastStore';
 import { authorizedFetch } from '../../services/authFetch';
 import { applyInventorySnapshot } from '../../store/useInventoryStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { StockApprovalsPanel } from '../../components/StockApprovalsPanel';
 import { getActionContext, sameContext } from '../../services/offlineQueue';
 
 export const AdminInventoryScreen: React.FC = () => {
@@ -55,13 +57,13 @@ export const AdminInventoryScreen: React.FC = () => {
   const [newIngForm, setNewIngForm] = useState({
     name: '',
     category: 'DAIRY' as Ingredient['category'],
-    currentStock: 1000,
-    reorderLevel: 200,
+    currentStock: 0,
+    reorderLevel: 0,
     unit: 'g' as Ingredient['unit'],
     purchaseUnit: 'kg' as Ingredient['purchaseUnit'],
     conversionFactor: 1000,
-    costPerUnit: 0.25,
-    lastVendor: 'Local Vendor'
+    costPerUnit: 0,
+    lastVendor: ''
   });
 
   // Recipe Studio State
@@ -78,13 +80,15 @@ export const AdminInventoryScreen: React.FC = () => {
   const [showWasteModal, setShowWasteModal] = useState<boolean>(false);
   const [wasteIngId, setWasteIngId] = useState<string>(ingredients[0]?.id || '');
   const [wasteQty, setWasteQty] = useState<number>(500);
+  const [wasteSaving, setWasteSaving] = useState(false);
   const [wasteReason, setWasteReason] = useState<'EXPIRED' | 'BURNT' | 'DROPPED' | 'SPOILAGE' | 'OTHER'>('EXPIRED');
-  const [wasteLoggedBy, setWasteLoggedBy] = useState<string>('Chef Rajesh');
+  const wasteLoggedBy = useAuthStore(state => state.currentUser?.name) || 'Signed-in staff';
+  const canReviewApprovals = useAuthStore(state => ['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(state.currentUser?.role));
 
   // Computed Stats
   const lowStockCount = getLowStockIngredients().length;
   const totalInventoryValue = ingredients.reduce((sum, i) => sum + (i.currentStock * (i.costPerUnit || 0)), 0);
-  const totalWasteLoss = wasteLogs.reduce((sum, w) => sum + w.costLoss, 0);
+  const totalWasteLoss = wasteLogs.reduce((sum, w) => sum + (w.costLoss || 0), 0);
 
   // Filtered Ingredients
   const filteredIngredients = ingredients.filter(ing => {
@@ -148,26 +152,32 @@ export const AdminInventoryScreen: React.FC = () => {
     setNewIngForm({
       name: '',
       category: 'DAIRY',
-      currentStock: 1000,
-      reorderLevel: 200,
+      currentStock: 0,
+      reorderLevel: 0,
       unit: 'g',
       purchaseUnit: 'kg',
       conversionFactor: 1000,
-      costPerUnit: 0.25,
-      lastVendor: 'Local Vendor'
+      costPerUnit: 0,
+      lastVendor: ''
     });
   };
 
-  const submitWaste = () => {
-    if (!wasteIngId || wasteQty <= 0) return;
-    logWaste({
+  const submitWaste = async () => {
+    if (!wasteIngId || wasteQty <= 0 || wasteSaving) return;
+    setWasteSaving(true);
+    try {
+    const result = await logWaste({
       ingredientId: wasteIngId,
       quantity: wasteQty,
       reason: wasteReason,
-      loggedBy: wasteLoggedBy || 'Kitchen Staff'
     });
+    if (result.status === 'ERROR') throw new Error(result.message || 'Waste was not recorded');
+    if (result.status === 'OK') toast.success('Waste and stock deduction confirmed.');
+    else toast.info('Waste saved on this device; stock awaits server confirmation.');
     setShowWasteModal(false);
     setWasteQty(500);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Waste was not recorded'); }
+    finally { setWasteSaving(false); }
   };
 
   return (
@@ -683,7 +693,7 @@ export const AdminInventoryScreen: React.FC = () => {
         <div className="bg-white/70 backdrop-blur-xl p-5 sm:p-7 rounded-[32px] border border-white/60 shadow-xl flex flex-col gap-6 lg:gap-8">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 border-b border-slate-200/60 pb-6">
             <div>
-              <span className="text-[10px] font-black uppercase text-blue-600 tracking-widest bg-blue-100/50 px-2.5 py-1 rounded-lg inline-block mb-3">AI Predictive Kitchen Assistant</span>
+              <span className="text-[10px] font-black uppercase text-blue-600 tracking-widest bg-blue-100/50 px-2.5 py-1 rounded-lg inline-block mb-3">Recipe Quantity Calculator</span>
               <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">Daily Prep & Batch Scaling Studio</h2>
               <p className="text-xs text-slate-500 mt-2 font-medium">Scale raw ingredient weights instantly for morning prep batches based on sales velocity.</p>
             </div>
@@ -719,17 +729,17 @@ export const AdminInventoryScreen: React.FC = () => {
                 <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
               </span>
               <div>
-                <h4 className="text-sm sm:text-base font-black text-slate-800 tracking-tight">AI Velocity Recommendation for Today</h4>
-                <p className="text-[11px] sm:text-xs text-slate-500 mt-1">Based on your last 7-day average sales, we recommend prepping <strong className="text-blue-600 bg-blue-50 px-1 rounded">35 portions</strong> of {selectedPrepProduct?.name} before lunch rush.</p>
+                <h4 className="text-sm sm:text-base font-black text-slate-800 tracking-tight">Plan a recipe batch</h4>
+                <p className="text-[11px] sm:text-xs text-slate-500 mt-1">Choose the portions you plan to prepare. Quantities include the saved waste allowance. This estimate does not reserve or deduct stock.</p>
               </div>
             </div>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setPrepBatchQty(35)}
+              onClick={() => setPrepBatchQty(1)}
               className="w-full sm:w-auto px-5 py-3 sm:py-2.5 bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 text-white font-black text-[11px] rounded-[14px] transition-all cursor-pointer shrink-0 uppercase tracking-wider"
             >
-              Apply Recommended (35)
+              Reset to one portion
             </motion.button>
           </div>
 
@@ -800,6 +810,7 @@ export const AdminInventoryScreen: React.FC = () => {
       {/* TAB 4: SPOILAGE & WASTE AUDIT LOG */}
       {activeTab === 'WASTE' && (
         <div className="bg-white/70 backdrop-blur-xl p-5 sm:p-7 rounded-[32px] border border-white/60 shadow-xl flex flex-col gap-6 lg:gap-8">
+          {canReviewApprovals && <StockApprovalsPanel />}
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 border-b border-slate-200/60 pb-6">
             <div>
               <span className="text-[10px] font-black uppercase text-rose-500 tracking-widest bg-rose-100/50 px-2.5 py-1 rounded-lg inline-block mb-3">Financial Loss & Shrinkage Control</span>
@@ -808,7 +819,7 @@ export const AdminInventoryScreen: React.FC = () => {
             </div>
 
             <div className="bg-white/90 px-6 py-4 rounded-2xl border border-rose-200 shadow-sm text-right flex flex-col justify-center">
-              <span className="text-[10px] font-extrabold text-slate-400 block uppercase tracking-widest mb-0.5">Total Recorded Shrinkage Loss</span>
+              <span className="text-[10px] font-extrabold text-slate-400 block uppercase tracking-widest mb-0.5">Known Loss · Latest 500 Records</span>
               <span className="text-2xl sm:text-3xl font-black text-rose-500 tracking-tighter">₹{totalWasteLoss.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
             </div>
           </div>
@@ -842,7 +853,7 @@ export const AdminInventoryScreen: React.FC = () => {
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">Loss</span>
-                        <span className="font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100">-₹{(log.costLoss || 0).toFixed(1)}</span>
+                        <span className="font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100">{log.costLoss === null ? 'Cost not recorded' : `-₹${log.costLoss.toFixed(1)}`}</span>
                       </div>
                     </div>
                   </div>
@@ -1021,7 +1032,7 @@ export const AdminInventoryScreen: React.FC = () => {
                 <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2 pl-1">Recipe Base Unit</label>
                 <CustomSelect 
                   value={newIngForm.unit}
-                  onChange={(val) => setNewIngForm({ ...newIngForm, unit: val as any })}
+                  onChange={val => setNewIngForm({ ...newIngForm, unit: val as any, purchaseUnit: val === 'g' ? 'kg' : val === 'ml' ? 'l' : 'pcs', conversionFactor: val === 'pcs' ? 1 : 1000 })}
                   options={[
                     { value: 'g', label: 'Grams (g)' },
                     { value: 'ml', label: 'Milliliters (ml)' },
@@ -1143,7 +1154,7 @@ export const AdminInventoryScreen: React.FC = () => {
                 <input
                   type="text"
                   value={wasteLoggedBy}
-                  onChange={(e) => setWasteLoggedBy(e.target.value)}
+                  readOnly
                   className="w-full bg-pos-bg p-3 rounded-xl text-xs font-bold text-pos-text border border-pos-border outline-none"
                 />
               </div>
@@ -1164,8 +1175,8 @@ export const AdminInventoryScreen: React.FC = () => {
                 Cancel
               </button>
               <button
-                onClick={submitWaste}
-                disabled={!wasteIngId || wasteQty <= 0}
+                onClick={() => void submitWaste()}
+                disabled={wasteSaving || !wasteIngId || wasteQty <= 0}
                 className="px-6 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-black rounded-xl text-xs uppercase tracking-wider shadow-md cursor-pointer active:scale-95"
               >
                 Record Spoilage & Deduct Stock

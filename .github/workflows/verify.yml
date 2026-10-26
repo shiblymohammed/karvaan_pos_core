@@ -45,6 +45,10 @@ jobs:
       - name: Run HTTP, WebSocket, and browser storage regression tests
         run: npm test
         working-directory: backend
+      - name: Verify print worker crash, acknowledgment and restore recovery
+        run: node --test print-agent/test/*.test.cjs
+      - name: Verify downloadable printing package
+        run: python3 -c 'import zipfile; z=zipfile.ZipFile("frontend/dist/karvaan-print-agent.zip"); assert z.testzip() is None; assert "install-windows.ps1" in z.namelist(); assert "config.json" not in z.namelist()'
       - name: Check deployment scripts
         run: |
           for script in scripts/deploy-cloud.sh scripts/backup-cloud.sh backend/docker-entrypoint.sh; do
@@ -63,7 +67,9 @@ jobs:
         run: |
           set -euo pipefail
           docker compose up -d --wait --wait-timeout 120
-          curl --fail --silent http://localhost:8080/health | python3 -c 'import json,sys; assert json.load(sys.stdin)["status"] == "ok"'
+          curl --fail --silent http://localhost:8080/health | python3 -c 'import json,sys; h=json.load(sys.stdin); assert h["status"] == "ok"; assert h["capabilities"]["durablePrinting"] == 1'
+          curl --fail --silent http://localhost:8080/karvaan-print-agent.zip -o /tmp/karvaan-print-agent.zip
+          python3 -c 'import zipfile; z=zipfile.ZipFile("/tmp/karvaan-print-agent.zip"); assert z.testzip() is None; assert "SETUP.txt" in z.namelist()'
           curl --fail --silent -H 'Content-Type: application/json' -d '{"username":"admin","password":"isolated-ci-build-password"}' http://localhost:8080/auth/login | python3 -c 'import json,sys; assert json.load(sys.stdin)["accessToken"]'
           bash scripts/backup-cloud.sh
           restore_dir=$(mktemp -d)
@@ -80,3 +86,22 @@ jobs:
         run: |
           docker compose logs --no-color
           docker compose down --volumes
+  print-worker-windows:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify Windows worker recovery
+        run: node --test print-agent/test/*.test.cjs
+      - name: Parse installer and spooler scripts without installing or printing
+        shell: powershell
+        run: |
+          $parseErrors = $null
+          $parseTokens = $null
+          foreach ($scriptPath in (Get-ChildItem -LiteralPath print-agent -Filter '*.ps1')) {
+            [System.Management.Automation.Language.Parser]::ParseFile($scriptPath.FullName, [ref]$parseTokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          }

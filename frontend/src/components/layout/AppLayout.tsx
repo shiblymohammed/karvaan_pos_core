@@ -5,7 +5,9 @@ import { MobileNav } from './MobileNav';
 import { MobileMoreDrawer } from './MobileMoreDrawer';
 import { ToastContainer } from '../ToastContainer';
 import { PendingActionsBanner } from '../PendingActionsBanner';
+import { DraftRecovery } from '../DraftRecovery';
 import { PWAInstallPrompt } from '../PWAInstallPrompt';
+import { PrintStatus } from '../PrintStatus';
 
 const LoadingSpinner: React.FC = () => (
   <div className="flex items-center justify-center w-full h-full bg-kv-creme text-slate-400">
@@ -25,6 +27,8 @@ export const AppLayout: React.FC = () => {
     <div className="flex flex-col md:flex-row h-[100dvh] bg-carbon-lines text-kv-dark font-sans selection:bg-kv-primary selection:text-white overflow-hidden transition-colors duration-300 p-0 pt-[env(safe-area-inset-top,0px)] md:py-4 md:pr-4 gap-0 md:gap-4 relative">
       <ToastContainer />
       <PendingActionsBanner />
+      <DraftRecovery />
+      <PrintStatus />
       <PWAInstallPrompt />
 
       {/* Desktop Sidebar */}

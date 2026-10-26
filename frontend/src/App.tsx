@@ -38,13 +38,15 @@ const FullLoader = () => (
 );
 
 export const App: React.FC = () => {
-  const { showSetup, setShowSetup, readyTenant } = useAppInit();
+  const { showSetup, setShowSetup, readyTenant, sessionChanged, databaseBlocked } = useAppInit();
   const { currentUser, isLocked } = useAuthStore();
   const operatingMode = useSettingsStore(s => s.operatingMode) || 'FINE_DINING';
 
   // Dynamic theme-color meta for fullscreen management
   const themeContext = showSetup ? 'setup' : (!currentUser || isLocked) ? 'login' : 'app';
   useFullscreen(themeContext);
+  if (databaseBlocked) return <div className="flex flex-col gap-4 h-[100dvh] items-center justify-center bg-slate-900 text-white p-6"><p>Close older Karvaan tabs so this update can open your saved actions. Then reload this tab. Your saved actions are preserved.</p><button className="bg-emerald-600 rounded-xl px-5 py-3" onClick={() => window.location.reload()}>Reload after closing older tabs</button></div>;
+  if (sessionChanged) return <div className="flex flex-col gap-4 h-[100dvh] items-center justify-center bg-slate-900 text-white p-6"><p>The account or backend changed in another tab. Your previous drafts and pending actions are preserved.</p><button className="bg-emerald-600 rounded-xl px-5 py-3" onClick={() => window.location.reload()}>Reload this tab to continue</button></div>;
 
   // ─── NOT LOGGED IN ────────────────────────────────────────────────────────
   if (!currentUser) {

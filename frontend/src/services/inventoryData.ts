@@ -20,3 +20,7 @@ export function normalizeInventoryItem(row: any, previous?: any) {
     stockNeedsReview: Boolean(row.stockNeedsReview) || typeof row.currentStock !== 'number' || !Number.isFinite(row.currentStock),
   };
 }
+
+export function normalizeWasteLog(row: any) {
+  return { ...row, ingredientId: row.ingredientId || '', ingredientName: row.itemName || row.ingredientName || 'Unknown item', costLoss: Number.isFinite(row.costLoss) && row.costLoss >= 0 ? row.costLoss : null, loggedBy: row.loggedBy || 'Recorded staff', timestamp: row.createdAt ? new Date(row.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : row.timestamp || '' };
+}

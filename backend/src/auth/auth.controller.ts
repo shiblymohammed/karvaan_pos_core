@@ -47,4 +47,10 @@ export class AuthController {
     // that the passport strategy decoded.
     return user;
   }
+
+  @Post('authorize-stock-shortage')
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  authorizeStockShortage(@Body() body: any, @GetUser() user: any) {
+    return this.authService.authorizeStockShortage(user, body);
+  }
 }

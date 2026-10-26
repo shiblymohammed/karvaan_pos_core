@@ -2,8 +2,13 @@ import { create } from 'zustand';
 import { authorizedFetch } from '../services/authFetch';
 import { useAuthStore } from './useAuthStore';
 import { getServerUrl } from '../services/serverConfig';
+import { emitAction } from '../services/socket';
+import { getActionContext, sameContext } from '../services/offlineQueue';
+import { assertCurrentSession } from '../services/sessionGuard';
+import { applyConfigSnapshot, canEditConfig } from '../services/configSnapshot';
 
-const settingsKey = () => `pos-settings-${encodeURIComponent(getServerUrl())}-${useAuthStore.getState().currentUser?.restaurantId}`;
+const settingsKey = () => `pos-settings-${encodeURIComponent(useAuthStore.getState().sessionServerUrl || getServerUrl())}-${useAuthStore.getState().currentUser?.restaurantId}`;
+const draftKey = () => `${settingsKey()}:draft:${useAuthStore.getState().currentUser?.id}`;
 
 export interface PredefinedNote {
   id: string;
@@ -19,6 +24,7 @@ export interface PredefinedDiscount {
 }
 
 interface SettingsState {
+  serverRevision: number;
   receiptName?: string;
   receiptAddress?: string;
   receiptGstin?: string;
@@ -122,6 +128,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>()(
   (set) => ({
+      serverRevision: -1,
       notes: [
         { id: 'n1', label: 'Extra Spicy', icon: '🔥' },
         { id: 'n2', label: 'Less Spicy', icon: '🌶️' },
@@ -286,7 +293,7 @@ export const useSettingsStore = create<SettingsState>()(
           const res = await authorizedFetch('/settings');
           if (res.ok) {
             const data = await res.json();
-            if (settingsKey() === key) applyRemoteSettings(data);
+            if (settingsKey() === key) await applyConfigSnapshot('update_settings', data.serverRevision ?? 0, () => useSettingsStore.getState().serverRevision, () => applyRemoteSettings(data));
           }
         } catch (e) {
           console.error("Failed to fetch settings from backend", e);
@@ -295,57 +302,77 @@ export const useSettingsStore = create<SettingsState>()(
     })
 );
 
-// Sync to backend on any state change
-let syncTimeout: any;
-let lastSyncedData = "";
+// Keep an unsubmitted draft separate from the last server snapshot. Incoming broadcasts
+// must not cancel a local edit in the debounce window.
+let syncTimeout: ReturnType<typeof setTimeout>;
+let applyingRemote = false;
+let dirty = false;
+let generation = 0;
+const settingsValues = (state: any) => Object.fromEntries(Object.entries(state).filter(([key, value]) => typeof value !== 'function' && key !== 'serverRevision'));
 
 useSettingsStore.subscribe((state) => {
+  if (applyingRemote) return;
   clearTimeout(syncTimeout);
-  const session = useAuthStore.getState();
-  if (session.currentUser?.restaurantId) {
-    const values = Object.fromEntries(Object.entries(state).filter(([, value]) => typeof value !== 'function'));
-    localStorage.setItem(settingsKey(), JSON.stringify(values));
-  }
-  if (!session.currentUser?.restaurantId || !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(session.currentUser.role)) return;
-  const tenant = session.currentUser.restaurantId;
+  let context;
+  try {
+    const session = assertCurrentSession();
+    if (!session.currentUser?.restaurantId || !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(session.currentUser.role)) return;
+    context = getActionContext();
+  } catch { return; }
+  dirty = true;
+  const settings = settingsValues(state);
+  const expectedRevision = state.serverRevision;
+  const savedDraftKey = draftKey();
+  const draft = JSON.stringify({ settings, expectedRevision, savedAt: new Date().toISOString() });
+  localStorage.setItem(savedDraftKey, draft);
+  window.dispatchEvent(new CustomEvent('local-draft-updated'));
+  if (!canEditConfig(expectedRevision)) { dirty = false; return; }
+  const sessionGeneration = generation;
   syncTimeout = setTimeout(async () => {
-    if (useAuthStore.getState().currentUser?.restaurantId !== tenant) return;
-    // Only extract data, not functions
-    const dataToSync: any = {};
-    Object.keys(state).forEach(key => {
-      if (typeof (state as any)[key] !== 'function') {
-        dataToSync[key] = (state as any)[key];
-      }
-    });
-
-    const dataString = JSON.stringify(dataToSync);
-    if (dataString === lastSyncedData) return; // Prevent infinite loops from socket updates
-
-
     try {
-      const response = await authorizedFetch('/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: dataString
-      });
-      if (!response.ok) throw new Error('Settings were not saved');
-      lastSyncedData = dataString;
-    } catch (e) {
-      console.error("Failed to sync settings to backend", e);
-    }
-  }, 1000); // debounce 1s
+      if (generation !== sessionGeneration || !sameContext(context, getActionContext())) return;
+      dirty = false;
+      applyingRemote = true;
+      useSettingsStore.setState({ serverRevision: expectedRevision + 1 });
+      applyingRemote = false;
+      const result = await emitAction('update_settings', { settings, expectedRevision });
+      if (result.status === 'OK' && localStorage.getItem(savedDraftKey) === draft) {
+        localStorage.removeItem(savedDraftKey);
+        window.dispatchEvent(new CustomEvent('local-draft-updated'));
+      }
+    } catch { /* The scoped draft remains available for review. */ }
+  }, 1000);
 });
 
-export function applyRemoteSettings(data: any) {
-  const values = Object.fromEntries(Object.entries(data || {}).filter(([key, value]) => typeof (useSettingsStore.getState() as any)[key] !== 'function'));
+export function applyRemoteSettings(data: any, force = false) {
+  if (dirty && !force) return false;
+  const initial = useSettingsStore.getInitialState();
+  const values = Object.fromEntries(Object.entries(data || {}).filter(([key]) => key in initial && typeof (initial as any)[key] !== 'function'));
   clearTimeout(syncTimeout);
-  useSettingsStore.setState({ ...useSettingsStore.getInitialState(), ...values });
-  clearTimeout(syncTimeout);
-  lastSyncedData = JSON.stringify(Object.fromEntries(Object.entries(useSettingsStore.getState()).filter(([, value]) => typeof value !== 'function')));
+  dirty = false;
+  applyingRemote = true;
+  useSettingsStore.setState({ ...initial, ...values });
+  applyingRemote = false;
+  localStorage.setItem(settingsKey(), JSON.stringify({ ...settingsValues(useSettingsStore.getState()), serverRevision: useSettingsStore.getState().serverRevision }));
+  return true;
+}
+
+export function getSavedSettingsDraft() {
+  try {
+    const draft = JSON.parse(localStorage.getItem(draftKey()) || 'null');
+    return draft?.savedAt === localStorage.getItem(`${draftKey()}:reviewed`) ? null : draft;
+  } catch { return null; }
+}
+
+export function markSettingsDraftReviewed() {
+  const draft = getSavedSettingsDraft();
+  if (draft) localStorage.setItem(`${draftKey()}:reviewed`, draft.savedAt);
+  window.dispatchEvent(new CustomEvent('local-draft-updated'));
 }
 
 export function resetSessionSettings() {
+  generation++;
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(settingsKey()) || '{}'); } catch {}
-  applyRemoteSettings(saved);
+  applyRemoteSettings(saved, true);
 }

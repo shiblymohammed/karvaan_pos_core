@@ -40,16 +40,9 @@ export const KDSScreen: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const handleStatusProgression = (ticketId: string, nextStatus: 'COOKING' | 'READY' | 'SERVED') => {
-    if (nextStatus === 'READY') {
-      playReadyChime();
-    }
-    if (nextStatus === 'SERVED') {
-      setTimeout(() => {
-        updateTicketStatus(ticketId, 'SERVED');
-      }, 1500);
-    }
-    updateTicketStatus(ticketId, nextStatus);
+  const handleStatusProgression = async (ticketId: string, nextStatus: 'COOKING' | 'READY' | 'SERVED') => {
+    const result = await updateTicketStatus(ticketId, nextStatus);
+    if (result.status === 'OK' && nextStatus === 'READY') playReadyChime();
   };
 
   const getSlaCardStyle = (mins: number, status: string, orderType?: string) => {
@@ -158,6 +151,7 @@ export const KDSScreen: React.FC = () => {
                   </span>
                   <div className="flex-1 min-w-0">
                     <span className={`font-bold leading-snug block tracking-tight truncate whitespace-normal ${isAddon ? 'text-amber-800 text-[11px] sm:text-xs' : (isCompact ? 'text-slate-800 text-xs sm:text-sm' : 'text-slate-800 text-sm sm:text-base')}`}>{item.name}</span>
+                    {!!item.addons?.length && <div className="mt-1 space-y-1 text-xs font-bold text-emerald-800">{item.addons.map((addon: { name: string }, addonIndex: number) => <p className="break-words" key={addonIndex}>+ {addon.name}</p>)}</div>}
                     {item.notes && (
                       <div className={`font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-200 rounded-xl flex items-center shadow-sm whitespace-normal break-words ${isCompact ? 'text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 sm:py-1 mt-1 gap-1' : 'text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-1.5 mt-1 sm:mt-2 gap-1 sm:gap-2'}`}>
                         <AlertTriangle className={`${isCompact ? 'h-3 w-3' : 'h-4 w-4'} text-amber-600 shrink-0`} />
@@ -184,9 +178,11 @@ export const KDSScreen: React.FC = () => {
 
       {/* Action Footer Buttons */}
       <div className={`p-2 sm:p-3 bg-white/40 border-t border-black/5 ${isCompact ? 'flex gap-2' : ''}`}>
+        {ticket.pendingConfirmation && <p className="text-xs text-amber-700 font-bold">Awaiting server confirmation</p>}
         {ticket.status === 'RECEIVED' && (
           <button
             onClick={() => handleStatusProgression(ticket.id, 'COOKING')}
+            disabled={ticket.pendingConfirmation}
             className={`w-full py-4 sm:py-3 bg-amber-400 hover:bg-amber-500 text-amber-950 font-black text-sm sm:text-base uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer border border-amber-300/50 ${isCompact ? 'py-3 sm:py-2 text-xs' : ''}`}
           >
             <Flame className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />
@@ -196,6 +192,7 @@ export const KDSScreen: React.FC = () => {
         {ticket.status === 'COOKING' && (
           <button
             onClick={() => handleStatusProgression(ticket.id, 'READY')}
+            disabled={ticket.pendingConfirmation}
             className={`w-full bg-[#b5ef85] hover:bg-[#a2db74] text-[#0d212b] font-black uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer border border-[#b5ef85]/50 ${isCompact ? 'py-3 sm:py-2 text-xs' : 'py-4 text-sm sm:text-base'}`}
           >
             <ChefHat className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />
@@ -205,6 +202,7 @@ export const KDSScreen: React.FC = () => {
         {ticket.status === 'READY' && (
           <button
             onClick={() => handleStatusProgression(ticket.id, 'SERVED')}
+            disabled={ticket.pendingConfirmation}
             className={`w-full bg-slate-800 hover:bg-slate-700 text-white font-black uppercase tracking-wider rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer ${isCompact ? 'py-3 sm:py-2 text-xs' : 'py-4 text-sm sm:text-base'}`}
           >
             <CheckCircle2 className={`${isCompact ? 'h-4 w-4' : 'h-5 w-5'}`} />

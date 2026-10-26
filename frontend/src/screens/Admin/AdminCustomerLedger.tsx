@@ -31,7 +31,7 @@ interface SettleModalProps {
   // Financial confirmation is handled by the server-backed store.
 }
 
-const SettleModal: React.FC<SettleModalProps> = ({ entry, onClose, onSettle }) => {
+export const SettleModal: React.FC<SettleModalProps> = ({ entry, onClose, onSettle }) => {
   const [amount, setAmount] = useState(entry.amount.toFixed(2));
   const [method, setMethod] = useState<'CASH' | 'UPI' | 'CARD'>('CASH');
   const [busy, setBusy] = useState(false);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createId } from '../services/createId';
 import { 
   RotateCcw, Package, Trash2, AlertTriangle, CheckCircle2, 
   DollarSign, X, ShieldAlert, CreditCard, Banknote, BookOpen,
@@ -51,14 +52,14 @@ export const ReturnOrderModal: React.FC<ReturnOrderModalProps> = ({
   const orderData = invoice || suppliedOrder;
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [actionId, setActionId] = useState(() => crypto.randomUUID());
+  const [actionId, setActionId] = useState(() => createId());
   const [managerPin, setManagerPin] = useState('');
   const user = useAuthStore(state => state.currentUser);
   const needsAuthorization = !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user?.role) && !user?.permissions?.canVoid;
 
   useEffect(() => {
     let current = true;
-    setInvoice(null); setManagerPin(''); setActionId(crypto.randomUUID());
+    setInvoice(null); setManagerPin(''); setActionId(createId());
     if (!isOpen || !suppliedOrder?.billNumber) return;
     setLoading(true);
     void authorizedFetch(`/billing/invoice/${encodeURIComponent(suppliedOrder.billNumber)}`).then(async response => {

@@ -7,6 +7,12 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from '../store/useToastStore';
 import { authorizedFetch } from '../services/authFetch';
 import { getServerUrl } from '../services/serverConfig';
+import { useStaffStore } from '../store/useStaffStore';
+import { useInventoryStore } from '../store/useInventoryStore';
+import { applyRemoteSettings } from '../store/useSettingsStore';
+import { StockApprovalDialog } from './StockApprovalDialog';
+
+const reviewValues = (value: any): string => JSON.stringify(value, (key, item) => /pin|password|token|authorization/i.test(key) ? undefined : item, 2);
 
 export function PendingActionsBanner() {
   const navigate = useNavigate();
@@ -18,6 +24,7 @@ export function PendingActionsBanner() {
   const [busy, setBusy] = useState<number | null>(null);
   const [refund, setRefund] = useState<PendingAction | null>(null);
   const [pin, setPin] = useState('');
+  const [stockApproval, setStockApproval] = useState<PendingAction | null>(null);
   const [connected, setConnected] = useState(socket.connected);
   useEffect(() => {
     const changed = () => setConnected(socket.connected);
@@ -49,7 +56,7 @@ export function PendingActionsBanner() {
       }
       if (!sameContext(action, getActionContext()) || original !== JSON.stringify(useCartStore.getState().items)) throw new Error('The current session or cart changed. Open bill review again.');
       const cart = useCartStore.getState();
-      if (cart.items.length) cart.holdCurrentOrder('Saved before bill review');
+      if (cart.items.length && !await cart.holdCurrentOrder('Saved before bill review')) throw new Error('The current cart could not be parked. It has been preserved.');
       let items = bill.items || [];
       if (latest) {
         const signature = (item: any) => `${item.productId || item.id}:${(item.addons || []).map((addon: any) => addon.id).sort().join(',')}`;
@@ -85,10 +92,25 @@ export function PendingActionsBanner() {
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Refund could not be authorized'); }
     finally { setBusy(null); }
   };
+  const reloadConfig = async (action: PendingAction) => {
+    setBusy(action.id!);
+    try {
+      if (!sameContext(action, getActionContext())) throw new Error('Sign in with the original account to review this edit.');
+      const response = await authorizedFetch(action.type === 'update_settings' ? '/settings' : '/billing/admin-config');
+      const current = await response.json();
+      if (!response.ok) throw new Error(current.message || 'Current server data could not be loaded');
+      if (!sameContext(action, getActionContext())) throw new Error('The account changed during review.');
+      if (action.type === 'update_settings') applyRemoteSettings(current, true);
+      else if (action.type === 'sync_staff') useStaffStore.setState({ staff: current.staff, serverRevision: current.staffRevision });
+      else useInventoryStore.setState({ recipes: current.recipes, recipeRevision: current.recipeRevision });
+      toast.info('Current server data loaded. Your failed edit is preserved below; compare it before removing it and re-entering any missing changes.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to reload server data'); }
+    finally { setBusy(null); }
+  };
   if (!actions.length && !recovery.length) return null;
   const failed = actions.some(action => action.error);
   return <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[80] max-w-[90vw] rounded-xl bg-amber-100 border border-amber-400 text-amber-950 px-4 py-2 shadow-lg text-sm">
-    <button onClick={() => setOpen(!open)}>{actions.length ? `${actions.length} action(s) awaiting confirmation${failed ? ' — review required' : ''}` : `${recovery.length} older inventory update(s) saved for review`}</button>
+    <button onClick={() => setOpen(!open)}>{actions.length ? `${actions.length} action(s) awaiting confirmation${failed ? ' — review required' : ''}` : `${recovery.length} older update(s) saved for review`}</button>
     {open && <div className="max-h-[60vh] overflow-y-auto space-y-3 mt-3">
       <p>{connected ? 'Connected' : 'Reconnecting'} to {getServerUrl()}. Pending purchases are kept until the server confirms them.</p>
       <p>Actions for the same bill, table, or stock item wait until their earlier error is resolved.</p>
@@ -98,24 +120,37 @@ export function PendingActionsBanner() {
         <button disabled={busy !== null || !pin} onClick={() => void renewRefund()}>Authorize and retry</button>
         <button disabled={busy !== null} onClick={() => { setPin(''); setRefund(null); }}>Cancel</button>
       </div>}
-      {recovery.length > 0 && <button onClick={() => setShowRecovery(!showRecovery)}>{showRecovery ? 'Hide' : 'Review'} {recovery.length} older stock update(s) — saved separately, no longer sent</button>}
+      {recovery.length > 0 && <button onClick={() => setShowRecovery(!showRecovery)}>{showRecovery ? 'Hide' : 'Review'} {recovery.length} older update(s) — saved separately, no longer sent</button>}
       {[...actions, ...(showRecovery ? recovery : [])].map(action => <div key={action.id} className="border-t border-amber-300 pt-2">
         <strong>{action.payload?.billNumber || (action.type === 'sync_inventory' ? 'Older inventory update — review needed' : action.type === 'receive_inventory_purchase' ? 'Stock purchase' : action.type)}</strong>
         <p>{action.recoveryReason || action.error || action.lastAttemptMessage || 'Saved on this device; awaiting the restaurant server.'}</p>
         {action.type === 'receive_inventory_purchase' && <p>{action.payload.purchaseUnits} {action.payload.purchaseUnit}{action.payload.invoiceCost !== undefined ? ` · Invoice total ₹${action.payload.invoiceCost}` : ''}{action.payload.vendor ? ` · ${action.payload.vendor}` : ''}</p>}
+        {action.errorDetails?.shortages?.map(row => <p key={row.id}>{row.name}: {row.available} {row.unit} available; {row.required} required.</p>)}
         {action.type === 'sync_inventory' && <>
           <p>Open Inventory &amp; Recipes and reload server stock. Compare these older saved values before removing the action; re-enter only purchases missing from the server.</p>
           {Array.isArray(action.payload) && <details><summary>Saved stock values</summary>{action.payload.map((row: any, index: number) => <p key={row.id || index}>{row.name || row.id}: {Number.isFinite(row.currentStock) ? row.currentStock : 'Invalid or missing quantity'} {row.unit || ''}</p>)}</details>}
         </>}
+        {['sync_waste', 'sync_delivery_orders'].includes(action.type) && <details><summary>Older saved values for review</summary><pre className="whitespace-pre-wrap break-all">{reviewValues(action.payload)}</pre></details>}
+        {['sync_staff', 'sync_recipes', 'update_settings'].includes(action.type) && <details><summary>Saved edit for comparison</summary><pre className="whitespace-pre-wrap break-all">{reviewValues(action.payload)}</pre></details>}
         <div className="flex gap-4 mt-1">
+          {action.errorDetails?.stockChallenge && <button onClick={() => setStockApproval(action)}>Manager approve stock shortage</button>}
+          {['sync_staff', 'sync_recipes', 'update_settings'].includes(action.type) && <button disabled={busy !== null} onClick={() => void reloadConfig(action)}>Reload current server data</button>}
           {action.type === 'settle_bill' && action.error && <button disabled={busy !== null} onClick={() => void reviewBill(action)}>Review in POS</button>}
           {action.type === 'record_return' && action.error && <button disabled={busy !== null} onClick={() => { setPin(''); setRefund(action); }}>Renew manager approval</button>}
-          {action.type !== 'sync_inventory' && <button disabled={busy !== null} onClick={async () => { await markActionError(action.id!, ''); await flushPendingActions(); }}>Retry</button>}
+          {!action.recoveryReason && action.type !== 'sync_inventory' && <button disabled={busy !== null} onClick={async () => { await markActionError(action.id!, ''); await flushPendingActions(); }}>Retry</button>}
           <button onClick={async () => {
             if (window.confirm(`Remove pending ${action.payload?.billNumber || action.type}? Check the server history first: an interrupted acknowledgment can mean it was already saved.`)) await clearAction(action.id!);
           }}>Remove after review</button>
         </div>
       </div>)}
     </div>}
+    {stockApproval?.errorDetails?.stockChallenge && <StockApprovalDialog key={stockApproval.errorDetails.stockChallenge} request={{ stockChallenge: stockApproval.errorDetails.stockChallenge, shortages: stockApproval.errorDetails.shortages, onApproved: async authorization => {
+      await replaceActionPayload(stockApproval.id!, { ...stockApproval.payload, stockAuthorization: authorization });
+      const id = stockApproval.id!;
+      setStockApproval(null);
+      const results = await flushPendingActions();
+      if (results.get(id)?.status === 'OK') toast.success('Manager approval recorded and the original action confirmed by the server.');
+      else toast.info('Approval saved with the original action. Check pending actions for server confirmation.');
+    } }} onClose={() => setStockApproval(null)} />}
   </div>;
 }

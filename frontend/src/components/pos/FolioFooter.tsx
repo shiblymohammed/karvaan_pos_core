@@ -1,4 +1,5 @@
 import React from 'react';
+import { useCartStore } from '../../store/cartStore';
 import { Check, Bike, Package, UtensilsCrossed, Printer, QrCode } from 'lucide-react';
 import { PaymentMethod } from '../SettlementModal';
 import { DiscountSelector } from './DiscountSelector';
@@ -26,7 +27,6 @@ interface FolioFooterProps {
   onApplyDiscount: (amount: number) => void;
   onSettle: (method: PaymentMethod) => void;
   onSendKot: () => void;
-  onSendKotPrint: () => void;
   onPreBill: () => void;
   onCompleteDelivery: () => void;
   onDispatchDelivery: (isPrepaid: boolean) => void;
@@ -36,10 +36,11 @@ export const FolioFooter: React.FC<FolioFooterProps> = ({
   items, subtotal, floorSurcharge, floorSurchargeLabel, cgst, sgst, discount, grandTotal,
   orderType, deliveryStatus, deliveryFee, parcelCharge, collectedMethod, deliveryAddress,
   currentUserRole,
-  onApplyDiscount, onSettle, onSendKot, onSendKotPrint, onPreBill,
+  onApplyDiscount, onSettle, onSendKot, onPreBill,
   onCompleteDelivery, onDispatchDelivery
 }) => {
   const hasItems = items.length > 0;
+  const sending = useCartStore(state => state.isSendingKot || state.isParking);
   const hasNewItems = items.some(i => i.status === 'NEW');
 
   return (
@@ -91,23 +92,14 @@ export const FolioFooter: React.FC<FolioFooterProps> = ({
       {/* Secondary Actions (Moved up for visibility on mobile) */}
       <div className="grid grid-cols-2 gap-2 mb-2 md:mb-4">
         {/* The KOT Buttons Group */}
-        <div className={`grid grid-cols-2 gap-1.5 ${currentUserRole === 'WAITER' ? 'col-span-2' : ''}`}>
+        <div className={`grid ${currentUserRole === 'WAITER' ? 'col-span-2' : ''}`}>
           <button 
             onClick={onSendKot} 
-            disabled={!hasNewItems} 
+            disabled={!hasNewItems || sending}
             className="relative group py-2 md:py-2.5 font-bold text-xs md:text-[13px] rounded-xl transition-all duration-300 disabled:opacity-40 flex flex-col items-center justify-center gap-1 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-[0.96] bg-gradient-to-br from-slate-700 to-slate-900 text-white border border-slate-600 hover:shadow-lg overflow-hidden"
           >
             <UtensilsCrossed className="h-4 w-4 md:h-5 md:w-5" /> 
-            <span className="drop-shadow-sm text-white/90">KDS Only</span>
-          </button>
-          <button 
-            onClick={onSendKotPrint} 
-            disabled={!hasNewItems} 
-            className="relative group py-2 md:py-2.5 font-bold text-xs md:text-[13px] rounded-xl transition-all duration-300 disabled:opacity-40 flex flex-col items-center justify-center gap-1 cursor-pointer shadow-[0_4px_12px_rgba(0,0,0,0.1)] active:scale-[0.96] bg-gradient-to-br from-rose-400 to-rose-600 text-white border border-t-white/30 border-l-white/20 border-b-black/20 border-r-black/20 hover:shadow-[0_8px_24px_rgba(243,24,104,0.3)] overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/20 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-            <Printer className="h-4 w-4 md:h-5 md:w-5" /> 
-            <span className="drop-shadow-sm text-white/90">KDS + Print</span>
+            <span className="drop-shadow-sm text-white/90">{sending ? 'Sending…' : 'Send to Kitchen'}</span>
           </button>
         </div>
         {currentUserRole !== 'WAITER' && (

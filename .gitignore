@@ -15,6 +15,7 @@ Thumbs.db
 
 # Project specific
 frontend/dist/
+frontend/public/karvaan-print-agent.zip
 frontend/node_modules/
 frontend/android/
 frontend/ios/

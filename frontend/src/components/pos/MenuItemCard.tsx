@@ -4,6 +4,7 @@ import { Clock, MessageSquare, Plus } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { Product, useMenuStore } from '../../store/useMenuStore';
 import { motion } from 'framer-motion';
+import { toast } from '../../store/useToastStore';
 
 interface MenuItemCardProps {
   product: Product;
@@ -23,7 +24,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   const [isVibrating, setIsVibrating] = useState(false);
 
   const handleClick = () => {
-    if (is86d) return;
+    if (is86d) toast.warning('Recorded stock is short. Manager approval will be required at checkout.');
     setIsVibrating(true);
     onAdd(product);
     setTimeout(() => setIsVibrating(false), 200);
@@ -34,7 +35,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
       onClick={handleClick}
       className={`group relative backdrop-blur-xl rounded-3xl transition-all duration-300 flex flex-col h-[220px] md:h-[300px] overflow-hidden ${isVibrating ? 'animate-shake' : ''} ${
         is86d 
-          ? 'opacity-80 bg-red-50/30 border-2 border-dashed border-red-200 shadow-[0_16px_40px_rgb(0,0,0,0.12)] cursor-not-allowed' 
+          ? 'opacity-80 bg-red-50/30 border-2 border-dashed border-red-200 shadow-[0_16px_40px_rgb(0,0,0,0.12)] cursor-pointer'
           : isInCart
             ? 'bg-[#b5ef85] border-2 border-transparent shadow-[0_16px_40px_rgba(181,239,133,0.5)] cursor-pointer'
             : 'bg-white/50 border-2 border-dashed border-slate-300/80 shadow-[0_16px_40px_rgb(0,0,0,0.12)] cursor-pointer hover:bg-[#b5ef85] hover:border-transparent hover:border-solid hover:shadow-[0_16px_40px_rgba(181,239,133,0.5)]'
@@ -64,7 +65,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
         {is86d && (
           <div className="absolute inset-0 bg-white/50 backdrop-blur-[3px] flex items-center justify-center rounded-[20px] m-1 mb-0 z-50">
             <span className="text-xs text-white font-black bg-red-600 px-4 py-1.5 rounded-full uppercase shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-red-400 tracking-wider">
-              Sold Out
+              Stock shortage
             </span>
           </div>
         )}

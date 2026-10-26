@@ -1,5 +1,5 @@
-import { getOperatingMode, getServerUrl } from './serverConfig';
-import { useAuthStore } from '../store/useAuthStore';
+import { getOperatingMode } from './serverConfig';
+import { authorizedFetch } from './authFetch';
 
 /**
  * apiClient is an abstraction over standard fetch.
@@ -31,18 +31,10 @@ async function _request(method: string, endpoint: string, body?: any) {
   }
 
   // Use fetch for NODE_SERVER or WAITER_CLIENT
-  const baseUrl = getServerUrl();
-  const url = `${baseUrl}${endpoint}`;
-
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Bypass-Tunnel-Reminder': 'true'
   };
-
-  const { accessToken } = useAuthStore.getState();
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
-  }
 
   const options: RequestInit = {
     method,
@@ -53,9 +45,11 @@ async function _request(method: string, endpoint: string, body?: any) {
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(url, options);
+  const response = await authorizedFetch(endpoint, options);
   if (!response.ok) {
-    throw new Error(`API Error: ${response.statusText}`);
+    let message = `Request failed (HTTP ${response.status})`;
+    try { const body = await response.json(); if (typeof body.message === 'string') message = body.message; else if (Array.isArray(body.message)) message = body.message.join('. '); } catch {}
+    throw new Error(message);
   }
   return response.json();
 }

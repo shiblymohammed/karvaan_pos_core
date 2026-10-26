@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { businessDate, calendarDate } from '../services/businessDate';
 import { createPortal } from 'react-dom';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -17,7 +18,7 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({ date, onCh
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Parse current selected date
-  const selectedDate = new Date(date);
+  const selectedDate = calendarDate(date);
   
   // State for the calendar view (month/year)
   const [viewMonth, setViewMonth] = useState(selectedDate.getMonth());
@@ -26,7 +27,7 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({ date, onCh
   useEffect(() => {
     // Reset view when opened if date changed externally
     if (isOpen) {
-      const d = new Date(date);
+      const d = calendarDate(date);
       setViewMonth(d.getMonth());
       setViewYear(d.getFullYear());
     }
@@ -92,7 +93,7 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({ date, onCh
   // Actual days
   for (let day = 1; day <= daysInMonth; day++) {
     const isSelected = selectedDate.getDate() === day && selectedDate.getMonth() === viewMonth && selectedDate.getFullYear() === viewYear;
-    const isToday = new Date().getDate() === day && new Date().getMonth() === viewMonth && new Date().getFullYear() === viewYear;
+    const isToday = businessDate() === `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const disabled = isDateDisabled(viewYear, viewMonth, day);
 
     calendarDays.push(
@@ -116,7 +117,7 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({ date, onCh
   }
 
   // Display text formatter
-  const formattedSelectedDate = new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const formattedSelectedDate = calendarDate(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   return (
     <div className="relative z-50" ref={popoverRef}>
@@ -188,8 +189,7 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({ date, onCh
               <div className="mt-5 pt-4 border-t border-slate-100/50 flex justify-center">
                 <button 
                   onClick={() => {
-                    const today = new Date();
-                    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                    const todayStr = businessDate();
                     onChange(todayStr);
                     setIsOpen(false);
                   }}

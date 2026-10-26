@@ -44,6 +44,7 @@
     "@types/node": "^20.11.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/socket.io": "^3.0.2",
+    "fake-indexeddb": "6.2.5",
     "prisma": "^5.10.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"

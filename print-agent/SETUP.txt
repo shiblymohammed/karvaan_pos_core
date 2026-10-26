@@ -1,0 +1,52 @@
+KARVAAN LOCAL PRINTING - WINDOWS SETUP
+
+This computer prints for browser terminals connected to your VPS.
+It must remain on and the installing Windows user must stay signed in.
+Locking the screen is fine. Sign-out stops printing until that user signs in again.
+
+1. Install Node.js 22.12 or newer from https://nodejs.org (supported LTS recommended).
+2. Extract ALL files in this ZIP into a folder. Install the printer driver and print
+   a Windows test page first. Use an ESC/POS-compatible receipt/kitchen printer.
+3. In the POS browser, open Admin > Printing and create a pairing code.
+4. Open PowerShell in the extracted folder and run:
+
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1
+
+5. Enter the HTTPS POS server URL and single-use code when prompted.
+   The installer keeps private credentials in your Windows user profile and starts
+   a hidden scheduled task named "Karvaan Local Printing" at Windows sign-in.
+   No router port forwarding or inbound internet connection is required.
+6. In the POS, assign receipt and kitchen destinations. For USB choose "Installed
+   Windows printer" and enter the exact queue name from Windows printer settings.
+   For LAN choose "Network printer" and enter its private IPv4 address (usually
+   port 9100). Give LAN printers a reserved address in your router.
+7. Save with automatic printing OFF. Test, check the paper, then enable automatic
+   printing. Each restaurant has one receipt and one kitchen destination.
+
+SENT means the network connection or Windows spooler accepted the data. It does
+not prove that paper came out. A paper-out condition may leave a job in Windows.
+UNCERTAIN means check the printer AND its Windows queue before requesting a copy.
+Reprints are marked and do not charge the customer again.
+
+The thermal format uses UTF-8 ESC/POS. Character support depends on firmware.
+If your printer cannot render menu names, use the browser/driver copy while a
+suitable character/raster printing profile is configured and tested.
+
+MANAGEMENT
+  Start/stop: Windows Task Scheduler > Karvaan Local Printing.
+  Logs: %LOCALAPPDATA%\KarvaanPrint\agent.log
+  Profile: %LOCALAPPDATA%\KarvaanPrint (credentials, journal and attempted-job history; keep private).
+  Update: extract the new download and rerun install-windows.ps1 as the SAME user.
+  Revoke: Admin > Printing > Revoke access. Disable the old computer's task.
+  Uninstall task (PowerShell):
+    Stop-ScheduledTask -TaskName 'Karvaan Local Printing'
+    Unregister-ScheduledTask -TaskName 'Karvaan Local Printing' -Confirm:$false
+  Keep the private profile until uncertain jobs are reviewed. Do not copy credentials
+  to another computer. Pair a new service and assign destinations instead.
+
+Internet is required for VPS jobs. Browser-saved offline orders create jobs only
+after the server accepts them. This agent is not an offline POS server.
+
+Before restoring a VPS backup, STOP this service and reconcile old print jobs.
+Keep local attempted-job history. A replacement computer has no memory of paper
+printed before the backup. Do not blindly replay restored waiting jobs.

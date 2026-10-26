@@ -1,12 +1,15 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { StockPolicyService } from './stock-policy.service';
 import { BillingService } from './billing.service';
+import { PrintQueueService } from '../printer/print-queue.service';
+import { kitchenSignature } from '../printer/print-document';
 import { billTotals, money, ledgerView, readJson, ensurePersistedItemsPresent } from './financial';
 
 @Injectable()
 export class WorkflowService {
-  constructor(private readonly prisma: PrismaService, @Inject(forwardRef(() => BillingService)) private readonly billing: BillingService, private readonly auth: AuthService) {}
+  constructor(private readonly prisma: PrismaService, @Inject(forwardRef(() => BillingService)) private readonly billing: BillingService, private readonly auth: AuthService, private readonly stockPolicy: StockPolicyService, private readonly printQueue: PrintQueueService) {}
 
   private async command(data: any, user: any, type: string, action: (tx: any) => Promise<any>) {
     if (typeof data?.actionId !== 'string' || !data.actionId || data.actionId.length > 200) throw new BadRequestException('A stable action identifier is required');
@@ -18,6 +21,37 @@ export class WorkflowService {
       await tx.systemSetting.create({ data: { restaurantId: user.restaurantId, settingKey: key.restaurantId_settingKey.settingKey, data: JSON.stringify(result) } });
       return result;
     }, { timeout: 20000 });
+  }
+
+  async configRevision(tx: any, restaurantId: string, type: string) {
+    const row = await tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: `config_revision:${type}` } } });
+    return readJson<number>(row?.data, 0);
+  }
+
+  async versionedConfig(data: any, user: any, type: string, change: (tx: any) => Promise<void>) {
+    return this.command(data, user, `config:${type}`, async tx => {
+      const revision = await this.configRevision(tx, user.restaurantId, type);
+      if (data.expectedRevision !== revision) throw new ConflictException(`${type === 'staff' ? 'Staff' : 'Recipes'} changed on another terminal. Reload before reviewing your saved changes.`);
+      await change(tx);
+      await tx.systemSetting.upsert({ where: { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: `config_revision:${type}` } }, update: { data: JSON.stringify(revision + 1) }, create: { restaurantId: user.restaurantId, settingKey: `config_revision:${type}`, data: JSON.stringify(revision + 1) } });
+      return { revision: revision + 1 };
+    });
+  }
+
+  async adminConfig(restaurantId: string) {
+    return this.prisma.$transaction(async tx => {
+      const [staff, ingredients, staffRevision, recipeRevision] = await Promise.all([
+        tx.user.findMany({ where: { restaurantId, isActive: true }, select: { id: true, name: true, username: true, role: true, phone: true, isActive: true, permissions: true } }),
+        tx.recipeIngredient.findMany({ where: { product: { restaurantId, isArchived: false } }, include: { product: true } }),
+        this.configRevision(tx, restaurantId, 'staff'), this.configRevision(tx, restaurantId, 'recipes'),
+      ]);
+      const recipes = new Map<string, any>();
+      for (const row of ingredients) {
+        if (!recipes.has(row.productId)) recipes.set(row.productId, { menuItemId: row.productId, menuItemName: row.product.name, prepInstructions: row.product.recipeInstructions || '', batchSize: row.product.recipeBatchSize, ingredients: [] });
+        recipes.get(row.productId).ingredients.push({ ingredientId: row.inventoryItemId, quantity: row.quantity, wasteFactorPercent: row.wasteFactorPercent });
+      }
+      return { staff: staff.map(row => ({ ...row, pin: '', permissions: readJson(row.permissions, {}) })), recipes: [...recipes.values()], staffRevision, recipeRevision };
+    });
   }
 
   async kitchenStatus(data: any, user: any) {
@@ -49,12 +83,13 @@ export class WorkflowService {
       const existing = await tx.deliveryOrder.findUnique({ where: key });
       if (existing) return { id: existing.id, orderNumber: existing.orderNumber };
       let order = await tx.order.findUnique({ where: key, include: { bill: true, items: true } });
+      const previousKitchenItems = order?.items || [];
       const { lines, settings } = await this.billing.pricedItems(tx, data.items, user.restaurantId, order?.items || []);
       const totals = billTotals(lines, settings, data);
       const permissions = readJson<any>(JSON.stringify(user.permissions || {}), {});
       if (totals.discount > 0 && !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user.role) && !permissions.canDiscount) throw new ForbiddenException('Discount permission is required');
       const storedLines = [];
-      for (const line of lines) storedLines.push({ productId: line.product.id, name: line.product.name, price: line.price, basePrice: line.product.price, gstRate: line.product.gstRate, quantity: line.quantity, notes: line.notes, addons: line.addons, recipe: await tx.recipeIngredient.findMany({ where: { productId: line.product.id }, select: { inventoryItemId: true, quantity: true } }) });
+      for (const line of lines) storedLines.push({ productId: line.product.id, name: line.product.name, price: line.price, basePrice: line.product.price, gstRate: line.product.gstRate, quantity: line.quantity, notes: line.notes, addons: line.addons, recipe: await this.billing.recipeForProduct(tx, line.product.id) });
       if (order?.bill && data.orderType !== 'PARCEL') throw new BadRequestException('This order is already settled');
       if (order && !order.bill) ensurePersistedItemsPresent(order.items, storedLines);
       if (!order) order = await tx.order.create({ data: { restaurantId: user.restaurantId, orderNumber: data.orderNumber, orderType: data.orderType, status: 'COOKING', totalAmount: totals.subtotal, discount: totals.discount, waiterId: user.id, items: { create: storedLines.map(line => ({ productId: line.productId, price: line.price, quantity: line.quantity, notes: line.notes, addons: JSON.stringify(line.addons), status: 'SENT' })) } }, include: { bill: true, items: true } });
@@ -62,17 +97,26 @@ export class WorkflowService {
       const paid = !!order.bill || data.paymentStatus === 'COLLECTED';
       const delivery = await tx.deliveryOrder.create({ data: { id: data.id || undefined, restaurantId: user.restaurantId, orderNumber: data.orderNumber, orderType: data.orderType, billNumber: order.bill?.billNumber || data.billNumber, customerName: data.customerName || 'Guest', customerPhone: data.customerPhone || null, deliveryAddress: data.deliveryAddress || null, deliveryFee: totals.deliveryFee, discount: totals.discount, subtotal: totals.subtotal, grandTotal: totals.grandTotal, items: JSON.stringify(storedLines), status: 'RECEIVED', paymentStatus: order.bill ? 'COLLECTED' : 'PENDING', inventoryConsumed: !!order.bill } });
       if (!order.bill) {
-        for (const line of storedLines) for (const ingredient of line.recipe) {
-          const quantity = ingredient.quantity * line.quantity;
-          await tx.inventoryItem.update({ where: { id: ingredient.inventoryItemId }, data: { currentStock: { decrement: quantity }, revision: { increment: 1 } } });
-          await tx.stockLog.create({ data: { itemId: ingredient.inventoryItemId, orderId: order.id, type: 'OUT', reason: 'SALE', quantityChange: -quantity, notes: `Delivery dispatch ${data.orderNumber}` } });
-        }
+        await this.stockPolicy.consume(tx, storedLines, user, 'dispatch', data.orderNumber, order.id, data.stockAuthorization);
         await tx.deliveryOrder.update({ where: { id: delivery.id }, data: { inventoryConsumed: true } });
       }
       if (paid && !order.bill) {
         const bill = await this.billing.checkoutInTransaction(tx, { ...data, method: data.paymentMethod || 'UPI' }, user.restaurantId, user.id);
         await tx.deliveryOrder.update({ where: { id: delivery.id }, data: { paymentStatus: 'COLLECTED', paymentMethod: bill.paymentMethod, collectedAmount: bill.grandTotal } });
       }
+      const previousQuantities = new Map<string, number>();
+      for (const item of previousKitchenItems) {
+        const signature = kitchenSignature(item);
+        previousQuantities.set(signature, (previousQuantities.get(signature) || 0) + item.quantity);
+      }
+      const unsent = storedLines.flatMap(item => {
+        const signature = kitchenSignature(item), previous = previousQuantities.get(signature) || 0;
+        previousQuantities.set(signature, Math.max(0, previous - item.quantity));
+        return item.quantity > previous ? [{ ...item, quantity: item.quantity - previous }] : [];
+      });
+      if ([...previousQuantities.values()].some(quantity => quantity > 0)) throw new BadRequestException('Cooking instructions for already-sent food changed. Reload the latest order before dispatch.');
+      await this.printQueue.kitchen(tx, user.restaurantId, `dispatch:${delivery.id}`, { reference: order.orderNumber, orderType: data.orderType, customer: data.customerName, items: unsent }, user.id);
+      if (!paid) await this.printQueue.enqueue(tx, user.restaurantId, 'RECEIPT', `dispatch:${delivery.id}`, { ...await this.printQueue.branding(tx, user.restaurantId), kind: 'DISPATCH', reference: delivery.billNumber || delivery.orderNumber, orderNumber: delivery.orderNumber, orderType: delivery.orderType, createdAt: delivery.createdAt.toISOString(), customer: delivery.customerName, items: storedLines, subtotal: totals.subtotal, discount: totals.discount, cgst: totals.cgst, sgst: totals.sgst, deliveryFee: totals.deliveryFee, grandTotal: totals.grandTotal, paymentMethod: 'UNPAID' }, user.id);
       return { id: delivery.id, orderNumber: delivery.orderNumber };
     });
   }
@@ -195,10 +239,15 @@ export class WorkflowService {
         seen.add(change.id);
         const row = await tx.inventoryItem.findUnique({ where: { id: change.id } });
         if (row && row.restaurantId !== user.restaurantId) throw new ForbiddenException('Invalid restaurant inventory');
+        if (row && !row.isActive) throw new BadRequestException('This stock item was removed. Reload inventory before continuing.');
         if ((change.metadata || change.remove) && (change.expectedRevision !== (row?.revision || 0))) throw new ConflictException('Inventory details changed on another terminal. Refresh before editing.');
         if (change.remove) {
           if (!row) throw new BadRequestException('Inventory item not found');
-          await tx.recipeIngredient.deleteMany({ where: { inventoryItemId: row.id } });
+          const removed = await tx.recipeIngredient.deleteMany({ where: { inventoryItemId: row.id } });
+          if (removed.count) {
+            const revision = await this.configRevision(tx, user.restaurantId, 'recipes');
+            await tx.systemSetting.upsert({ where: { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: 'config_revision:recipes' } }, update: { data: JSON.stringify(revision + 1) }, create: { restaurantId: user.restaurantId, settingKey: 'config_revision:recipes', data: JSON.stringify(revision + 1) } });
+          }
           await tx.inventoryItem.update({ where: { id: row.id }, data: { isActive: false, revision: { increment: 1 } } });
           continue;
         }
@@ -217,9 +266,40 @@ export class WorkflowService {
     });
   }
 
+  async wasteState(restaurantId: string) {
+    return this.prisma.wasteLog.findMany({ where: { restaurantId }, orderBy: { createdAt: 'desc' }, take: 500 });
+  }
+
+  async stockApprovals(restaurantId: string) {
+    const records = await this.prisma.systemSetting.findMany({ where: { restaurantId, settingKey: { startsWith: 'stock_override:' } }, orderBy: { updatedAt: 'desc' }, take: 100 });
+    return records.map(row => ({ id: row.id, ...readJson<any>(row.data, {}) }));
+  }
+
+  async recordWaste(data: any, user: any) {
+    return this.command(data, user, 'inventory-waste', async tx => {
+      if (typeof data.ingredientId !== 'string' || !data.ingredientId || !Number.isFinite(data.quantity) || data.quantity <= 0 || !['EXPIRED', 'BURNT', 'DROPPED', 'SPOILAGE', 'OTHER'].includes(data.reason)) throw new BadRequestException('Enter a valid stock item, waste quantity, and reason');
+      const stock = await tx.inventoryItem.findFirst({ where: { id: data.ingredientId, restaurantId: user.restaurantId, isActive: true } });
+      if (!stock) throw new BadRequestException('Stock item not found. Reload inventory.');
+      if (data.quantity > stock.currentStock) throw new BadRequestException('Waste quantity exceeds recorded stock. Review the stock count before logging this loss.');
+      const loss = money(data.quantity * stock.costPrice);
+      const log = await tx.wasteLog.create({ data: { restaurantId: user.restaurantId, ingredientId: stock.id, itemName: stock.name, unit: stock.unit, quantity: data.quantity, costLoss: loss, reason: data.reason, loggedBy: user.name || user.id } });
+      await tx.inventoryItem.update({ where: { id: stock.id }, data: { currentStock: { decrement: data.quantity }, revision: { increment: 1 } } });
+      await tx.stockLog.create({ data: { itemId: stock.id, type: 'OUT', quantityChange: -data.quantity, reason: 'WASTE', notes: JSON.stringify({ wasteId: log.id, actionId: data.actionId, recordedBy: user.id, reason: data.reason, costLoss: loss }) } });
+      return { id: log.id, quantity: data.quantity, costLoss: loss };
+    });
+  }
+
   async parkedState(restaurantId: string) {
     const rows = await this.prisma.parkedOrder.findMany({ where: { restaurantId }, orderBy: { heldAt: 'desc' } });
     return rows.map(row => ({ ...readJson<any>(row.data, {}), revision: row.revision }));
+  }
+
+  async parkedSnapshot(restaurantId: string) {
+    return this.prisma.$transaction(async tx => {
+      const rows = await tx.parkedOrder.findMany({ where: { restaurantId } });
+      const revision = await this.configRevision(tx, restaurantId, 'parked');
+      return { orders: rows.map(row => ({ ...readJson<any>(row.data, {}), revision: row.revision })), revision };
+    });
   }
 
   async park(data: any, user: any, remove = false) {
@@ -229,6 +309,8 @@ export class WorkflowService {
       const row = await tx.parkedOrder.findUnique({ where: { orderId: id } });
       if (row && row.restaurantId !== user.restaurantId) throw new ForbiddenException('Invalid parked order');
       if (data.expectedRevision !== (row?.revision || 0) || (remove && !row)) throw new ConflictException('This parked order was changed or resumed on another terminal. Refresh before continuing.');
+      const resourceRevision = await this.configRevision(tx, user.restaurantId, 'parked') + 1;
+      await tx.systemSetting.upsert({ where: { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: 'config_revision:parked' } }, update: { data: JSON.stringify(resourceRevision) }, create: { restaurantId: user.restaurantId, settingKey: 'config_revision:parked', data: JSON.stringify(resourceRevision) } });
       if (remove) { await tx.parkedOrder.delete({ where: { id: row.id } }); return { id }; }
       const next = (row?.revision || 0) + 1;
       await tx.parkedOrder.upsert({ where: { orderId: id }, update: { data: JSON.stringify(data.order), revision: next }, create: { orderId: id, restaurantId: user.restaurantId, data: JSON.stringify(data.order), revision: next } });
@@ -303,7 +385,11 @@ export class WorkflowService {
           await tx.inventoryItem.update({ where: { id: stock.id }, data: { currentStock: { increment: quantity }, revision: { increment: 1 } } });
           await tx.stockLog.create({ data: { itemId: stock.id, orderId: bill.orderId, type: 'IN', reason: 'RETURN', quantityChange: quantity, notes: `Return ${data.actionId} for ${bill.billNumber}` } });
         }
-        if (data.action === 'WASTE') await tx.wasteLog.create({ data: { restaurantId: user.restaurantId, itemName: line.name, quantity: selected.quantity, unit: 'portion', reason: 'RETURN', orderId: bill.orderId, billNumber: bill.billNumber, loggedBy: authorizedBy } });
+        if (data.action === 'WASTE') {
+          const ingredients = line.recipe || [];
+          const costLoss = ingredients.length && ingredients.every((row: any) => Number.isFinite(row.costPrice)) ? money(ingredients.reduce((sum: number, row: any) => sum + row.quantity * row.costPrice * selected.quantity, 0)) : null;
+          await tx.wasteLog.create({ data: { restaurantId: user.restaurantId, itemName: line.name, quantity: selected.quantity, costLoss, unit: 'portion', reason: 'RETURN', orderId: bill.orderId, billNumber: bill.billNumber, loggedBy: authorizedBy } });
+        }
       }
       if (bill.refundedAmount + total > bill.grandTotal + 0.005) throw new BadRequestException('Refund exceeds the original bill');
       const tenders = readJson<any>(bill.tenders, {});

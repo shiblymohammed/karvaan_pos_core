@@ -26,6 +26,7 @@ const { BackupService } = require('../src/backup/backup.service');
 const { SyncService } = require('../src/sync/sync.service');
 const { TenantService } = require('../src/tenant/tenant.service');
 const { WorkflowService } = require('../src/billing/workflow.service');
+const { SettingsService } = require('../src/settings/settings.service');
 const { JwtService } = require('@nestjs/jwt');
 const { io } = require('../../frontend/node_modules/socket.io-client');
 let app, prisma, url, adminToken, cashierToken, schemaSql;
@@ -58,6 +59,202 @@ before(async () => {
   cashierToken = (await app.get(AuthService).login('cashier-a', 'test-password')).accessToken;
 });
 after(async () => { if (app) await app.close(); });
+
+async function configFixture(suffix) {
+  const restaurantId = `config-${suffix}`, id = `config-admin-${suffix}`;
+  await prisma.restaurant.create({ data: { id: restaurantId, name: 'Concurrent editing fixture', ownerId: 'owner' } });
+  await prisma.user.create({ data: { id, name: 'Config Admin', username: id, password: 'test-password', pin: '1234', role: 'ADMIN', restaurantId } });
+  await prisma.category.create({ data: { id: `config-category-${suffix}`, name: 'Config', restaurantId } });
+  await prisma.product.create({ data: { id: `config-product-${suffix}`, name: 'Config Meal', price: 10, categoryId: `config-category-${suffix}`, restaurantId } });
+  await prisma.inventoryItem.create({ data: { id: `config-stock-${suffix}`, name: 'Config Stock', category: 'General', currentStock: 10, restaurantId } });
+  const token = (await app.get(AuthService).login(id, 'test-password')).accessToken;
+  return { user: { id, restaurantId }, client: { handshake: { auth: { token, restaurantId } }, data: {} }, token, productId: `config-product-${suffix}`, stockId: `config-stock-${suffix}` };
+}
+
+test('settings compare server versions and idempotent retries never overwrite a later edit', async () => {
+  const fixture = await configFixture('settings'), service = app.get(SettingsService);
+  const initial = await service.getSettings(fixture.user.restaurantId);
+  const original = { actionId: 'settings-first', expectedRevision: initial.serverRevision, orderPrefix: 'FIRST', parcelChargeAmount: 2 };
+  assert.equal((await service.updateSettings(original, fixture.user.restaurantId)).serverRevision, 1);
+  await assert.rejects(service.updateSettings({ ...original, actionId: 'settings-stale', orderPrefix: 'STALE' }, fixture.user.restaurantId), /changed on another terminal/);
+  assert.equal((await service.getSettings(fixture.user.restaurantId)).orderPrefix, 'FIRST');
+  await service.updateSettings({ actionId: 'settings-new', expectedRevision: 1, orderPrefix: 'NEW' }, fixture.user.restaurantId);
+  await service.updateSettings(original, fixture.user.restaurantId);
+  const final = await service.getSettings(fixture.user.restaurantId);
+  assert.equal(final.orderPrefix, 'NEW'); assert.equal(final.serverRevision, 2);
+  const stale = await fetch(url + '/settings', { method: 'PUT', headers: { Authorization: `Bearer ${fixture.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ actionId: 'http-stale-settings', expectedRevision: 0, orderPrefix: 'BAD' }) });
+  assert.equal(stale.status, 409);
+  assert.equal((await app.get(KdsGateway).handleUpdateSettings({ actionId: 'socket-settings', expectedRevision: 2, settings: { orderPrefix: 'SOCKET' } }, fixture.client)).status, 'OK');
+  await assert.rejects(service.updateSettings({ orderPrefix: 'UNVERSIONED' }, fixture.user.restaurantId), /stable action ID and revision/);
+});
+
+test('concurrent settings saves produce a single winner without partial table updates', async () => {
+  const fixture = await configFixture('simultaneous-settings'), service = app.get(SettingsService);
+  const results = await Promise.allSettled(['one', 'two'].map(name => service.updateSettings({ actionId: name, expectedRevision: 0, orderPrefix: name, tableConfig: [{ id: `config-table-${name}`, number: name, capacity: 2 }] }, fixture.user.restaurantId)));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(await prisma.table.count({ where: { restaurantId: fixture.user.restaurantId } }), 1);
+  assert.equal((await service.getSettings(fixture.user.restaurantId)).serverRevision, 1);
+});
+
+test('stale staff edits cannot remove newer staff, and retries preserve the latest roster', async () => {
+  const fixture = await configFixture('staff'), gateway = app.get(KdsGateway), workflow = app.get(WorkflowService);
+  const baseline = await workflow.adminConfig(fixture.user.restaurantId);
+  const first = { actionId: 'staff-first', expectedRevision: 0, staff: [...baseline.staff, { id: 'config-new-staff', username: 'config-new-staff', name: 'New Cashier', role: 'CASHIER', pin: '5678', isActive: true }] };
+  assert.equal((await gateway.handleSyncStaff(first, fixture.client)).status, 'OK');
+  const stale = await gateway.handleSyncStaff({ actionId: 'staff-stale', expectedRevision: 0, staff: baseline.staff }, fixture.client);
+  assert.equal(stale.code, 409);
+  assert.equal((await prisma.user.findUnique({ where: { id: 'config-new-staff' } })).isActive, true);
+  const current = await workflow.adminConfig(fixture.user.restaurantId);
+  assert.equal(current.staffRevision, 1);
+  assert.ok(current.staff.every(row => row.pin === '' && !('password' in row)));
+  assert.equal((await gateway.handleSyncStaff({ actionId: 'staff-second', expectedRevision: 1, staff: current.staff.map(row => row.id === 'config-new-staff' ? { ...row, name: 'Latest Name' } : row) }, fixture.client)).status, 'OK');
+  assert.equal((await gateway.handleSyncStaff(first, fixture.client)).status, 'OK');
+  assert.equal((await prisma.user.findUnique({ where: { id: 'config-new-staff' } })).name, 'Latest Name');
+  assert.ok((await app.get(AuthService).login('config-new-staff', undefined, '5678')).accessToken);
+  assert.equal((await gateway.handleSyncStaff({ actionId: 'duplicate-staff-username', expectedRevision: 2, staff: [...(await workflow.adminConfig(fixture.user.restaurantId)).staff, { id: 'config-duplicate-staff', username: 'config-new-staff', name: 'Duplicate', role: 'CASHIER', pin: '1234' }] }, fixture.client)).code, 409);
+  assert.equal((await gateway.handleSyncStaff(baseline.staff, fixture.client)).status, 'ERROR');
+});
+
+test('recipe versions reject stale replacement and ingredient removal invalidates older recipes', async () => {
+  const fixture = await configFixture('recipes'), gateway = app.get(KdsGateway), workflow = app.get(WorkflowService);
+  const first = { actionId: 'recipe-first', expectedRevision: 0, recipes: [{ menuItemId: fixture.productId, menuItemName: 'Config Meal', ingredients: [{ ingredientId: fixture.stockId, quantity: 1 }] }] };
+  assert.equal((await gateway.handleSyncRecipes(first, fixture.client)).status, 'OK');
+  assert.equal((await gateway.handleSyncRecipes({ actionId: 'recipe-stale', expectedRevision: 0, recipes: [] }, fixture.client)).code, 409);
+  assert.equal((await workflow.adminConfig(fixture.user.restaurantId)).recipes[0].ingredients[0].quantity, 1);
+  const second = { ...first, actionId: 'recipe-second', expectedRevision: 1, recipes: [{ ...first.recipes[0], ingredients: [{ ingredientId: fixture.stockId, quantity: 2 }] }] };
+  assert.equal((await gateway.handleSyncRecipes(second, fixture.client)).status, 'OK');
+  assert.equal((await gateway.handleSyncRecipes(first, fixture.client)).status, 'OK');
+  assert.equal((await workflow.adminConfig(fixture.user.restaurantId)).recipes[0].ingredients[0].quantity, 2);
+  await workflow.inventory({ actionId: 'recipe-stock-remove', changes: [{ id: fixture.stockId, remove: true, expectedRevision: 0 }] }, fixture.user);
+  assert.equal((await workflow.adminConfig(fixture.user.restaurantId)).recipeRevision, 3);
+  assert.equal((await gateway.handleSyncRecipes({ ...second, actionId: 'recipe-after-removal' }, fixture.client)).code, 409);
+  assert.equal((await gateway.handleSyncRecipes({ ...second, actionId: 'recipe-inactive-stock', expectedRevision: 3 }, fixture.client)).status, 'ERROR');
+  assert.equal(await prisma.recipeIngredient.count({ where: { productId: fixture.productId } }), 0);
+  const api = await fetch(url + '/billing/admin-config', { headers: { Authorization: `Bearer ${fixture.token}` } });
+  assert.equal(api.status, 200); assert.equal((await api.json()).recipeRevision, 3);
+  assert.equal((await fetch(url + '/billing/admin-config', { headers: { Authorization: `Bearer ${cashierToken}` } })).status, 403);
+});
+
+async function stockChallenge(operation) {
+  try { await operation(); assert.fail('Expected a stock approval challenge'); }
+  catch (error) { const details = error.getResponse?.(); assert.equal(details?.reason, 'STOCK_APPROVAL_REQUIRED'); return details; }
+}
+
+test('short sales require a scoped manager approval and audit the stock exception once', async () => {
+  const fixture = await configFixture('stock-approval'), billing = app.get(BillingService), auth = app.get(AuthService);
+  await prisma.inventoryItem.update({ where: { id: fixture.stockId }, data: { currentStock: 1, costPrice: 2 } });
+  await prisma.recipeIngredient.create({ data: { productId: fixture.productId, inventoryItemId: fixture.stockId, quantity: 2, unit: 'pcs' } });
+  const sale = { billNumber: 'STOCK-APPROVAL', orderNumber: 'STOCK-ORDER', orderType: 'DINE_IN', items: [{ productId: fixture.productId, quantity: 1 }], grandTotal: 10.5, paymentMethod: 'CASH' };
+  const challenge = await stockChallenge(() => billing.processDirectCheckout(sale, fixture.user.restaurantId, fixture.user.id));
+  assert.equal(challenge.shortages[0].shortfall, 1);
+  assert.equal(await prisma.bill.count({ where: { restaurantId: fixture.user.restaurantId } }), 0);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: fixture.stockId } })).currentStock, 1);
+  await assert.rejects(auth.authorizeStockShortage({ ...fixture.user, restaurantId: 'restaurant-b' }, { challenge: challenge.stockChallenge, pin: '1234', reason: 'Verified stock count differs' }), /Invalid stock approval/);
+  await assert.rejects(auth.authorizeStockShortage(fixture.user, { challenge: challenge.stockChallenge, pin: '1234', reason: 'x' }), /reason/);
+  const approvalResponse = await fetch(url + '/auth/authorize-stock-shortage', { method: 'POST', headers: { Authorization: `Bearer ${fixture.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ challenge: challenge.stockChallenge, pin: '1234', reason: 'Verified stock count differs' }) });
+  assert.equal(approvalResponse.status, 201);
+  const grant = await approvalResponse.json();
+  await stockChallenge(() => billing.processDirectCheckout({ ...sale, billNumber: 'DIFFERENT-BILL', stockAuthorization: grant.authorization }, fixture.user.restaurantId, fixture.user.id));
+  await stockChallenge(() => billing.processDirectCheckout({ ...sale, items: [{ productId: fixture.productId, quantity: 2 }], grandTotal: 21, stockAuthorization: grant.authorization }, fixture.user.restaurantId, fixture.user.id));
+  await billing.processDirectCheckout({ ...sale, stockAuthorization: grant.authorization }, fixture.user.restaurantId, fixture.user.id);
+  await billing.processDirectCheckout(sale, fixture.user.restaurantId, fixture.user.id);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: fixture.stockId } })).currentStock, -1);
+  const logs = await prisma.stockLog.findMany({ where: { itemId: fixture.stockId } });
+  assert.equal(logs.length, 1); assert.equal(logs[0].reason, 'MANAGER_APPROVED_SHORTAGE');
+  assert.equal(JSON.parse(logs[0].notes).approvedBy, fixture.user.id);
+  const audit = await prisma.systemSetting.findMany({ where: { restaurantId: fixture.user.restaurantId, settingKey: { startsWith: 'stock_override:' } } });
+  assert.equal(audit.length, 1); assert.equal(JSON.parse(audit[0].data).reason, 'Verified stock count differs');
+});
+
+test('a worsening stock shortage or revoked manager requires fresh approval', async () => {
+  const fixture = await configFixture('stock-change'), billing = app.get(BillingService), auth = app.get(AuthService);
+  const cashier = { id: 'stock-shortage-cashier', restaurantId: fixture.user.restaurantId };
+  await prisma.user.create({ data: { ...cashier, name: 'Cashier', role: 'CASHIER' } });
+  await prisma.inventoryItem.update({ where: { id: fixture.stockId }, data: { currentStock: 1 } });
+  await prisma.recipeIngredient.create({ data: { productId: fixture.productId, inventoryItemId: fixture.stockId, quantity: 2, unit: 'pcs' } });
+  const sale = { billNumber: 'WORSENING-STOCK', orderNumber: 'WORSENING-ORDER', items: [{ productId: fixture.productId, quantity: 1 }], grandTotal: 10.5 };
+  const challenge = await stockChallenge(() => billing.processDirectCheckout(sale, cashier.restaurantId, cashier.id));
+  const grant = await auth.authorizeStockShortage(cashier, { challenge: challenge.stockChallenge, pin: '1234', reason: 'Physical count checked' });
+  await stockChallenge(() => billing.processDirectCheckout({ ...sale, stockAuthorization: grant.authorization }, fixture.user.restaurantId, fixture.user.id));
+  await prisma.inventoryItem.update({ where: { id: fixture.stockId }, data: { currentStock: 0 } });
+  await stockChallenge(() => billing.processDirectCheckout({ ...sale, stockAuthorization: grant.authorization }, cashier.restaurantId, cashier.id));
+  await prisma.inventoryItem.update({ where: { id: fixture.stockId }, data: { currentStock: 1 } });
+  await prisma.user.update({ where: { id: fixture.user.id }, data: { isActive: false } });
+  await stockChallenge(() => billing.processDirectCheckout({ ...sale, stockAuthorization: grant.authorization }, cashier.restaurantId, cashier.id));
+  assert.equal(await prisma.bill.count({ where: { restaurantId: cashier.restaurantId } }), 0);
+  const context = app.get(JwtService).verify(grant.authorization); delete context.iat; delete context.exp;
+  const expired = app.get(JwtService).sign(context, { expiresIn: -1 });
+  await stockChallenge(() => billing.processDirectCheckout({ ...sale, stockAuthorization: expired }, cashier.restaurantId, cashier.id));
+});
+
+test('delivery dispatch shortages return a retryable challenge through the socket gateway', async () => {
+  const fixture = await configFixture('delivery-shortage'), gateway = app.get(KdsGateway), auth = app.get(AuthService);
+  await prisma.inventoryItem.update({ where: { id: fixture.stockId }, data: { currentStock: 0 } });
+  await prisma.recipeIngredient.create({ data: { productId: fixture.productId, inventoryItemId: fixture.stockId, quantity: 1, unit: 'pcs' } });
+  const delivery = { actionId: 'dispatch-short-stock', orderNumber: 'SHORT-DISPATCH', billNumber: 'SHORT-DISPATCH-BILL', orderType: 'DELIVERY', items: [{ productId: fixture.productId, quantity: 1 }], grandTotal: 10.5 };
+  const response = await gateway.handleCreateDelivery(delivery, fixture.client);
+  assert.equal(response.code, 409); assert.equal(response.reason, 'STOCK_APPROVAL_REQUIRED');
+  assert.equal(await prisma.deliveryOrder.count({ where: { restaurantId: fixture.user.restaurantId } }), 0);
+  const grant = await auth.authorizeStockShortage(fixture.user, { challenge: response.stockChallenge, pin: '1234', reason: 'Confirmed extra uncounted ingredient' });
+  assert.equal((await gateway.handleCreateDelivery({ ...delivery, stockAuthorization: grant.authorization }, fixture.client)).status, 'OK');
+  assert.equal((await gateway.handleCreateDelivery(delivery, fixture.client)).status, 'OK');
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: fixture.stockId } })).currentStock, -1);
+  assert.equal(await prisma.stockLog.count({ where: { itemId: fixture.stockId } }), 1);
+});
+
+test('recipe waste allowance and instructions survive reload and match consumption snapshots', async () => {
+  const fixture = await configFixture('recipe-allowance'), gateway = app.get(KdsGateway), workflow = app.get(WorkflowService);
+  await prisma.inventoryItem.update({ where: { id: fixture.stockId }, data: { currentStock: 100, costPrice: 2 } });
+  const recipe = { menuItemId: fixture.productId, menuItemName: 'Config Meal', ingredients: [{ ingredientId: fixture.stockId, quantity: 10, wasteFactorPercent: 20 }], prepInstructions: 'Keep chilled until cooking.', batchSize: 2 };
+  assert.equal((await gateway.handleSyncRecipes({ actionId: 'allowance-recipe', expectedRevision: 0, recipes: [recipe] }, fixture.client)).status, 'OK');
+  const reloaded = (await workflow.adminConfig(fixture.user.restaurantId)).recipes[0];
+  assert.equal(reloaded.prepInstructions, recipe.prepInstructions); assert.equal(reloaded.batchSize, 2); assert.equal(reloaded.ingredients[0].wasteFactorPercent, 20);
+  const bill = await app.get(BillingService).processDirectCheckout({ billNumber: 'ALLOWANCE-BILL', orderNumber: 'ALLOWANCE-ORDER', items: [{ productId: fixture.productId, quantity: 2 }], grandTotal: 21 }, fixture.user.restaurantId, fixture.user.id);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: fixture.stockId } })).currentStock, 76);
+  assert.equal(JSON.parse(bill.invoiceItems)[0].recipe[0].quantity, 12);
+  assert.equal((await gateway.handleSyncRecipes({ actionId: 'bad-allowance', expectedRevision: 1, recipes: [{ ...recipe, ingredients: [{ ...recipe.ingredients[0], wasteFactorPercent: -1 }] }] }, fixture.client)).status, 'ERROR');
+  await workflow.refund({ actionId: 'allowance-return', billNumber: bill.billNumber, items: [{ id: JSON.parse(bill.invoiceItems)[0].id, quantity: 1 }], reason: 'Cooked portion returned', action: 'WASTE', refundDest: 'CASH' }, { ...fixture.user, role: 'ADMIN' });
+  assert.equal((await workflow.wasteState(fixture.user.restaurantId))[0].costLoss, 24);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: fixture.stockId } })).currentStock, 76);
+});
+
+test('waste loss and stock deduction are atomic, tenant scoped, and idempotent', async () => {
+  const fixture = await configFixture('waste'), workflow = app.get(WorkflowService);
+  await prisma.inventoryItem.update({ where: { id: fixture.stockId }, data: { costPrice: 2.5 } });
+  const request = { actionId: 'waste-once', ingredientId: fixture.stockId, quantity: 3, reason: 'BURNT', loggedBy: 'Spoofed name' };
+  await workflow.recordWaste(request, fixture.user); await workflow.recordWaste(request, fixture.user);
+  assert.equal((await prisma.inventoryItem.findUnique({ where: { id: fixture.stockId } })).currentStock, 7);
+  const records = await workflow.wasteState(fixture.user.restaurantId);
+  assert.equal(records.length, 1); assert.equal(records[0].costLoss, 7.5); assert.notEqual(records[0].loggedBy, 'Spoofed name');
+  assert.equal(await prisma.stockLog.count({ where: { itemId: fixture.stockId } }), 1);
+  await assert.rejects(workflow.recordWaste({ ...request, actionId: 'too-much-waste', quantity: 100 }, fixture.user), /exceeds recorded stock/);
+  await assert.rejects(workflow.recordWaste({ ...request, actionId: 'foreign-waste', ingredientId: 'stock-b' }, fixture.user), /not found/);
+  await assert.rejects(workflow.recordWaste({ ...request, actionId: 'missing-waste-item', ingredientId: undefined }, fixture.user), /valid stock item/);
+  assert.equal((await workflow.wasteState(fixture.user.restaurantId)).length, 1);
+  const api = await fetch(url + '/billing/waste', { headers: { Authorization: `Bearer ${fixture.token}` } });
+  assert.equal(api.status, 200); assert.equal((await api.json())[0].costLoss, 7.5);
+});
+
+test('parked board versions advance once for save and removal, while drafts keep their billing metadata', async () => {
+  const fixture = await configFixture('parked-version'), workflow = app.get(WorkflowService);
+  const action = { actionId: 'parked-version-save', expectedRevision: 0, order: { id: 'parked-version-order', items: [], customerName: 'Guest', customerPhone: '55555', discount: 5, checkoutBillNumber: 'ORIGINAL-INVOICE' } };
+  await workflow.park(action, fixture.user); await workflow.park(action, fixture.user);
+  const saved = await workflow.parkedSnapshot(fixture.user.restaurantId);
+  assert.equal(saved.revision, 1); assert.equal(saved.orders[0].discount, 5); assert.equal(saved.orders[0].customerPhone, '55555');
+  const remove = { actionId: 'parked-version-remove', id: action.order.id, expectedRevision: 1 };
+  await workflow.park(remove, fixture.user, true); await workflow.park(remove, fixture.user, true);
+  const empty = await workflow.parkedSnapshot(fixture.user.restaurantId);
+  assert.equal(empty.revision, 2); assert.equal(empty.orders.length, 0);
+});
+
+test('manually unavailable menu items reject new orders but still allow already sent food to be billed', async () => {
+  const fixture = await configFixture('manual-unavailable'), billing = app.get(BillingService);
+  await billing.saveKitchenOrder({ id: 'manual-unavailable-ticket', orderNumber: 'MANUAL-ORDER', items: [{ productId: fixture.productId, quantity: 1 }] }, fixture.user.restaurantId, fixture.user.id);
+  await prisma.product.update({ where: { id: fixture.productId }, data: { isAvailable: false } });
+  const sale = { billNumber: 'MANUAL-BILL', orderNumber: 'MANUAL-ORDER', items: [{ productId: fixture.productId, quantity: 1, status: 'SENT' }], grandTotal: 10.5 };
+  assert.ok(await billing.processDirectCheckout(sale, fixture.user.restaurantId, fixture.user.id));
+  await assert.rejects(billing.processDirectCheckout({ ...sale, billNumber: 'NEW-MANUAL-BILL', orderNumber: 'NEW-MANUAL-ORDER' }, fixture.user.restaurantId, fixture.user.id), /marked unavailable/);
+});
 
 test('login rejects omitted credentials, inactive accounts, and absent password fields', async () => {
   const auth = app.get(AuthService);
@@ -459,6 +656,8 @@ test('replication tombstones keep menu items archived even when newer stale rows
 });
 
 test('manager refund grants are bound to the cashier, invoice, and action', async () => {
+  // These refund tests need physical stock; shortage approvals have isolated fixtures above.
+  await prisma.inventoryItem.update({ where: { id: 'stock-a' }, data: { currentStock: 100 } });
   const auth = app.get(AuthService), workflow = app.get(WorkflowService), user = { id: 'cashier-a', restaurantId: 'restaurant-a', role: 'CASHIER' };
   const bill = await app.get(BillingService).processDirectCheckout(checkout('manager-refund'), 'restaurant-a', 'admin-a');
   const line = JSON.parse(bill.invoiceItems)[0];

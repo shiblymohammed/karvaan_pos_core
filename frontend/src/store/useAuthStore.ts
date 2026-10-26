@@ -5,6 +5,7 @@ import { getServerUrl } from '../services/serverConfig';
 interface AuthState {
   currentUser: any | null; // Has {id, name, role, restaurantId}
   accessToken: string | null;
+  sessionServerUrl: string | null;
   isLocked: boolean;
   loginTime: number | null;
   fullLogin: (username: string, password?: string, pin?: string) => Promise<boolean>;
@@ -19,12 +20,15 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       currentUser: null,
       accessToken: null,
+      sessionServerUrl: null,
       isLocked: false,
       loginTime: null,
 
       fullLogin: async (username: string, password?: string, pin?: string) => {
+        const server = getServerUrl().replace(/\/$/, '');
+        const originalSession = localStorage.getItem('pos-auth-storage');
         try {
-          const res = await fetch(`${getServerUrl()}/auth/login`, {
+          const res = await fetch(`${server}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password, pin }),
@@ -33,9 +37,11 @@ export const useAuthStore = create<AuthState>()(
           if (!res.ok) return false;
           
           const data = await res.json();
+          if (getServerUrl().replace(/\/$/, '') !== server || localStorage.getItem('pos-auth-storage') !== originalSession) return false;
           set({
             currentUser: data.user,
             accessToken: data.accessToken,
+            sessionServerUrl: server,
             isLocked: false,
             loginTime: Date.now(),
           });
@@ -47,6 +53,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       quickUnlock: async (pin: string) => {
+        const server = getServerUrl().replace(/\/$/, ''), token = get().accessToken;
         try {
           const res = await fetch(`${getServerUrl()}/auth/unlock`, {
             method: 'POST',
@@ -55,6 +62,7 @@ export const useAuthStore = create<AuthState>()(
           });
           
           if (!res.ok) return false;
+          if (token !== get().accessToken || token !== JSON.parse(localStorage.getItem('pos-auth-storage') || '{}').state?.accessToken || server !== getServerUrl().replace(/\/$/, '')) return false;
           
           set({ isLocked: false });
           return true;
@@ -71,18 +79,22 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
-        set({ currentUser: null, accessToken: null, isLocked: false, loginTime: null });
+        set({ currentUser: null, accessToken: null, sessionServerUrl: null, isLocked: false, loginTime: null });
         window.location.href = '/';
       },
 
       validateToken: async () => {
+        const server = getServerUrl().replace(/\/$/, '');
         const token = get().accessToken;
         if (!token) return false;
+        if (get().sessionServerUrl && get().sessionServerUrl !== server) { get().logout(); return false; }
 
         try {
           const res = await fetch(`${getServerUrl()}/auth/me`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
+          const savedToken = JSON.parse(localStorage.getItem('pos-auth-storage') || '{}').state?.accessToken;
+          if (token !== get().accessToken || token !== savedToken || server !== getServerUrl().replace(/\/$/, '')) return false;
           
           if (!res.ok) {
             get().logout();
@@ -90,8 +102,9 @@ export const useAuthStore = create<AuthState>()(
           }
           
           const user = await res.json();
+          if (token !== get().accessToken || token !== JSON.parse(localStorage.getItem('pos-auth-storage') || '{}').state?.accessToken || server !== getServerUrl().replace(/\/$/, '')) return false;
           // Update user details (in case role changed)
-          set({ currentUser: user });
+          set({ currentUser: user, sessionServerUrl: server });
           return true;
         } catch (e) {
           console.error('Token validation failed', e);

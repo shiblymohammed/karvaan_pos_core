@@ -8,17 +8,18 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copy package manifests and install dependencies
-COPY package*.json ./
+COPY frontend/package*.json ./
 RUN npm ci
 
 # Copy application source
-COPY tsconfig*.json ./
-COPY vite.config.ts ./
-COPY tailwind.config.js ./
-COPY postcss.config.js ./
-COPY index.html ./
-COPY public ./public
-COPY src ./src
+COPY frontend/tsconfig*.json ./
+COPY frontend/vite.config.ts ./
+COPY frontend/tailwind.config.js ./
+COPY frontend/postcss.config.js ./
+COPY frontend/index.html ./
+COPY frontend/public ./public
+COPY frontend/src ./src
+COPY print-agent /print-agent
 
 # Build production bundle
 RUN npm run build
@@ -33,7 +34,7 @@ RUN rm -rf /usr/share/nginx/html/*
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy custom nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

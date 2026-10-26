@@ -1,15 +1,18 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { tenantStorage } from './tenantStorage';
-import { socket, emitAction } from '../services/socket';
+import { emitAction, ActionResult } from '../services/socket';
+import { toast } from './useToastStore';
 
 export interface KdsTicket {
+  tableId?: string | null;
+  pendingConfirmation?: boolean;
   id: string;
   orderNumber: string;
   tableNumber: string;
   orderType?: 'DINE_IN' | 'PARCEL' | 'DELIVERY';
   customerName?: string;
-  items: Array<{ name: string; quantity: number; notes?: string; status: string; price?: number; productId?: string; category?: string; subItems?: { name: string; qty: number }[] }>;
+  items: Array<{ name: string; quantity: number; notes?: string; addons?: { name: string }[]; status: string; price?: number; productId?: string; category?: string; subItems?: { name: string; qty: number }[] }>;
   firedAt: string;
   status: 'RECEIVED' | 'COOKING' | 'READY' | 'SERVED';
   elapsedMinutes: number;
@@ -18,8 +21,8 @@ export interface KdsTicket {
 
 interface KdsState {
   tickets: KdsTicket[];
-  addTicket: (ticket: Omit<KdsTicket, 'status' | 'elapsedMinutes'>) => void;
-  updateTicketStatus: (id: string, status: 'COOKING' | 'READY' | 'SERVED') => void;
+  addTicket: (ticket: Omit<KdsTicket, 'status' | 'elapsedMinutes'>) => Promise<ActionResult>;
+  updateTicketStatus: (id: string, status: 'COOKING' | 'READY' | 'SERVED') => Promise<ActionResult>;
   updateElapsedTimes: () => void;
   clearTableTickets: (tableName: string) => void;
   transferKdsTable: (fromTableName: string, toTableName: string) => void;
@@ -30,40 +33,34 @@ export const useKdsStore = create<KdsState>()(
     (set, get) => ({
       tickets: [],
 
-  addTicket: (ticket) => {
+  addTicket: async (ticket) => {
     set((state) => ({
       tickets: [
         {
           ...ticket,
-          status: 'COOKING',
+          status: 'RECEIVED', pendingConfirmation: true,
           elapsedMinutes: 0,
         },
         ...state.tickets,
       ],
     }));
     // Broadcast to all other devices
-    emitAction('fire_order', { ...ticket, status: 'COOKING', elapsedMinutes: 0 });
+    const result = await emitAction('fire_order', { ...ticket, status: 'COOKING', elapsedMinutes: 0 });
+    if (result.status === 'ERROR') set({ tickets: get().tickets.filter(row => row.id !== ticket.id) });
+    if (result.status === 'QUEUED') toast.info('Kitchen order saved on this device; awaiting server confirmation.');
+    return result;
   },
 
-  updateTicketStatus: (id, status) => {
-    set((state) => ({
-      tickets: state.tickets.map((t) => (t.id === id ? { ...t, status, readyAt: status === 'READY' ? new Date().toISOString() : t.readyAt } : t)),
-    }));
-    // Sync to DeliveryStore if it's a delivery order
-    const ticket = get().tickets.find(t => t.id === id);
-    if (ticket && (ticket.orderType === 'DELIVERY' || ticket.orderType === 'PARCEL') && status === 'READY') {
-      import('./useDeliveryStore').then(({ useDeliveryStore }) => {
-        // We match by orderNumber. We need to find the delivery order id.
-        const dOrders = useDeliveryStore.getState().orders;
-        const matched = dOrders.find(o => o.orderNumber === ticket.orderNumber);
-        if (matched) {
-          useDeliveryStore.getState().updateOrderStatus(matched.id, 'READY');
-        }
-      });
-    }
-
-    // Broadcast to all other devices
-    emitAction('update_kds_status', { orderId: id, orderNumber: ticket?.orderNumber, status });
+  updateTicketStatus: async (id, status) => {
+    const ticket = get().tickets.find(row => row.id === id);
+    if (!ticket) return { status: 'ERROR', message: 'Kitchen ticket not found' };
+    if (ticket.pendingConfirmation) return { status: 'QUEUED', message: 'Wait for server confirmation before changing this ticket again.' };
+    set({ tickets: get().tickets.map(row => row.id === id ? { ...row, pendingConfirmation: true } : row) });
+    const result = await emitAction('update_kds_status', { orderId: id, orderNumber: ticket.orderNumber, status });
+    if (result.status === 'OK') set({ tickets: get().tickets.map(row => row.id === id ? { ...row, status: ['RECEIVED', 'COOKING', 'READY', 'SERVED'].indexOf(row.status) > ['RECEIVED', 'COOKING', 'READY', 'SERVED'].indexOf(status) ? row.status : status, pendingConfirmation: false } : row) });
+    if (result.status === 'ERROR') set({ tickets: get().tickets.map(row => row.id === id ? { ...row, pendingConfirmation: false } : row) });
+    if (result.status === 'QUEUED') toast.info('Kitchen status saved on this device; awaiting server confirmation.');
+    return result;
   },
 
   updateElapsedTimes: () => {

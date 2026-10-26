@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Printer, Check, X, AlertCircle, Loader2, Zap, ChevronDown } from 'lucide-react';
-import { isTauri, listSerialPorts, kickCashDrawer, buildBillReceipt, printReceipt } from '../services/tauriCommands';
+import { Printer, Check, AlertCircle, Loader2, Zap, ChevronDown, Bluetooth, Smartphone, ExternalLink } from 'lucide-react';
+import { isTauri, listSerialPorts, kickCashDrawer, buildBillReceipt, printReceipt, printViaRawBT, isAndroid } from '../services/tauriCommands';
 import { getPrinterProfile, savePrinterProfile } from '../services/printerProfile';
+import { toast } from '../store/useToastStore';
 
 interface PrinterSettingsProps {
   restaurantName: string;
@@ -11,6 +12,8 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
   const [ports, setPorts] = useState<string[]>([]);
   const [receiptPort, setReceiptPort] = useState(getPrinterProfile().receiptPort || '');
   const [drawerPort, setDrawerPort] = useState(getPrinterProfile().drawerPort || '');
+  const [useRawBT, setUseRawBT] = useState<boolean>(() => !!getPrinterProfile().useRawBT);
+  const [paperWidth, setPaperWidth] = useState<58 | 80>(() => getPrinterProfile().browserPaperWidth || 80);
   const [scanning, setScanning] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
   const [testMsg, setTestMsg] = useState('');
@@ -28,8 +31,47 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
   }, [isDesktop]);
 
   const savePorts = () => {
-    savePrinterProfile({ ...getPrinterProfile(), receiptPort, drawerPort });
-    alert('Printer settings saved!');
+    savePrinterProfile({ ...getPrinterProfile(), receiptPort, drawerPort, useRawBT, browserPaperWidth: paperWidth });
+    toast.success('Printer settings saved!');
+  };
+
+  const handleRawBTToggle = (enabled: boolean) => {
+    setUseRawBT(enabled);
+    savePrinterProfile({ ...getPrinterProfile(), useRawBT: enabled, browserPaperWidth: paperWidth });
+    toast.info(enabled ? 'RawBT Bluetooth printing enabled' : 'RawBT printing disabled; using browser print dialog');
+  };
+
+  const handlePaperWidthChange = (width: 58 | 80) => {
+    setPaperWidth(width);
+    savePrinterProfile({ ...getPrinterProfile(), browserPaperWidth: width, useRawBT });
+    toast.info(`Receipt width set to ${width}mm`);
+  };
+
+  const testRawBTPrint = () => {
+    try {
+      const bytes = buildBillReceipt({
+        restaurantName: restaurantName || 'Karvaan POS',
+        billNumber: 'TEST-BT01',
+        orderType: 'RAWBT TEST',
+        tableName: 'Test Table',
+        items: [
+          { name: 'Bluetooth Test Item', qty: 1, price: 100 },
+          { name: 'Thermal Roll Check', qty: 2, price: 50 },
+        ],
+        subtotal: 200,
+        discount: 0,
+        gst: 10,
+        grandTotal: 210,
+        paymentMethod: 'CASH',
+        cashier: 'Admin',
+        time: new Date().toLocaleTimeString(),
+        paperWidth,
+      });
+      printViaRawBT(bytes);
+      toast.success('Test receipt sent to RawBT!');
+    } catch (err: any) {
+      toast.error('Failed to trigger RawBT: ' + (err.message || String(err)));
+    }
   };
 
   const testPrint = async () => {
@@ -73,15 +115,106 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
 
   if (!isDesktop) {
     return (
-      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-black text-sm text-amber-700">Printer Setup — Desktop Only</p>
-            <p className="text-xs font-bold text-amber-600 mt-1">
-              Thermal printer and cash drawer control requires the Karvaan POS desktop app (.exe).
-              In browser mode, receipts use the browser print dialog (Ctrl+P).
+      <div className="space-y-4">
+        {/* RawBT Android Bluetooth Card */}
+        <div className="bg-pos-card rounded-2xl border border-pos-border p-5 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center border border-blue-500/20">
+                <Bluetooth className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-pos-text">Bluetooth & USB Printing (Android / PWA)</h3>
+                  {isAndroid() && (
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                      Android Detected
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs font-bold text-pos-text-muted">Direct 1-click printing to Bluetooth thermal printers via RawBT</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-pos-bg/80 border border-pos-border space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-black text-pos-text">Use RawBT Instant Printing</p>
+                <p className="text-[11px] font-bold text-pos-text-muted">Sends ESC/POS data directly to your paired Bluetooth printer with zero dialogs</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useRawBT}
+                  onChange={e => handleRawBTToggle(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-pos-border">
+              <p className="text-xs font-black text-pos-text">Paper Roll Width</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePaperWidthChange(58)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${paperWidth === 58 ? 'bg-pos-accent text-white shadow-sm' : 'bg-pos-card border border-pos-border text-pos-text-muted hover:text-pos-text'}`}
+                >
+                  58mm (2-inch)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePaperWidthChange(80)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${paperWidth === 80 ? 'bg-pos-accent text-white shadow-sm' : 'bg-pos-card border border-pos-border text-pos-text-muted hover:text-pos-text'}`}
+                >
+                  80mm (3-inch)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Setup Instructions & Action */}
+          <div className="text-xs space-y-2 text-pos-text-muted bg-blue-500/5 p-3.5 rounded-xl border border-blue-500/10">
+            <p className="font-extrabold text-blue-700 flex items-center gap-1.5">
+              <Smartphone className="h-4 w-4" /> Quick Tablet Setup:
             </p>
+            <ol className="list-decimal list-inside space-y-1 font-semibold text-[11px] text-slate-600 pl-1">
+              <li>Turn on your Bluetooth printer and pair it in Android Bluetooth settings.</li>
+              <li>Install <strong>RawBT Print Service</strong> from Google Play Store.</li>
+              <li>Open RawBT &gt; Settings &gt; Connection: <strong>Bluetooth</strong> &gt; Select your printer.</li>
+            </ol>
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={testRawBTPrint}
+                className="px-3.5 py-2 bg-gradient-to-r from-pos-accent to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Printer className="h-3.5 w-3.5" /> Test Print via RawBT
+              </button>
+              <a
+                href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter"
+                target="_blank"
+                rel="noreferrer"
+                className="px-3.5 py-2 bg-pos-card border border-pos-border hover:bg-pos-bg text-pos-text font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Get RawBT on Play Store
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop Note */}
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-black text-xs text-amber-700">Windows Spooler & COM Port Drivers</p>
+              <p className="text-[11px] font-bold text-amber-600/90 mt-0.5">
+                Direct physical COM/Serial ports require the Karvaan POS desktop application (.exe). In web browser mode on tablets, Bluetooth printing uses the RawBT driver above.
+              </p>
+            </div>
           </div>
         </div>
       </div>

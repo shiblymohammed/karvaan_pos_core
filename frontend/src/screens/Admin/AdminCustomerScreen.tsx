@@ -3,13 +3,16 @@ import { Users, Phone, Search, Banknote, Receipt, ChevronDown, ChevronRight, Cal
 import { apiClient } from '../../services/apiClient';
 import { toast } from '../../store/useToastStore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useLedgerStore } from '../../store/useLedgerStore';
+import { useLedgerStore, LedgerEntry } from '../../store/useLedgerStore';
+import { SettleModal } from './AdminCustomerLedger';
+import { businessDate } from '../../services/businessDate';
 
 export const AdminCustomerScreen: React.FC = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
+  const [settlingEntry, setSettlingEntry] = useState<LedgerEntry | null>(null);
 
   const { entries: ledgerEntries, settleDebt } = useLedgerStore();
   useEffect(() => { void useLedgerStore.getState().fetchEntries(); }, []);
@@ -20,8 +23,8 @@ export const AdminCustomerScreen: React.FC = () => {
       // Fetch a large window of history for customers (e.g. last 365 days)
       const d1 = new Date();
       d1.setFullYear(d1.getFullYear() - 1);
-      const startDate = d1.toISOString().split('T')[0];
-      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = businessDate(d1);
+      const endDate = businessDate();
       
       const res = await apiClient.get(`/billing/history?startDate=${startDate}&endDate=${endDate}`);
       setHistory(res);
@@ -106,6 +109,7 @@ export const AdminCustomerScreen: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 p-4 lg:p-8 overflow-y-auto w-full">
+      {settlingEntry && <SettleModal entry={settlingEntry} onClose={() => setSettlingEntry(null)} onSettle={settleDebt} />}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4 w-full">
         <div>
           <h1 className="text-2xl lg:text-3xl font-black text-slate-800 flex items-center gap-3">
@@ -288,10 +292,7 @@ export const AdminCustomerScreen: React.FC = () => {
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              if(window.confirm('Mark this amount as PAID?')) {
-                                                settleDebt(entry.id);
-                                                toast.success('Debt settled successfully!');
-                                              }
+                                              setSettlingEntry(entry);
                                             }}
                                             className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm transition-all active:scale-95"
                                           >

@@ -5,9 +5,11 @@ import { useTableStore } from './useTableStore';
 import { useKdsStore } from './useKdsStore';
 import { useSettingsStore } from './useSettingsStore';
 import { useMenuStore } from './useMenuStore';
-import { socket, emitAction } from '../services/socket';
+import { emitAction, ActionResult } from '../services/socket';
 import { authorizedFetch } from '../services/authFetch';
 import { toast } from './useToastStore';
+import { createId } from '../services/createId';
+import { getActionContext, contextIsCurrent } from '../services/offlineQueue';
 
 export interface CartItem {
   productId: string;
@@ -31,6 +33,10 @@ export interface ParkedOrder {
   tableName?: string | null;
   waiterName?: string | null;
   customerName?: string | null;
+  customerPhone?: string | null;
+  discount?: number;
+  checkoutBillNumber?: string | null;
+  orderVersion?: string | null;
   orderType?: 'DINE_IN' | 'PARCEL' | 'DELIVERY';
   orderNumber?: string | null;
   deliveryAddress?: string;
@@ -60,6 +66,9 @@ interface CartState {
   
   // UI State
   isMobileCartOpen: boolean;
+  isParking: boolean;
+  isSendingKot: boolean;
+  isResuming: boolean;
   
   // Actions
   setIsMobileCartOpen: (isOpen: boolean) => void;
@@ -74,9 +83,9 @@ interface CartState {
   setOrderType: (type: 'DINE_IN' | 'PARCEL' | 'DELIVERY') => void;
   setDeliveryAddress: (address: string) => void;
   setDeliveryFee: (fee: number) => void;
-  holdCurrentOrder: (label?: string) => void;
-  sendKot: () => void;
-  resumeOrder: (parkedId: string) => void;
+  holdCurrentOrder: (label?: string, fromKitchen?: boolean) => Promise<boolean>;
+  sendKot: () => Promise<ActionResult | undefined>;
+  resumeOrder: (parkedId: string) => Promise<void>;
   clearCart: () => void;
   toggleOffline: () => void;
   setCustomer: (customer: { name: string; phone: string } | null) => void;
@@ -103,6 +112,9 @@ export const useCartStore = create<CartState>()(
       deliveryStatus: null,
       collectedMethod: null,
       isMobileCartOpen: false,
+      isParking: false,
+      isSendingKot: false,
+      isResuming: false,
 
       transferCartTable: (fromTableId, toTableId, toTableName) => {
         set((state) => ({
@@ -231,127 +243,90 @@ export const useCartStore = create<CartState>()(
     set({ deliveryFee: fee });
   },
 
-  holdCurrentOrder: (label) => {
+  holdCurrentOrder: async (label, fromKitchen = false) => {
     const state = get();
-    if (state.items.length === 0) return;
-
-    const subtotal = state.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    
-    if (state.selectedTableId) {
-      useTableStore.getState().setTableStatus(state.selectedTableId, 'OCCUPIED', subtotal);
-    }
-
-    const newParked: ParkedOrder = {
-      id: (state.selectedTableId ? state.heldOrders.find(order => order.tableId === state.selectedTableId)?.id : undefined) || crypto.randomUUID(),
-      name: label || state.selectedTableName || state.customer?.name || `Order #${state.heldOrders.length + 1}`,
-      items: [...state.items],
-      tableId: state.selectedTableId,
-      tableName: state.selectedTableName,
-      waiterName: state.selectedWaiter,
-      customerName: state.customer?.name,
-      orderType: state.orderType,
-      orderNumber: state.currentOrderNumber,
-      deliveryAddress: state.deliveryAddress,
-      deliveryFee: state.deliveryFee,
-      timestamp: new Date().toISOString(),
-    };
-
-    const nextHeldOrders = [newParked, ...state.heldOrders.filter(o => o.tableId !== state.selectedTableId || !state.selectedTableId)];
-
-    set({
-      heldOrders: nextHeldOrders,
-      items: [],
-      selectedTableId: null,
-      selectedTableName: null,
-      selectedWaiter: null,
-      customer: null,
-      discount: 0,
-      currentOrderNumber: null,
-      checkoutBillNumber: null,
-    });
-
-    // Broadcast parked orders to all other devices
-    const revision = state.heldOrders.find(order => order.id === newParked.id)?.revision || 0;
-    useCartStore.setState({ heldOrders: nextHeldOrders.map(order => order.id === newParked.id ? { ...order, revision: revision + 1 } : order) });
-    void emitAction('park_order', { order: newParked, expectedRevision: revision });
+    if (!state.items.length || state.isParking || state.isResuming || (state.isSendingKot && !fromKitchen)) return false;
+    const context = getActionContext();
+    set({ isParking: true });
+    try {
+      const existing = state.selectedTableId ? state.heldOrders.find(order => order.tableId === state.selectedTableId) : undefined;
+      const order: ParkedOrder = {
+        id: existing?.id || createId(), name: (typeof label === 'string' && label.trim() ? label : undefined) || state.selectedTableName || state.customer?.name || 'Parked order',
+        items: [...state.items], tableId: state.selectedTableId, tableName: state.selectedTableName,
+        waiterName: state.selectedWaiter, customerName: state.customer?.name, customerPhone: state.customer?.phone,
+        discount: state.discount, checkoutBillNumber: state.checkoutBillNumber, orderVersion: state.orderVersion,
+        orderType: state.orderType, orderNumber: state.currentOrderNumber,
+        deliveryAddress: state.deliveryAddress, deliveryFee: state.deliveryFee, timestamp: new Date().toISOString(),
+      };
+      const result = await emitAction('park_order', { order, expectedRevision: existing?.revision || 0 });
+      if (!contextIsCurrent(context)) return false;
+      if (result.status === 'ERROR') { toast.error(result.message || 'Order was not parked. Your cart is preserved.'); return false; }
+      const revision = result.data?.revision || (existing?.revision || 0) + 1;
+      set({ heldOrders: [{ ...order, revision }, ...get().heldOrders.filter(row => row.id !== order.id)] });
+      if (get().items !== state.items) { toast.info('The earlier cart was parked. Your newer cart edits remain open for review.'); return false; }
+      if (state.selectedTableId) useTableStore.getState().setTableStatus(state.selectedTableId, 'OCCUPIED', state.items.reduce((sum, item) => sum + item.price * item.quantity, 0));
+      set({ items: [], selectedTableId: null, selectedTableName: null, selectedWaiter: null, customer: null, discount: 0,
+        currentOrderNumber: null, checkoutBillNumber: null, orderVersion: null, deliveryAddress: '', deliveryFee: 0,
+        deliveryStatus: null, collectedMethod: null });
+      if (result.status === 'QUEUED') toast.info('Parked order saved on this device; awaiting server confirmation.');
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Order was not parked'); return false; }
+    finally { if (contextIsCurrent(context)) set({ isParking: false }); }
   },
 
-  sendKot: () => {
+  sendKot: async () => {
     const state = get();
-    if (state.items.length === 0) return;
-
-    let orderNum = state.currentOrderNumber;
-    if (!orderNum) {
-      const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
-      orderNum = `${useSettingsStore.getState().orderPrefix}-${Date.now().toString().slice(-4)}-${uniqueId}`;
-      set({ currentOrderNumber: orderNum });
-    }
-
-    const newItems = state.items.filter(i => i.status === 'NEW');
-    if (newItems.length > 0) {
-      useKdsStore.getState().addTicket({
-        id: `kot-${Date.now()}`,
-        orderNumber: orderNum,
-        tableNumber: state.orderType === 'DINE_IN'
-          ? (state.selectedTableName || 'Takeaway')
-          : (state.orderType === 'PARCEL' ? '📦 Parcel' : '🛵 Delivery'),
-        orderType: state.orderType,
-        customerName: state.customer?.name,
-        items: newItems.map(i => {
-          const addonText = i.addons && i.addons.length > 0 ? ` [Add: ${i.addons.map(a => a.name).join(', ')}]` : '';
-          return { name: i.name, productId: i.productId, price: i.price, addons: i.addons, quantity: i.quantity, notes: (i.notes || '') + addonText, status: 'COOKING' };
-        }),
-        firedAt: new Date().toISOString()
-      });
-    }
-
-    // Mark all items as sent and hold the order
-    set({
-      items: get().items.map(i => ({ ...i, status: 'SENT' }))
-    });
-
-    get().holdCurrentOrder();
+    if (!state.items.length || state.isSendingKot || state.isParking || state.isResuming) return;
+    const context = getActionContext();
+    set({ isSendingKot: true });
+    try {
+      const orderNumber = state.currentOrderNumber || useSettingsStore.getState().orderPrefix + '-' + createId();
+      set({ currentOrderNumber: orderNumber });
+      const newItems = state.items.filter(item => item.status === 'NEW');
+      let result: ActionResult = { status: 'OK' };
+      if (newItems.length) {
+        result = await useKdsStore.getState().addTicket({ id: 'kot-' + createId(), orderNumber, tableId: state.selectedTableId,
+          tableNumber: state.orderType === 'DINE_IN' ? state.selectedTableName || 'Takeaway' : state.orderType === 'PARCEL' ? '📦 Parcel' : '🛵 Delivery',
+          orderType: state.orderType, customerName: state.customer?.name,
+          items: newItems.map(item => ({ ...item, status: 'COOKING' })), firedAt: new Date().toISOString() });
+        if (result.status === 'ERROR') { toast.error(result.message || 'Kitchen did not confirm this order. Your cart is preserved.'); return result; }
+      }
+      if (!contextIsCurrent(context)) return;
+      if (get().items !== state.items) { toast.info('The earlier items were submitted. Review your newer cart edits before sending again.'); return result; }
+      set({ items: state.items.map(item => ({ ...item, status: 'SENT' })) });
+      await get().holdCurrentOrder(undefined, true);
+      return result;
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Kitchen order could not be sent'); return { status: 'ERROR' }; }
+    finally { if (contextIsCurrent(context)) set({ isSendingKot: false }); }
   },
 
-  resumeOrder: (parkedId) => {
-    const state = get();
-    const target = state.heldOrders.find((o) => o.id === parkedId);
-    if (!target) return;
-
-    // If current cart has items, hold them first
-    if (state.items.length > 0) {
-      state.holdCurrentOrder('Auto Parked');
-    }
-
-    const nextHeldOrders = state.heldOrders.filter((o) => o.id !== parkedId);
-
-    set({
-      items: target.items,
-      selectedTableId: target.tableId || null,
-      selectedTableName: target.tableName || null,
-      selectedWaiter: target.waiterName || null,
-      customer: target.customerName ? { name: target.customerName, phone: '' } : null,
-      orderType: target.orderType || 'DINE_IN',
-      currentOrderNumber: target.orderNumber || null,
-      orderVersion: null,
-      checkoutBillNumber: null,
-      deliveryAddress: target.deliveryAddress || '',
-      deliveryFee: target.deliveryFee || 0,
-      deliveryStatus: target.deliveryStatus || null,
-      collectedMethod: target.collectedMethod || null,
-      heldOrders: nextHeldOrders,
-    });
-
-    // Broadcast that this order is no longer parked
-    void emitAction('remove_parked_order', { id: target.id, orderNumber: target.orderNumber, tableId: target.tableId, expectedRevision: target.revision || 0 });
-    if (target.orderNumber && navigator.onLine) {
-      const savedItems = target.items;
-      void authorizedFetch(`/billing/active-order/${encodeURIComponent(target.orderNumber)}${target.tableId ? `?tableId=${encodeURIComponent(target.tableId)}` : ''}`).then(async response => {
-        const order = await response.json();
-        if (!response.ok) throw new Error(order.message || 'Latest order could not be loaded');
-        if (order && get().currentOrderNumber === target.orderNumber && JSON.stringify(get().items) === JSON.stringify(savedItems)) set({ currentOrderNumber: order.orderNumber, orderVersion: order.version, items: [...order.items, ...savedItems.filter(item => item.status === 'NEW')] });
-      }).catch(error => toast.error(error.message));
-    }
+  resumeOrder: async parkedId => {
+    const state = get(), target = state.heldOrders.find(order => order.id === parkedId);
+    if (!target || state.isSendingKot || state.isParking || state.isResuming) return;
+    const context = getActionContext();
+    if (state.items.length && !await get().holdCurrentOrder('Saved before opening another order')) return;
+    set({ isResuming: true });
+    try {
+      let latest: any = null;
+      if (target.orderNumber && navigator.onLine) {
+        const response = await authorizedFetch('/billing/active-order/' + encodeURIComponent(target.orderNumber) + (target.tableId ? '?tableId=' + encodeURIComponent(target.tableId) : ''), { signal: AbortSignal.timeout(5000) });
+        latest = await response.json();
+        if (!response.ok) throw new Error(latest.message || 'Latest order could not be loaded');
+      }
+      if (!contextIsCurrent(context) || get().items.length) return;
+      const result = await emitAction('remove_parked_order', { id: target.id, orderNumber: target.orderNumber, tableId: target.tableId, expectedRevision: target.revision || 0 });
+      if (result.status === 'ERROR') throw new Error(result.message || 'Order could not be opened. Refresh parked orders.');
+      if (!contextIsCurrent(context) || get().items.length) return;
+      set({ items: latest ? [...latest.items, ...target.items.filter(item => item.status === 'NEW')] : target.items,
+        selectedTableId: target.tableId || null, selectedTableName: target.tableName || null, selectedWaiter: target.waiterName || null,
+        customer: target.customerName || target.customerPhone ? { name: target.customerName || '', phone: target.customerPhone || '' } : null,
+        discount: target.discount || 0, orderType: target.orderType || 'DINE_IN', currentOrderNumber: latest?.orderNumber || target.orderNumber || null,
+        orderVersion: latest?.version || target.orderVersion || null, checkoutBillNumber: target.checkoutBillNumber || null,
+        deliveryAddress: target.deliveryAddress || '', deliveryFee: target.deliveryFee || 0,
+        deliveryStatus: target.deliveryStatus || null, collectedMethod: target.collectedMethod || null,
+        heldOrders: get().heldOrders.filter(order => order.id !== parkedId) });
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Order could not be opened'); }
+    finally { if (contextIsCurrent(context)) set({ isResuming: false }); }
   },
 
   clearCart: () => {
@@ -378,7 +353,7 @@ export const useCartStore = create<CartState>()(
   setCustomer: (customer) => {
     set({ customer });
   },
-}), { name: 'pos-cart-storage', storage: createJSONStorage(() => tenantStorage) }));
+}), { name: 'pos-cart-storage', storage: createJSONStorage(() => tenantStorage), partialize: ({ isParking, isSendingKot, isResuming, ...state }) => state }));
 
 // Listen to browser network changes for automatic offline mode toggling
 if (typeof window !== 'undefined') {

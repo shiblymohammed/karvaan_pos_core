@@ -4,6 +4,8 @@
   "version": "1.0.1",
   "type": "module",
   "scripts": {
+    "predev": "node ../print-agent/package.cjs public/karvaan-print-agent.zip",
+    "prebuild": "node ../print-agent/package.cjs public/karvaan-print-agent.zip",
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "tsc && vite build",
     "preview": "vite preview",

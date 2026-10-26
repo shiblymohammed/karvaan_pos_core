@@ -102,6 +102,9 @@ export class BackupService implements OnModuleInit {
           waste: await tx.wasteLog.findMany({ where: { restaurantId } }),
           returns: await tx.returnRecord.findMany({ where: { restaurantId } }),
           settings: await tx.systemSetting.findMany({ where: { restaurantId } }),
+          printAgents: await tx.printAgent.findMany({ where: { restaurantId }, select: { id: true, restaurantId: true, name: true, lastSeenAt: true, revokedAt: true, createdAt: true } }),
+          printDestinations: await tx.printDestination.findMany({ where: { restaurantId } }),
+          printJobs: await tx.printJob.findMany({ where: { restaurantId } }),
         }), { timeout: 30000 });
         fs.writeFileSync(dest, zlib.gzipSync(JSON.stringify({ version: 1, restaurantId, createdAt: new Date().toISOString(), data })));
       }

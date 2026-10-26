@@ -33,7 +33,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
   const isPrepaid = order.paymentStatus === 'COLLECTED';
   const isAssigned = !!order.deliveryBoyId;
   // Fix 3: food is ready only when KDS says READY/SERVED, OR no KDS ticket (pre-packed/parcel)
-  const isReady = !kdsTicket || kdsTicket?.status === 'READY' || kdsTicket?.status === 'SERVED' || order.status === 'READY';
+  const isReady = ['READY', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status) && !order.pendingConfirmation;
   const isRider = currentUser?.role === 'DELIVERY';
   const isMyOrder = order.deliveryBoyId === currentUser?.id;
 
@@ -66,6 +66,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
               <span className={`shrink-0 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${cfg.badge}`}>
                 {cfg.label}
               </span>
+              {order.pendingConfirmation && <span className="text-[10px] text-amber-700 font-bold">Awaiting server confirmation</span>}
             </div>
             <div className="flex items-center gap-1.5 mt-1 text-[11px] font-bold text-slate-500">
               <span className="text-orange-600 font-black">#{order.orderNumber}</span>
@@ -93,7 +94,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
               ? <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Food Ready</span>
               : <span className="text-[10px] font-black text-amber-600 flex items-center gap-1"><Clock className="h-3 w-3 animate-pulse" /> Preparing ({kdsTicket.elapsedMinutes}m)</span>
           ) : (
-            <span className="text-[10px] font-black text-blue-600 flex items-center gap-1"><Package className="h-3 w-3" /> Packed</span>
+            <span className="text-[10px] font-black text-blue-600 flex items-center gap-1"><Package className="h-3 w-3" /> {isReady ? 'Ready' : 'Awaiting kitchen confirmation'}</span>
           )}
         </div>
 
@@ -113,7 +114,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
         {/* Payment status */}
         <div className="flex items-center justify-between">
           {isPrepaid
-            ? <span className="text-[11px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Paid Online</span>
+            ? <span className="text-[11px] font-black text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Paid · {order.paymentMethod || 'Confirmed'}</span>
             : <span className="text-[11px] font-black text-rose-500 flex items-center gap-1"><AlertCircle className="h-3.5 w-3.5" /> COD Pending</span>
           }
         </div>
@@ -136,7 +137,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
                     </div>
                   )}
                   <button onClick={handleTakeOrder}
-                    disabled={isRider && !isReady}
+                    disabled={!isReady}
                     className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-orange-200 transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
                     <Bike className="h-4 w-4" />
                     {isRider ? (isReady ? 'Take This Order' : 'Not Ready Yet') : 'Assign Rider'}
@@ -230,7 +231,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
                 <RotateCcw className="h-3 w-3" /> Return
               </button>
             )}
-            {!isRider && (
+            {!isRider && !isActive && (
               <button onClick={onRemove} className="text-[10px] font-black text-slate-400 hover:text-rose-600 flex items-center gap-1 cursor-pointer transition-colors">
                 <X className="h-3 w-3" /> Remove
               </button>
@@ -245,7 +246,7 @@ const OrderCard = ({ order, kdsTicket, currentUser, onAssign, onOpenPaymentModal
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export const DeliveryDispatchScreen: React.FC = () => {
-  const { orders, collectPayment, assignDeliveryBoy, removeOrder, removeOrders } = useDeliveryStore();
+  const { orders, collectPayment, assignDeliveryBoy, removeOrder, removeOrders, fetchOrders } = useDeliveryStore();
   const { getDeliveryRiders } = useStaffStore();
   const { currentUser } = useAuthStore();
   const { tickets: kdsTickets } = useKdsStore();
@@ -263,6 +264,8 @@ export const DeliveryDispatchScreen: React.FC = () => {
   const [remittance, setRemittance] = useState<any | null>(null);
   const [remittanceError, setRemittanceError] = useState('');
   const [remitting, setRemitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [collecting, setCollecting] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setRemittance(null); setRemittanceError('');
@@ -310,6 +313,9 @@ export const DeliveryDispatchScreen: React.FC = () => {
     : null;
 
   const handleCollectPaymentSubmit = async (orderId: string, method: 'CASH' | 'UPI' | 'CARD' | 'SPLIT', splitAmounts?: { cash: number; upi: number }) => {
+    if (collecting) return;
+    setCollecting(true);
+    try {
     const collected = method === 'SPLIT' ? (splitAmounts ? splitAmounts.cash + splitAmounts.upi : collectAmount) : collectAmount;
     const result = await collectPayment(orderId, method, collected, splitAmounts ? { CASH: splitAmounts.cash, UPI: splitAmounts.upi } : undefined);
     if (result.status !== 'OK') { if (result.status === 'ERROR') showToast(result.message || 'Payment was not recorded', 'error'); return; }
@@ -322,7 +328,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
       setCompletedReceipt({ order, method: methodLabel, collected });
     }
     setPaymentModalOrder(null);
-    setTimeout(() => removeOrder(orderId), 5000);
+    } finally { setCollecting(false); }
   };
 
   const handleMarkDeliveredPrepaidWithReceipt = async (order: DeliveryOrder) => {
@@ -330,15 +336,13 @@ export const DeliveryDispatchScreen: React.FC = () => {
     const result = await collectPayment(order.id, 'PREPAID', order.grandTotal);
     if (result.status !== 'OK') { if (result.status === 'ERROR') showToast(result.message || 'Delivery was not completed', 'error'); return; }
     setCompletedReceipt({ order, method: 'PREPAID (Online)', collected: order.grandTotal });
-    setTimeout(() => removeOrder(order.id), 5000);
   };
 
   // Fix 5: Rider self-unassign
-  const handleRiderUnassign = (orderId: string) => {
-    void useDeliveryStore.getState().assignDeliveryBoy(orderId, '', '');
-    const order = orders.find(o => o.id === orderId);
-    // Clear rider assignment
-    showToast('Order unassigned — back to Ready queue.', 'info');
+  const handleRiderUnassign = async (orderId: string) => {
+    const result = await useDeliveryStore.getState().assignDeliveryBoy(orderId, '', '');
+    if (result.status === 'OK') showToast('Order unassigned — back to Ready queue.', 'success');
+    else if (result.status === 'ERROR') showToast(result.message || 'Rider assignment was not changed', 'error');
   };
 
   const handleAssign = (orderId: string, riderId: string, riderName: string) => {
@@ -350,7 +354,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
   const pendingCount = allDeliv.filter(o => o.status === 'RECEIVED' || o.status === 'PREPARING').length;
   const readyCount = allDeliv.filter(o => o.status === 'READY').length;
   const onRoadCount = allDeliv.filter(o => o.status === 'OUT_FOR_DELIVERY').length;
-  const codPendingAmt = allDeliv.filter(o => o.paymentStatus !== 'COLLECTED' && o.status !== 'DELIVERED').reduce((s, o) => s + o.grandTotal, 0);
+  const codPendingAmt = allDeliv.filter(o => o.paymentStatus !== 'COLLECTED' && !['DELIVERED', 'CANCELLED'].includes(o.status)).reduce((s, o) => s + o.grandTotal, 0);
 
   return (
     <div className="h-[calc(100vh-64px)] sm:h-full overflow-hidden flex flex-col relative text-slate-800" style={{ background: 'transparent' }}>
@@ -373,9 +377,10 @@ export const DeliveryDispatchScreen: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { emitAction('sync_delivery_orders', orders); showToast('Board synced!', 'success'); }}
+            disabled={refreshing}
+            onClick={async () => { if (refreshing) return; setRefreshing(true); try { await fetchOrders(); showToast('Latest deliveries loaded.', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Refresh failed', 'error'); } finally { setRefreshing(false); } }}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer shadow-sm">
-            <RefreshCw className="h-3 w-3" /> Sync
+            <RefreshCw className="h-3 w-3" /> {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           {!isRiderMode && (
             <button onClick={() => setShowRidersMobile(s => !s)}
@@ -801,7 +806,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
                 {payMode !== 'SPLIT' ? (
                   <button
                     onClick={() => handleCollectPaymentSubmit(paymentModalOrder.id, payMode)}
-                    disabled={collectAmount <= 0}
+                    disabled={collecting || !Number.isFinite(collectAmount) || collectAmount + 0.005 < due || (payMode !== 'CASH' && Math.abs(collectAmount - due) > 0.005)}
                     className={`w-full py-3.5 font-black text-sm rounded-2xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2 ${
                       payMode === 'CASH'
                         ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-emerald-200'
@@ -813,7 +818,7 @@ export const DeliveryDispatchScreen: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => handleCollectPaymentSubmit(paymentModalOrder.id, 'SPLIT', { cash: splitCash, upi: splitUpi })}
-                    disabled={!splitBalanced}
+                    disabled={collecting || !splitBalanced || splitCash < 0 || splitUpi < 0}
                     className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-black text-sm rounded-2xl shadow-md shadow-indigo-200 transition-all active:scale-95 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2">
                     <Check className="h-4 w-4" />
                     Confirm Split — ₹{splitCash.toFixed(0)} Cash + ₹{splitUpi.toFixed(0)} UPI

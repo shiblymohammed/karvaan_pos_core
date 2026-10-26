@@ -3,6 +3,9 @@ import { Injectable, NotFoundException, BadRequestException, UnauthorizedExcepti
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { KdsGateway } from '../kds/kds.gateway';
+import { StockPolicyService } from './stock-policy.service';
+import { PrintQueueService } from '../printer/print-queue.service';
+import { kitchenSignature } from '../printer/print-document';
 import { getBusinessDayBounds } from '../utils/date.util';
 import { billTotals, paymentAllocation, ledgerView, readJson, ensurePersistedItemsPresent, financialSummary, immutableHistoryBill, itemSignature } from './financial';
 
@@ -14,6 +17,8 @@ export class BillingService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => KdsGateway))
     private readonly kdsGateway: KdsGateway,
+    private readonly stockPolicy: StockPolicyService,
+    private readonly printQueue: PrintQueueService,
   ) {}
 
   // 1. Create a new POS or Table-side Order
@@ -93,6 +98,7 @@ export class BillingService {
         }
       }
 
+      await this.printQueue.kitchen(tx, data.restaurantId, `order:${newOrder.id}`, { reference: newOrder.orderNumber, orderType: newOrder.orderType, table: newOrder.table?.tableNumber, items: newOrder.items.map(item => ({ name: item.product.name, quantity: item.quantity, notes: item.notes })) }, data.waiterId || 'server');
       return newOrder;
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -191,10 +197,10 @@ export class BillingService {
         if (!match || !Number.isFinite(match.price) || match.price < 0) throw new BadRequestException('Invalid add-on');
         return { id: match.id, name: match.name, price: match.price };
       });
-      if (product.isArchived && !String(item.productId).startsWith('standalone-')) {
+      if ((product.isArchived || !product.isAvailable) && !String(item.productId).startsWith('standalone-')) {
         const signature = itemSignature({ productId: product.id, addons });
         const remaining = archivedQuantities.get(signature) || 0;
-        if (item.quantity > remaining) throw new BadRequestException('This menu item was deleted. Remove new quantities; already-sent quantities can still be settled.');
+        if (item.quantity > remaining) throw new BadRequestException(product.isArchived ? 'This menu item was deleted. Remove new quantities; already-sent quantities can still be settled.' : 'This menu item is marked unavailable. Remove new quantities; already-sent quantities can still be settled.');
         archivedQuantities.set(signature, remaining - item.quantity);
       }
       const price = roundMoney(product.price + addons.reduce((sum: number, a: any) => sum + a.price, 0));
@@ -208,7 +214,10 @@ export class BillingService {
     return this.prisma.$transaction(async tx => {
       const key = { restaurantId_settingKey: { restaurantId, settingKey: `kot:${data.id}` } };
       const receipt = await tx.systemSetting.findUnique({ where: key });
-      if (receipt) return tx.order.findUniqueOrThrow({ where: { id: JSON.parse(receipt.data).orderId }, include: { items: { include: { product: true } }, table: true } });
+      if (receipt) {
+        const saved = JSON.parse(receipt.data);
+        return { ...await tx.order.findUniqueOrThrow({ where: { id: saved.orderId }, include: { items: { include: { product: true } }, table: true } }), printJobId: saved.printJobId || null };
+      }
       const { lines } = await this.pricedItems(tx, data.items, restaurantId);
       let existing = await tx.order.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } }, include: { bill: true } });
       if (existing?.bill) throw new BadRequestException('Order is already settled');
@@ -228,9 +237,10 @@ export class BillingService {
       const order = existing
         ? await tx.order.update({ where: { id: existing.id }, data: { status: 'COOKING', totalAmount: { increment: addedTotal }, items: { create: items } } })
         : await tx.order.create({ data: { restaurantId, orderNumber: data.orderNumber, orderType: data.orderType || 'DINE_IN', waiterId, tableId, status: 'COOKING', totalAmount: addedTotal, items: { create: items } } });
-      await tx.systemSetting.create({ data: { restaurantId, settingKey: `kot:${data.id}`, data: JSON.stringify({ orderId: order.id }) } });
+      const printJob = await this.printQueue.kitchen(tx, restaurantId, `kot:${data.id}`, { reference: order.orderNumber, orderNumber: order.orderNumber, table: table?.tableNumber || data.tableNumber, orderType: order.orderType, items: lines.map(line => ({ name: line.product.name, quantity: line.quantity, notes: line.notes, addons: line.addons })) }, waiterId);
+      await tx.systemSetting.create({ data: { restaurantId, settingKey: `kot:${data.id}`, data: JSON.stringify({ orderId: order.id, printJobId: printJob?.id || null }) } });
       if (tableId) await tx.table.update({ where: { id: tableId }, data: { status: 'OCCUPIED', currentOrderId: order.id } });
-      return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: { include: { product: true } }, table: true } });
+      return { ...await tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: { include: { product: true } }, table: true } }), printJobId: printJob?.id || null };
     });
   }
 
@@ -251,6 +261,22 @@ export class BillingService {
     } catch {}
     return bill;
   }
+  async printPrebill(data: any, user: any) {
+    if (typeof data?.requestId !== 'string' || !data.requestId || data.requestId.length > 200) throw new BadRequestException('A stable print request ID is required');
+    return this.prisma.$transaction(async tx => {
+      const { lines, settings } = await this.pricedItems(tx, data.items, user.restaurantId);
+      const table = data.tableId ? await tx.table.findFirst({ where: { id: data.tableId, restaurantId: user.restaurantId } }) : null;
+      if (data.tableId && !table) throw new BadRequestException('Table not found');
+      const totals = billTotals(lines, settings, data, table?.id);
+      const job = await this.printQueue.enqueue(tx, user.restaurantId, 'RECEIPT', `prebill:${data.requestId}`, { ...await this.printQueue.branding(tx, user.restaurantId), kind: 'PREBILL', reference: `PRE-${data.requestId}`, orderType: data.orderType, table: table?.tableNumber, createdAt: new Date().toISOString(), items: lines.map(line => ({ name: line.product.name, quantity: line.quantity, price: line.price, notes: line.notes, addons: line.addons })), ...totals, discount: data.discount || 0, paymentMethod: 'UNPAID' }, user.id, false);
+      return { id: job.id, kind: job.kind, reference: job.reference, state: job.state };
+    });
+  }
+  async recipeForProduct(tx: any, productId: string) {
+    const rows = await tx.recipeIngredient.findMany({ where: { productId }, include: { inventoryItem: true } });
+    return rows.map((row: any) => ({ inventoryItemId: row.inventoryItemId, quantity: Number((row.quantity * (1 + row.wasteFactorPercent / 100)).toFixed(6)), costPrice: row.inventoryItem.costPrice }));
+  }
+
   async checkoutInTransaction(tx: any, data: any, restaurantId: string, cashierId: string, storedPricing?: any) {
       if (!restaurantId || typeof data?.billNumber !== 'string' || !data.billNumber || typeof data.orderNumber !== 'string' || !data.orderNumber) throw new BadRequestException('Bill and order identifiers are required');
       const existingBill = await tx.bill.findUnique({ where: { restaurantId_billNumber: { restaurantId, billNumber: data.billNumber } }, include: { order: true } });
@@ -291,7 +317,7 @@ export class BillingService {
       let allocatedCgst = 0, allocatedSgst = 0;
       for (let index = 0; index < lines.length; index++) {
         const line = lines[index];
-        const recipe = line.recipe || await tx.recipeIngredient.findMany({ where: { productId: line.product.id } });
+        const recipe = line.recipe || await this.recipeForProduct(tx, line.product.id);
         const lineAmount = line.price * line.quantity;
         const refundTotal = index === lines.length - 1 ? roundMoney(grandTotal - allocated) : roundMoney(lineAmount * (1 - discount / (itemSubtotal || 1)) * (1 + line.product.gstRate / 100) + ((surcharge + packaging) * 1.05 + deliveryFee) * lineAmount / (itemSubtotal || 1));
         allocated = roundMoney(allocated + refundTotal);
@@ -299,7 +325,7 @@ export class BillingService {
         const refundCgst = index === lines.length - 1 ? roundMoney(cgst - allocatedCgst) : roundMoney(lineTax / 2);
         const refundSgst = index === lines.length - 1 ? roundMoney(sgst - allocatedSgst) : roundMoney(lineTax / 2);
         allocatedCgst = roundMoney(allocatedCgst + refundCgst); allocatedSgst = roundMoney(allocatedSgst + refundSgst);
-        snapshots.push({ id: billedItems[index].id, productId: line.product.id, name: line.product.name, price: line.price, quantity: line.quantity, gstRate: line.product.gstRate, notes: line.notes, addons: line.addons, refundTotal, refundCgst, refundSgst, recipe: recipe.map(r => ({ inventoryItemId: r.inventoryItemId, quantity: r.quantity })) });
+        snapshots.push({ id: billedItems[index].id, productId: line.product.id, name: line.product.name, price: line.price, quantity: line.quantity, gstRate: line.product.gstRate, notes: line.notes, addons: line.addons, refundTotal, refundCgst, refundSgst, recipe: recipe.map(r => ({ inventoryItemId: r.inventoryItemId, quantity: r.quantity, costPrice: r.costPrice })) });
       }
       const saved = await tx.bill.create({ data: { restaurantId, billNumber: data.billNumber, orderId: order.id, orderType, subtotal, discount, cgst, sgst, grandTotal, deliveryFee, paymentMethod, tenders: JSON.stringify(tenders), invoiceItems: JSON.stringify(snapshots), cashierId, customerName: data.customerName || null, customerPhone: data.customerPhone || null, waiterName: data.waiter || null } });
       if (tenders.CREDIT > 0 && (!data.customerName?.trim() || !data.customerPhone?.trim())) throw new BadRequestException('Customer name and phone are required for credit');
@@ -309,16 +335,25 @@ export class BillingService {
         if (tenders.CREDIT > 0) await tx.ledgerEntry.create({ data: { id: `credit:${saved.id}`, customerId: customer.id, customerName: customer.name, amount: tenders.CREDIT, type: 'CREDIT', billNumber: saved.billNumber, recordedBy: cashierId } });
       }
       const delivery = ['DELIVERY', 'PARCEL'].includes(orderType) ? await tx.deliveryOrder.findUnique({ where: { restaurantId_orderNumber: { restaurantId, orderNumber: data.orderNumber } } }) : null;
-      if (!delivery?.inventoryConsumed) for (const snapshot of snapshots) {
-        for (const ingredient of snapshot.recipe) {
-          const stock = await tx.inventoryItem.findUnique({ where: { id: ingredient.inventoryItemId } });
-          if (stock?.restaurantId !== restaurantId) throw new BadRequestException('Invalid recipe inventory');
-          const quantity = snapshot.quantity * ingredient.quantity;
-          await tx.inventoryItem.update({ where: { id: ingredient.inventoryItemId }, data: { currentStock: { decrement: quantity }, revision: { increment: 1 } } });
-          await tx.stockLog.create({ data: { itemId: ingredient.inventoryItemId, type: 'OUT', quantityChange: -quantity, orderId: order.id, notes: `POS Checkout #${saved.billNumber}` } });
-        }
-      }
+      if (!delivery?.inventoryConsumed) await this.stockPolicy.consume(tx, snapshots, cashier, 'checkout', data.billNumber, order.id, data.stockAuthorization);
       if (table) await tx.table.update({ where: { id: table.id }, data: { status: 'AVAILABLE', currentOrderId: null } });
+      await this.printQueue.receipt(tx, restaurantId, saved, { ...order, table }, cashier.name, true, `receipt:${saved.id}`, false, cashierId);
+      // Checkout may contain food never sent to the kitchen. Compare persisted quantities,
+      // including notes/add-ons, rather than trusting a terminal's NEW/SENT flag.
+      const remaining = new Map<string, number>();
+      for (const item of existingOrder?.items || []) {
+        const signature = kitchenSignature(item);
+        remaining.set(signature, (remaining.get(signature) || 0) + item.quantity);
+      }
+      const unsent = snapshots.flatMap(item => {
+        const signature = kitchenSignature(item);
+        const previous = remaining.get(signature) || 0;
+        remaining.set(signature, Math.max(0, previous - item.quantity));
+        const quantity = Math.max(0, item.quantity - previous);
+        return quantity > 0 ? [{ ...item, quantity }] : [];
+      });
+      if ([...remaining.values()].some(quantity => quantity > 0)) throw new BadRequestException('Cooking instructions for already-sent food changed. Reload the latest order before payment.');
+      await this.printQueue.kitchen(tx, restaurantId, `checkout:${saved.id}`, { reference: order.orderNumber, orderType, table: table?.tableNumber, items: unsent }, cashierId);
       return saved;
 
   }

@@ -112,6 +112,31 @@ export class AuthService {
     return { authorization: this.jwtService.sign({ purpose: 'refund', restaurantId: user.restaurantId, cashierId: user.id, managerId: manager.id, actionId: body.actionId, billNumber: body.billNumber }, { expiresIn: '15m' }) };
   }
 
+  createStockChallenge(context: any) {
+    return this.jwtService.sign({ ...context, purpose: 'stock-challenge' }, { expiresIn: '15m' });
+  }
+
+  async authorizeStockShortage(user: any, body: any) {
+    let challenge: any;
+    try { challenge = this.jwtService.verify(body?.challenge); } catch { throw new UnauthorizedException('Stock approval request expired. Retry the original action to refresh it.'); }
+    if (challenge.purpose !== 'stock-challenge' || challenge.restaurantId !== user.restaurantId || challenge.cashierId !== user.id) throw new UnauthorizedException('Invalid stock approval request');
+    if (typeof body.reason !== 'string' || body.reason.trim().length < 5 || body.reason.trim().length > 500) throw new UnauthorizedException('Enter a reason for allowing the stock shortage (5–500 characters).');
+    const manager = await this.authorizeManager(user.restaurantId, body.pin);
+    const account = await this.prisma.user.findUnique({ where: { id: manager.id } });
+    if (!account || !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(account.role)) throw new UnauthorizedException('Stock shortages require an active manager or administrator.');
+    const { iat, exp, ...context } = challenge;
+    return { authorization: this.jwtService.sign({ ...context, purpose: 'stock-override', managerId: manager.id, reason: body.reason.trim() }, { expiresIn: '15m' }) };
+  }
+
+  async verifyStockAuthorization(tx: any, token: string, context: any) {
+    let grant: any;
+    try { grant = this.jwtService.verify(token); } catch { return null; }
+    if (grant.purpose !== 'stock-override' || ['restaurantId', 'cashierId', 'operation', 'reference', 'fingerprint'].some(key => grant[key] !== context[key])) return null;
+    if (context.shortages.some((row: any) => !grant.shortages?.some((approved: any) => approved.id === row.id && approved.shortfall + 0.000001 >= row.shortfall))) return null;
+    const manager = await tx.user.findFirst({ where: { id: grant.managerId, restaurantId: context.restaurantId, isActive: true, role: { in: ['ADMIN', 'REST_ADMIN', 'MANAGER'] } } });
+    return manager ? { managerId: manager.id, managerName: manager.name, reason: grant.reason } : null;
+  }
+
   async verifyRefundAuthorization(token: string, user: any, actionId: string, billNumber: string) {
     let grant: any;
     try { grant = this.jwtService.verify(token); } catch { throw new UnauthorizedException('Manager authorization expired. Authorize this refund again.'); }

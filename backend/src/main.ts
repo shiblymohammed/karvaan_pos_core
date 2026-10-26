@@ -88,7 +88,7 @@ async function bootstrap() {
       status: 'ok',
       service: 'Karvaan POS Backend',
       version: '1.0.0',
-      capabilities: { inventoryPurchases: 1, inventoryChanges: 1, menuArchiving: 1 },
+      capabilities: { inventoryPurchases: 1, inventoryChanges: 1, menuArchiving: 1, versionedAdminConfig: 1, inventoryWaste: 1, stockShortageApproval: 1, durablePrinting: 1 },
       timestamp: new Date().toISOString(),
       localIPs: getLocalIPs(),
     });

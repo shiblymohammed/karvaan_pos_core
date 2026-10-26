@@ -1,0 +1,8 @@
+{
+  "name": "karvaan-local-print-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Outbound-only VPS print worker; no third-party runtime dependencies",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": { "start": "node agent.cjs run", "test": "node --test test/*.test.cjs" }
+}

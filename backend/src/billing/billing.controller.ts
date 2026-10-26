@@ -10,6 +10,10 @@ import { ADMIN_ROLES, Roles, RolesGuard } from '../auth/roles.guard';
 export class BillingController {
   constructor(private readonly billingService: BillingService, private readonly workflows: WorkflowService) {}
 
+  @Post('print-prebill')
+  @Roles(...ADMIN_ROLES, 'CASHIER')
+  printPrebill(@Body() data: any, @GetUser() user: any) { return this.billingService.printPrebill(data, user); }
+
   @Get('ledger')
   @Roles(...ADMIN_ROLES, 'CASHIER')
   getLedger(@GetUser() user: any) { return this.workflows.ledger(user.restaurantId); }
@@ -21,9 +25,25 @@ export class BillingController {
   @Get('menu')
   getMenu(@GetUser() user: any) { return this.workflows.menu(user.restaurantId); }
 
+  @Get('admin-config')
+  @Roles(...ADMIN_ROLES)
+  getAdminConfig(@GetUser() user: any) { return this.workflows.adminConfig(user.restaurantId); }
+
   @Get('inventory')
   @Roles(...ADMIN_ROLES, 'CASHIER', 'KITCHEN')
   getInventory(@GetUser() user: any) { return this.workflows.inventoryState(user.restaurantId); }
+
+  @Get('deliveries')
+  @Roles(...ADMIN_ROLES, 'CASHIER', 'DELIVERY', 'KITCHEN')
+  getDeliveries(@GetUser() user: any) { return this.workflows.deliveryState(user.restaurantId); }
+
+  @Get('waste')
+  @Roles(...ADMIN_ROLES, 'KITCHEN')
+  getWaste(@GetUser() user: any) { return this.workflows.wasteState(user.restaurantId); }
+
+  @Get('stock-approvals')
+  @Roles(...ADMIN_ROLES)
+  getStockApprovals(@GetUser() user: any) { return this.workflows.stockApprovals(user.restaurantId); }
 
   @Get('invoice/:billNumber')
   @Roles(...ADMIN_ROLES, 'CASHIER')

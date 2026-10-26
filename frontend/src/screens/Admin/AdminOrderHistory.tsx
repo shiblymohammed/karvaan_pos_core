@@ -4,20 +4,24 @@ import { apiClient } from '../../services/apiClient';
 import { toast } from '../../store/useToastStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DatePickerPopover } from '../../components/DatePickerPopover';
+import { businessDate } from '../../services/businessDate';
+import { ReceiptModal } from '../../components/pos/ReceiptModal';
+import { receiptItemsFromSnapshot } from '../../services/receiptData';
 
 export const AdminOrderHistory: React.FC = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    return d.toISOString().split('T')[0];
+    return businessDate(d);
   });
   const [endDate, setEndDate] = useState(() => {
     const d = new Date();
-    return d.toISOString().split('T')[0];
+    return businessDate(d);
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<any>(null);
 
   const fetchHistory = async () => {
     try {
@@ -44,6 +48,7 @@ export const AdminOrderHistory: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 p-4 lg:p-8 overflow-y-auto w-full">
+      {receipt && <ReceiptModal isReprint receiptType="CHECKOUT" bill={receipt} orderType={receipt.orderType} onClose={() => setReceipt(null)} />}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4 w-full">
         <div>
           <h1 className="text-2xl lg:text-3xl font-black text-slate-800 flex items-center gap-3">
@@ -58,13 +63,13 @@ export const AdminOrderHistory: React.FC = () => {
             <DatePickerPopover 
               date={startDate} 
               onChange={setStartDate} 
-              maxDate={new Date().toISOString().split('T')[0]} 
+              maxDate={businessDate()}
             />
             <span className="text-slate-400 font-bold text-xs uppercase">to</span>
             <DatePickerPopover 
               date={endDate} 
               onChange={setEndDate} 
-              maxDate={new Date().toISOString().split('T')[0]} 
+              maxDate={businessDate()}
             />
           </div>
           <div className="relative w-full sm:w-64">
@@ -198,6 +203,13 @@ export const AdminOrderHistory: React.FC = () => {
                           {/* Order Summary & Meta */}
                           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col gap-3">
                             <h3 className="font-black text-slate-800 uppercase text-xs tracking-wider border-b border-slate-200 pb-2">Bill Summary</h3>
+                            <button className="rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 px-3 py-2 font-bold disabled:opacity-40" disabled={!bill.invoiceItems} onClick={() => {
+                              try {
+                                const snapshots = JSON.parse(bill.invoiceItems);
+                                if (!Array.isArray(snapshots) || !snapshots.length) throw new Error('This older bill has no saved invoice snapshot');
+                                setReceipt({ ...bill, items: receiptItemsFromSnapshot(snapshots), orderNumber: bill.order?.orderNumber || '', table: bill.order?.table?.tableNumber || 'Counter', cashier: bill.cashier?.name || 'Staff', waiter: bill.waiterName || '', method: bill.paymentMethod, tenders: JSON.parse(bill.tenders || '{}'), time: new Date(bill.settledAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }), date: new Date(bill.settledAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) });
+                              } catch (error) { toast.error(error instanceof Error ? error.message : 'Receipt snapshot could not be read'); }
+                            }}>Reprint receipt</button>
                             
                             <div className="flex justify-between text-slate-500 font-medium">
                               <span>Subtotal</span>

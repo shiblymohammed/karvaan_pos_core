@@ -3,17 +3,23 @@ import { Users, Plus, Edit3, Trash2, ShieldCheck, X, Bike, Key, Save, Eye, EyeOf
 import { useStaffStore, StaffMember } from '../../store/useStaffStore';
 import CustomSelect from '../../components/shared/CustomSelect';
 import { ConfirmModal } from '../../components/shared/ConfirmModal';
+import { validStaffForm } from '../../services/staffValidation';
+import { toast } from '../../store/useToastStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const inputCls = 'w-full px-4 py-3 bg-white/60 border border-slate-200/80 rounded-2xl text-slate-700 text-sm font-bold focus:outline-none focus:border-[#8cc63f] focus:ring-4 focus:ring-[#8cc63f]/20 shadow-sm transition-all';
 const labelCls = 'block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2';
 
 export const AdminStaffManager: React.FC = () => {
   const { staff, addStaff, updateStaff, deleteStaff } = useStaffStore();
+  const currentUser = useAuthStore(state => state.currentUser);
+  const canManageStaff = ['ADMIN', 'REST_ADMIN'].includes(currentUser?.role);
   const [showModal, setShowModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
@@ -22,14 +28,14 @@ export const AdminStaffManager: React.FC = () => {
     password: '',
     email: '',
     phone: '',
-    role: 'WAITER' as 'ADMIN' | 'MANAGER' | 'CASHIER' | 'WAITER' | 'KITCHEN' | 'DELIVERY',
+    role: 'WAITER' as StaffMember['role'],
     pin: '',
     isActive: true,
     permissions: { canVoid: false, canDiscount: false },
   });
 
   const passwordMismatch = confirmPassword.length > 0 && formData.password !== confirmPassword;
-  const canSave = !!(formData.name && formData.username && formData.password && formData.password === confirmPassword);
+  const canSave = validStaffForm(formData, confirmPassword, !!editingStaff);
 
   const handleOpenModal = (s?: StaffMember) => {
     if (s) {
@@ -37,15 +43,15 @@ export const AdminStaffManager: React.FC = () => {
       setFormData({
         name: s.name,
         username: s.username,
-        password: s.password || '',
+        password: '',
         email: s.email || '',
         phone: s.phone || '',
         role: s.role,
-        pin: s.pin,
+        pin: '',
         isActive: s.isActive,
         permissions: s.permissions || { canVoid: false, canDiscount: false }
       });
-      setConfirmPassword(s.password || '');
+      setConfirmPassword('');
     } else {
       setEditingStaff(null);
       setFormData({ name: '', username: '', password: '', email: '', phone: '', role: 'WAITER', pin: '', isActive: true, permissions: { canVoid: false, canDiscount: false } });
@@ -56,14 +62,31 @@ export const AdminStaffManager: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleSave = () => {
-    if (!canSave) return;
-    if (editingStaff) {
-      updateStaff(editingStaff.id, formData);
-    } else {
-      addStaff(formData);
-    }
-    setShowModal(false);
+  const handleSave = async () => {
+    if (!canSave || saving || !canManageStaff) return;
+    setSaving(true);
+    try {
+      const values = { ...formData, name: formData.name.trim(), username: formData.username.trim() };
+      const result = editingStaff ? await updateStaff(editingStaff.id, values) : await addStaff(values);
+      if (result.status === 'ERROR') throw new Error(result.message || 'Staff changes were not saved. Review pending actions.');
+      if (result.status === 'OK') toast.success('Staff changes confirmed.');
+      else toast.info('Staff changes saved on this device; awaiting server confirmation.');
+      setShowModal(false);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Staff changes were not saved'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDeactivate = async () => {
+    if (!deleteConfirmId || saving || !canManageStaff) return;
+    setSaving(true);
+    try {
+      const result = await deleteStaff(deleteConfirmId);
+      if (result.status === 'ERROR') throw new Error(result.message || 'Staff access was not changed');
+      setDeleteConfirmId(null);
+      if (result.status === 'OK') toast.success('Staff access deactivated.');
+      else toast.info('Deactivation saved on this device; access changes after server confirmation.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Staff access was not changed'); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -72,6 +95,7 @@ export const AdminStaffManager: React.FC = () => {
       <div className="fixed sm:static bottom-[90px] right-6 sm:bottom-auto sm:right-auto z-40 flex justify-end pointer-events-none sm:px-10 sm:pt-6 pb-2">
         <button
           onClick={() => handleOpenModal()}
+          disabled={!canManageStaff}
           className="px-5 py-3.5 sm:py-2.5 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] hover:opacity-90 text-[#0f172a] font-black rounded-full sm:rounded-[14px] shadow-xl sm:shadow-md shadow-[#8cc63f]/20 transition-all active:scale-95 cursor-pointer flex items-center gap-2.5 sm:gap-2 text-xs sm:text-[11px] uppercase tracking-wider pointer-events-auto shrink-0"
         >
           <Plus className="h-5 w-5 sm:h-4 sm:w-4" /> <span className="hidden sm:inline">Add Staff</span>
@@ -83,8 +107,8 @@ export const AdminStaffManager: React.FC = () => {
           {staff.map((s) => (
             <div key={s.id} className="bg-white/60 backdrop-blur-xl p-4 rounded-3xl border border-white/60 shadow-sm flex flex-col justify-between hover:shadow-md transition-all group relative overflow-hidden">
               <div className="absolute top-3 right-3 flex flex-col gap-1.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                <button onClick={() => handleOpenModal(s)} className="p-2 bg-white/50 backdrop-blur-md hover:bg-amber-100 text-slate-500 hover:text-amber-600 rounded-lg shadow-sm transition-colors border border-white/40 cursor-pointer"><Edit3 className="h-4 w-4"/></button>
-                <button onClick={() => deleteStaff(s.id)} className="p-2 bg-white/50 backdrop-blur-md hover:bg-rose-100 text-slate-500 hover:text-rose-600 rounded-lg shadow-sm transition-colors border border-white/40 cursor-pointer"><Trash2 className="h-4 w-4"/></button>
+                <button disabled={!canManageStaff} onClick={() => handleOpenModal(s)} className="p-2 bg-white/50 backdrop-blur-md hover:bg-amber-100 text-slate-500 hover:text-amber-600 rounded-lg shadow-sm transition-colors border border-white/40 cursor-pointer disabled:opacity-30"><Edit3 className="h-4 w-4"/></button>
+                <button disabled={!canManageStaff || s.id === currentUser?.id} title={s.id === currentUser?.id ? 'Your current account cannot be deactivated here' : 'Deactivate staff'} onClick={() => setDeleteConfirmId(s.id)} className="p-2 bg-white/50 backdrop-blur-md hover:bg-rose-100 text-slate-500 hover:text-rose-600 rounded-lg shadow-sm transition-colors border border-white/40 cursor-pointer disabled:opacity-30"><Trash2 className="h-4 w-4"/></button>
               </div>
 
               <div className="flex items-start gap-3 mb-4">
@@ -171,11 +195,11 @@ export const AdminStaffManager: React.FC = () => {
               {/* Password & Confirm */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={labelCls}>Password *</label>
+                  <label className={labelCls}>{editingStaff ? 'New password (optional)' : 'Password (or PIN)'}</label>
                   <div className="relative">
-                    <input type={showPassword ? 'text' : 'password'} required value={formData.password}
+                    <input type={showPassword ? 'text' : 'password'} value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className={`${inputCls} pr-10`} placeholder="Password" />
+                      className={`${inputCls} pr-10`} placeholder={editingStaff ? 'Keep current password' : 'At least 8 characters'} />
                     <button type="button" onClick={() => setShowPassword(p => !p)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -205,38 +229,37 @@ export const AdminStaffManager: React.FC = () => {
               )}
 
               {/* Contact */}
+              {editingStaff && <p className="text-xs text-slate-500">Leave password and PIN blank to keep the current credentials.</p>}
               <div>
-                <label className={labelCls}>{formData.role === 'ADMIN' ? 'Email' : 'Phone'}</label>
+                <label className={labelCls}>Phone</label>
                 <input type="text"
-                  value={formData.role === 'ADMIN' ? formData.email : formData.phone}
-                  onChange={(e) => {
-                    if (formData.role === 'ADMIN') setFormData({ ...formData, email: e.target.value });
-                    else setFormData({ ...formData, phone: e.target.value });
-                  }}
+                  value={formData.phone}
+                  onChange={event => setFormData({ ...formData, phone: event.target.value })}
                   className={inputCls}
-                  placeholder={formData.role === 'ADMIN' ? 'Email Address' : 'Phone Number'} />
+                  placeholder="Phone Number" />
               </div>
 
               {/* Role & PIN */}
               <div className="grid grid-cols-2 gap-4 border-t border-slate-200/60 pt-5">
                 <div>
                   <label className={labelCls}>Assigned Role</label>
-                  <CustomSelect
+                  <fieldset disabled={editingStaff?.id === currentUser?.id}><CustomSelect
                     value={formData.role || 'WAITER'}
                     onChange={val => setFormData({ ...formData, role: val as any })}
                     options={[
                       { value: 'ADMIN', label: 'Admin' },
+                      { value: 'REST_ADMIN', label: 'Restaurant Admin' },
                       { value: 'MANAGER', label: 'Manager' },
                       { value: 'CASHIER', label: 'Cashier' },
                       { value: 'WAITER', label: 'Waiter' },
                       { value: 'KITCHEN', label: 'Kitchen Staff' },
                       { value: 'DELIVERY', label: 'Delivery Rider' }
                     ]}
-                  />
+                  /></fieldset>
                 </div>
                 <div>
-                  <label className={labelCls}>Quick PIN (4-digit)</label>
-                  <input type="text" maxLength={4} value={formData.pin}
+                  <label className={labelCls}>Quick PIN (4–8 digits)</label>
+                  <input type="password" inputMode="numeric" autoComplete="off" maxLength={8} value={formData.pin}
                     onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '') })}
                     className={`${inputCls} text-center tracking-[0.5em] text-xl`}
                     placeholder="••••" />
@@ -266,7 +289,7 @@ export const AdminStaffManager: React.FC = () => {
 
               {/* Active toggle */}
               <div className="flex items-center justify-between p-4 bg-slate-50/80 border border-slate-200/60 rounded-2xl cursor-pointer hover:bg-white transition-colors"
-                onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}>
+                onClick={() => { if (editingStaff?.id !== currentUser?.id) setFormData({ ...formData, isActive: !formData.isActive }); }}>
                 <div>
                   <h4 className="font-black text-sm text-slate-800">Account Active</h4>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Can log into POS?</p>
@@ -282,9 +305,9 @@ export const AdminStaffManager: React.FC = () => {
                   className="flex-1 py-3.5 bg-white hover:bg-slate-50 text-slate-600 font-black text-sm rounded-2xl border border-slate-200 transition-colors shadow-sm cursor-pointer">
                   Cancel
                 </button>
-                <button onClick={handleSave} disabled={!canSave}
+                <button onClick={() => void handleSave()} disabled={!canSave || saving}
                   className="flex-[2] py-3.5 bg-gradient-to-r from-[#8cc63f] to-[#b5ef85] hover:opacity-90 disabled:opacity-40 text-[#0f172a] font-black text-sm rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed">
-                  <Save className="h-4 w-4" /> {editingStaff ? 'Save Changes' : 'Add Staff Member'}
+                  <Save className="h-4 w-4" /> {saving ? 'Confirming…' : editingStaff ? 'Save Changes' : 'Add Staff Member'}
                 </button>
               </div>
             </div>
@@ -292,7 +315,14 @@ export const AdminStaffManager: React.FC = () => {
         </div>
       )}
 
-      
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Deactivate staff member?"
+        message="This person will lose access once the server confirms the change. Their sales and audit history are retained."
+        confirmText={saving ? 'Confirming…' : 'Deactivate staff'}
+        onCancel={() => { if (!saving) setDeleteConfirmId(null); }}
+        onConfirm={() => { void handleDeactivate(); }}
+      />
     </div>
   );
 };

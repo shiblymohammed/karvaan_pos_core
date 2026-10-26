@@ -18,6 +18,44 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+/** Detect if user is on an Android device */
+export function isAndroid(): boolean {
+  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+}
+
+/** Convert Uint8Array to Base64 string */
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Send raw ESC/POS bytes directly to the RawBT Android app via its custom URL scheme.
+ * This triggers instant background printing to Bluetooth, USB, or Wi-Fi thermal printers
+ * without opening the Android print preview dialog.
+ */
+export function printViaRawBT(bytes: Uint8Array): boolean {
+  try {
+    const base64 = uint8ArrayToBase64(bytes);
+    const rawbtUrl = `rawbt:data:application/octet-stream;base64,${base64}`;
+
+    const link = document.createElement('a');
+    link.href = rawbtUrl;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => link.remove(), 1000);
+    return true;
+  } catch (err) {
+    console.error('Failed to trigger RawBT intent:', err);
+    return false;
+  }
+}
+
 export function printNetworkReceipt(ip: string, port: number, data: Uint8Array): Promise<string> {
   return invoke<string>('print_network_receipt', { ip, port, data: Array.from(data) });
 }
@@ -120,7 +158,7 @@ export class EscPos {
   /** Append a text line (UTF-8 encoded) */
   text(str: string) {
     const encoder = new TextEncoder();
-    const encoded = encoder.encode(str);
+    const encoded = encoder.encode(str.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, ' '));
     this.bytes.push(...encoded);
     return this;
   }
@@ -160,8 +198,9 @@ export class EscPos {
 export function buildKotReceipt(params: {
   orderNumber: string;
   tableName: string;
-  items: { name: string; qty: number; notes?: string }[];
+  items: { name: string; qty: number; notes?: string; addons?: { name: string }[] }[];
   time: string;
+  paperWidth?: number;
 }): Uint8Array {
   const esc = new EscPos()
     .init()
@@ -185,10 +224,9 @@ export function buildKotReceipt(params: {
     .bold(false)
     .separator();
   params.items.forEach(item => {
-    const name = item.name.substring(0, 29).padEnd(29);
-    const qty = String(item.qty).padStart(3);
-    esc.text(`${name}${qty}`).newline();
-    if (item.notes) esc.text(`  ** ${item.notes.substring(0, 27)}`).newline();
+    thermalLines(`${item.qty} x ${item.name}`, params.paperWidth === 80 ? 48 : 32).forEach(line => esc.text(line).newline());
+    for (const addon of item.addons || []) thermalLines(`  + ${addon.name}`, params.paperWidth === 80 ? 48 : 32).forEach(line => esc.text(line).newline());
+    if (item.notes) thermalLines(`  NOTE: ${item.notes}`, params.paperWidth === 80 ? 48 : 32).forEach(line => esc.text(line).newline());
   });
   return esc.separator().feed(3).cut().build();
 }
@@ -203,7 +241,7 @@ export function buildBillReceipt(params: {
   billNumber: string;
   orderType: string;
   tableName?: string;
-  items: { name: string; qty: number; price: number; notes?: string }[];
+  items: { name: string; qty: number; price: number; notes?: string; addons?: { name: string }[] }[];
   subtotal: number;
   discount: number;
   gst: number;
@@ -215,7 +253,11 @@ export function buildBillReceipt(params: {
   paymentPending?: boolean;
   cashier: string;
   time: string;
+  prebill?: boolean;
+  paperWidth?: number;
+  reprint?: boolean;
 }): Uint8Array {
+  const width = params.paperWidth === 58 ? 32 : 48;
   const esc = new EscPos()
     .init()
     .align(1)
@@ -238,6 +280,9 @@ export function buildBillReceipt(params: {
     .text(`Bill: ${params.billNumber}`)
     .newline();
 
+  if (params.prebill) esc.bold(true).text('PRE-BILL - UNPAID').newline().bold(false);
+  if (params.reprint) esc.bold(true).text('REPRINT').newline().bold(false);
+
   if (params.tableName) {
     esc.text(`Table: ${params.tableName}`).newline();
   }
@@ -253,12 +298,11 @@ export function buildBillReceipt(params: {
     .separator();
 
   params.items.forEach(item => {
-    const name = item.name.substring(0, 21).padEnd(21);
-    const qty = String(item.qty).padStart(3);
-    const amt = `${(item.qty * item.price).toFixed(2)}`.padStart(8);
-    esc.text(`${name}${qty}${amt}`).newline();
+    thermalLines(`${item.qty} x ${item.name}`, width).forEach(line => esc.text(line).newline());
+    esc.text(`  Rs. ${(item.qty * item.price).toFixed(2)}`).newline();
+    for (const addon of item.addons || []) thermalLines(`  + ${addon.name}`, width).forEach(line => esc.text(line).newline());
     if (item.notes) {
-      esc.text(`  ** ${item.notes.substring(0, 27)}`).newline();
+      thermalLines(`  NOTE: ${item.notes}`, width).forEach(line => esc.text(line).newline());
     }
   });
 
@@ -298,5 +342,15 @@ export function buildBillReceipt(params: {
     .cut();
 
   return esc.build();
+}
+
+function thermalLines(value: string, width: number): string[] {
+  let text = value.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ');
+  const rows: string[] = [];
+  while (text.length > width) {
+    let cut = text.lastIndexOf(' ', width); if (cut < 1) cut = width;
+    rows.push(text.slice(0, cut)); text = text.slice(cut).trimStart();
+  }
+  if (text) rows.push(text); return rows;
 }
 

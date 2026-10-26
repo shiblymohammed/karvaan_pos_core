@@ -1,4 +1,5 @@
 import { authorizedFetch } from '../../services/authFetch';
+import { businessDate } from '../../services/businessDate';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -69,7 +70,7 @@ const ORDER_TYPE_COLORS: Record<string, string> = {
 };
 
 function dateStr(d: Date) {
-  return d.toISOString().slice(0, 10);
+  return businessDate(d);
 }
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ export const AdminDashboard: React.FC = () => {
   const shiftDate = (days: number) => {
     const d = new Date(viewDate);
     d.setDate(d.getDate() + days);
-    if (d <= new Date()) setViewDate(dateStr(d));
+    if (dateStr(d) <= businessDate()) setViewDate(dateStr(d));
   };
 
   const isToday = viewDate === dateStr(new Date());

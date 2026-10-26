@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { createId } from '../services/createId';
+import { StockApprovalDialog, StockApprovalRequest } from '../components/StockApprovalDialog';
 import { motion, LayoutGroup } from 'framer-motion';
 import {
   ChevronUp
@@ -28,8 +30,11 @@ import { ParkedOrdersView } from '../components/pos/ParkedOrdersView';
 import { MenuCatalogue } from '../components/pos/MenuCatalogue';
 import { emitSettleBill } from '../services/socket';
 import { getTerminalId } from '../services/serverConfig';
+import { getPrinterProfile } from '../services/printerProfile';
+import { receiptItemsFromSnapshot } from '../services/receiptData';
 
 export const POSScreen: React.FC = () => {
+  const shortcutActions = React.useRef({ kitchen: () => {}, prebill: () => {} });
   const {
     items, selectedTableId, selectedTableName, selectedWaiter,
     discount, heldOrders, customer, isOffline,
@@ -42,7 +47,6 @@ export const POSScreen: React.FC = () => {
   } = useCartStore();
 
   const { tables, floors, setTableStatus } = useTableStore();
-  const { depleteForOrder } = useInventoryStore();
   const { notes: predefinedNotes, discounts: predefinedDiscounts, orderPrefix, parcelChargeAmount, operatingMode } = useSettingsStore();
 
   React.useEffect(() => {
@@ -60,6 +64,8 @@ export const POSScreen: React.FC = () => {
   const [returnModalData, setReturnModalData] = useState<ReturnOrderData | null>(null);
   const [managerAuthAction, setManagerAuthAction] = useState<{ isOpen: boolean; title: string; desc: string; onConfirm: (authBy: string) => void } | null>(null);
   const [showParkedOrders, setShowParkedOrders] = useState(false);
+  const [stockApproval, setStockApproval] = useState<StockApprovalRequest | null>(null);
+  const cartOperation = useCartStore(state => state.isParking ? 'Saving parked order…' : state.isSendingKot ? 'Sending kitchen order…' : state.isResuming ? 'Opening saved order…' : '');
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
@@ -109,6 +115,7 @@ export const POSScreen: React.FC = () => {
   // ─── Global Keyboard Shortcuts ────────────────────────────────────────────
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (settleState.isProcessing || stockApproval || cartOperation) return;
       const target = e.target as HTMLElement;
       const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
 
@@ -126,15 +133,15 @@ export const POSScreen: React.FC = () => {
         }
       }
 
-      if (isInput) return;
+      if (isInput || settleState.isOpen || receiptType) return;
 
       if (e.key === 'F1') {
         e.preventDefault();
         const hasNewItems = items.some(i => i.status === 'NEW');
-        if (hasNewItems) sendKot();
+        if (hasNewItems) shortcutActions.current.kitchen();
       } else if (e.key === 'F2') {
         e.preventDefault();
-        if (items.length > 0) setReceiptType('PREBILL');
+        if (items.length > 0) shortcutActions.current.prebill();
       } else if (e.key === 'F9') {
         e.preventDefault();
         setShowCustomerModal(true);
@@ -145,12 +152,12 @@ export const POSScreen: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     showCustomerModal, showMapPicker, settleState.isOpen,
-    customizeProduct, returnModalData, managerAuthAction, isMobileCartOpen,
-    items, selectedTableId,
+    customizeProduct, returnModalData, managerAuthAction, isMobileCartOpen, stockApproval, cartOperation,
+    items, selectedTableId, receiptType,
   ]);
 
   // ─── Checkout Handler ─────────────────────────────────────────────────────
-  const handleCheckout = async (tenders: TenderState) => {
+  const handleCheckout = async (tenders: TenderState, stockAuthorization?: string) => {
     if (items.length === 0 || settleState.isProcessing) return;
 
     if (tenders.CREDIT > 0 && (!customer?.phone || !customer?.name)) {
@@ -181,10 +188,14 @@ export const POSScreen: React.FC = () => {
     };
 
     useCartStore.setState({ checkoutBillNumber: billData.billNumber, currentOrderNumber: billData.orderNumber });
-    const result = await emitSettleBill({ ...billData, orderType, tableId: selectedTableId, expectedOrderVersion: useCartStore.getState().orderVersion, customerName: customer?.name, customerPhone: customer?.phone });
+    const result = await emitSettleBill({ ...billData, stockAuthorization, orderType, tableId: selectedTableId, expectedOrderVersion: useCartStore.getState().orderVersion, customerName: customer?.name, customerPhone: customer?.phone });
 
     if (result.status === 'ERROR') {
       setSettleState(prev => ({ ...prev, isProcessing: false }));
+      if (result.reason === 'STOCK_APPROVAL_REQUIRED' && result.stockChallenge) {
+        setStockApproval({ stockChallenge: result.stockChallenge, shortages: result.shortages, onApproved: async authorization => { setStockApproval(null); await handleCheckout(tenders, authorization); } });
+        return;
+      }
       toast.error(result.message || 'Checkout was not saved. Review pending actions.');
       return;
     }
@@ -214,23 +225,24 @@ export const POSScreen: React.FC = () => {
     }
 
     const savedBill = result.status === 'OK' ? result.data : null;
-    setLastBill({ ...billData, ...(savedBill ? { subtotal: savedBill.subtotal, discount: savedBill.discount, cgst: savedBill.cgst, sgst: savedBill.sgst, grandTotal: savedBill.grandTotal, method: savedBill.paymentMethod, tenders: JSON.parse(savedBill.tenders || '{}'), items: JSON.parse(savedBill.invoiceItems || 'null')?.map((line: any) => ({ ...line, addons: [] })) || billData.items } : {}), pendingConfirmation: result.status === 'QUEUED' });
+    const invoiceItems = savedBill ? JSON.parse(savedBill.invoiceItems || 'null') : null;
+    setLastBill({ ...billData, ...(savedBill ? { subtotal: savedBill.subtotal, discount: savedBill.discount, cgst: savedBill.cgst, sgst: savedBill.sgst, grandTotal: savedBill.grandTotal, method: savedBill.paymentMethod, tenders: JSON.parse(savedBill.tenders || '{}'), items: invoiceItems ? receiptItemsFromSnapshot(invoiceItems) : billData.items } : {}), pendingConfirmation: result.status === 'QUEUED' });
     setSettleState({ isOpen: false, method: 'CASH', isProcessing: false });
     setReceiptType('CHECKOUT');
     clearCart();
   };
 
   // ─── Delivery Dispatch ────────────────────────────────────────────────────
-  const handleDispatchDelivery = async (isPrepaid: boolean = false) => {
+  const handleDispatchDelivery = async (isPrepaid: boolean = false, stockAuthorization?: string) => {
     if (!items.length || settleState.isProcessing) return;
     setSettleState(previous => ({ ...previous, isProcessing: true }));
     const identity = useCartStore.getState();
-    const orderNumber = identity.currentOrderNumber || orderPrefix + '-' + crypto.randomUUID();
-    const billNumber = identity.checkoutBillNumber || 'DEL-' + crypto.randomUUID();
+    const orderNumber = identity.currentOrderNumber || orderPrefix + '-' + createId();
+    const billNumber = identity.checkoutBillNumber || 'DEL-' + createId();
     useCartStore.setState({ currentOrderNumber: orderNumber, checkoutBillNumber: billNumber });
     const total = Number((grandTotal + (deliveryFee || 0)).toFixed(2));
     const result = await useDeliveryStore.getState().addOrder({
-      orderNumber, billNumber, orderType: 'DELIVERY',
+      orderNumber, billNumber, orderType: 'DELIVERY', stockAuthorization,
       customerName: customer?.name || 'Guest', customerPhone: customer?.phone || '',
       deliveryAddress: deliveryAddress || '', deliveryFee: deliveryFee || 0,
       items: items.map(item => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price, notes: item.notes, addons: item.addons })),
@@ -239,7 +251,11 @@ export const POSScreen: React.FC = () => {
       waiterName: selectedWaiter || undefined,
     });
     setSettleState(previous => ({ ...previous, isProcessing: false }));
-    if (result.status === 'ERROR') { toast.error(result.message || 'Delivery was not saved'); return; }
+    if (result.status === 'ERROR') {
+      if (result.reason === 'STOCK_APPROVAL_REQUIRED' && result.stockChallenge) setStockApproval({ stockChallenge: result.stockChallenge, shortages: result.shortages, onApproved: async authorization => { setStockApproval(null); await handleDispatchDelivery(isPrepaid, authorization); } });
+      else toast.error(result.message || 'Delivery was not saved');
+      return;
+    }
     if (result.status === 'QUEUED') toast.info('Delivery saved on this device; awaiting server confirmation.');
     setLastBill({ orderNumber, billNumber, table: 'Delivery', cashier: currentUser?.name || 'Staff', waiter: selectedWaiter || 'Dispatch', items: [...items], subtotal, discount, cgst, sgst, deliveryFee: deliveryFee || 0, grandTotal: total, method: isPrepaid ? 'UPI' : 'COD', customerName: customer?.name, customerPhone: customer?.phone, time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(), pendingConfirmation: result.status === 'QUEUED', paymentPending: !isPrepaid });
     setReceiptType('CHECKOUT');
@@ -258,6 +274,7 @@ export const POSScreen: React.FC = () => {
       waiter: selectedWaiter || 'Counter Staff',
       items: [...items], subtotal, discount, cgst, sgst, grandTotal,
       method: 'UNPAID', time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(),
+      tableId: selectedTableId,
     };
     setLastBill(billData);
     setReceiptType('PREBILL');
@@ -265,12 +282,14 @@ export const POSScreen: React.FC = () => {
   };
 
   // ─── KOT / KDS + Print ───────────────────────────────────────────────────
-  const handleKdsAndPrint = () => {
+  const handleSendKitchen = async () => {
     const newItems = items.filter(i => i.status === 'NEW');
     if (newItems.length === 0) return;
     const termId = getTerminalId();
+    const kitchenOrderNumber = useCartStore.getState().currentOrderNumber || `${orderPrefix}-${termId}-${createId()}`;
+    useCartStore.setState({ currentOrderNumber: kitchenOrderNumber });
     const kotData = {
-      orderNumber: currentOrderNumber || `${orderPrefix}-${termId}-${Math.floor(1000 + Math.random() * 9000)}`,
+      orderNumber: kitchenOrderNumber,
       billNumber: `KOT-${termId}-${Date.now().toString(36).toUpperCase().slice(-5)}`,
       table: selectedTableName || 'Takeaway',
       cashier: currentUser?.name || 'System',
@@ -279,14 +298,20 @@ export const POSScreen: React.FC = () => {
       subtotal: 0, discount: 0, cgst: 0, sgst: 0, grandTotal: 0,
       method: 'KOT_PRINT', time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(),
     };
-    setLastBill(kotData);
+    const result = await sendKot();
+    if (!result || result.status === 'ERROR') return;
+    if (result.status === 'QUEUED') { toast.info('Kitchen printing will be decided when the server confirms this order.'); return; }
+    if (result.data?.printJobId) { toast.info('Kitchen ticket queued for the restaurant printer.'); return; }
+    if (!getPrinterProfile().browserKitchenPrint) return;
+    setLastBill({ ...kotData, pendingConfirmation: false });
     setReceiptType('KOT');
-    sendKot();
   };
 
+  shortcutActions.current = { kitchen: () => { void handleSendKitchen(); }, prebill: handlePrintPreBill };
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 text-slate-800 pb-[72px] md:pb-0">
+      {cartOperation && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40" role="status" aria-live="polite"><div className="rounded-2xl bg-white p-5 shadow-xl font-bold">{cartOperation}</div></div>}
 
       {/* LEFT: Product Catalog or Parked Orders */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
@@ -381,7 +406,7 @@ export const POSScreen: React.FC = () => {
           });
         }}
         onPreBill={handlePrintPreBill}
-        onSendKotPrint={handleKdsAndPrint}
+        onSendKitchen={handleSendKitchen}
         onManagerAuthRequest={setManagerAuthAction}
         onDispatchDelivery={handleDispatchDelivery}
       />
@@ -389,7 +414,7 @@ export const POSScreen: React.FC = () => {
       {/* Settlement Modal */}
       <SettlementModal
         isOpen={settleState.isOpen}
-        onClose={() => setSettleState({ ...settleState, isOpen: false, isProcessing: false })}
+        onClose={() => { if (!settleState.isProcessing) setSettleState({ ...settleState, isOpen: false }); }}
         onConfirm={handleCheckout}
         isProcessing={settleState.isProcessing}
         totalAmount={grandTotal}
@@ -469,6 +494,7 @@ export const POSScreen: React.FC = () => {
         actionDescription={managerAuthAction?.desc}
         onSuccess={(authBy) => { if (managerAuthAction?.onConfirm) managerAuthAction.onConfirm(authBy); }}
       />
+      {stockApproval && <StockApprovalDialog key={stockApproval.stockChallenge} request={stockApproval} onClose={() => setStockApproval(null)} />}
     </div>
   );
 };

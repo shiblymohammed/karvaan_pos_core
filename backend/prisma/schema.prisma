@@ -51,6 +51,9 @@ model Restaurant {
   returnRecords  ReturnRecord[]
   settings       SystemSetting[]
   backups        BackupLog[]
+  printAgents    PrintAgent[]
+  printDestinations PrintDestination[]
+  printJobs      PrintJob[]
 }
 
 // ---------------------------------------------------------
@@ -128,6 +131,8 @@ model Product {
   isAvailable     Boolean  @default(true)
   isArchived      Boolean  @default(false)
   prepTimeMinutes Int      @default(12)
+  recipeInstructions String?
+  recipeBatchSize Float @default(1)
   imageEmoji      String?
   imageUrl        String?
   createdAt       DateTime @default(now())
@@ -341,6 +346,8 @@ model WasteLog {
   id         String   @id @default(uuid())
   itemName   String
   quantity   Float
+  ingredientId String?
+  costLoss Float?
   unit       String   @default("pcs")
   reason     String // "RETURN", "SPOILAGE", "EXPIRY", "DAMAGE"
   orderId    String?
@@ -424,7 +431,8 @@ model RecipeIngredient {
   id              String   @id @default(uuid())
   productId       String
   inventoryItemId String
-  quantity        Float    // the amount to deduct from stock
+  quantity        Float    // net recipe quantity; waste allowance is applied when consuming stock
+  wasteFactorPercent Float @default(0)
   unit            String   // the unit of measurement (must match InventoryItem)
   updatedAt       DateTime @updatedAt @default(now())
   syncedAt        DateTime?
@@ -433,5 +441,63 @@ model RecipeIngredient {
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
   @@unique([productId, inventoryItemId])
+}
+
+// Agent credentials are hashed. Jobs keep immutable destination/document snapshots.
+model PrintAgent {
+  id String @id @default(uuid())
+  restaurantId String
+  name String
+  tokenHash String?
+  pairingHash String? @unique
+  pairingExpiresAt DateTime?
+  revokedAt DateTime?
+  lastSeenAt DateTime?
+  createdAt DateTime @default(now())
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  @@index([restaurantId])
+}
+
+model PrintDestination {
+  id String @id @default(uuid())
+  restaurantId String
+  role String
+  agentId String
+  name String
+  transport String
+  address String
+  port Int @default(9100)
+  paperWidth Int @default(80)
+  autoPrint Boolean @default(false)
+  revision Int @default(0)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  @@unique([restaurantId, role])
+}
+
+model PrintJob {
+  id String @id @default(uuid())
+  restaurantId String
+  agentId String
+  dedupeKey String
+  kind String
+  reference String
+  document String
+  destination String
+  state String @default("QUEUED")
+  claimToken String?
+  leaseUntil DateTime?
+  parentId String?
+  requestedBy String
+  resolution String?
+  reviewedAt DateTime?
+  reviewedBy String?
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  @@unique([restaurantId, dedupeKey])
+  @@index([restaurantId, createdAt])
+  @@index([agentId, state, createdAt])
+  @@index([restaurantId, state, reviewedAt, createdAt])
 }
 

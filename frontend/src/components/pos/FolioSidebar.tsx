@@ -21,7 +21,7 @@ interface FolioSidebarProps {
   onShowCustomerModal: (show: boolean) => void;
   onShowMapPicker: (show: boolean) => void;
   onReturnFolio: () => void;
-  onSendKotPrint: () => void;
+    onSendKitchen: () => void;
   onPreBill: () => void;
   onManagerAuthRequest: (action: any) => void;
   onDispatchDelivery?: (isPrepaid: boolean) => void;
@@ -36,7 +36,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
   onShowMapPicker,
   onReturnFolio,
   onPreBill,
-  onSendKotPrint,
+  onSendKitchen,
   onManagerAuthRequest,
   onDispatchDelivery,
   onCompleteDelivery
@@ -222,7 +222,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         setShowCustomerModal={onShowCustomerModal}
         hasItems={items.length > 0}
         hasSentItems={items.some(i => i.status === 'SENT')}
-        onParkFolio={holdCurrentOrder}
+        onParkFolio={() => { void holdCurrentOrder(); }}
         onClearFolio={handleClearFolio}
         onReturnFolio={onReturnFolio}
         currentUserRole={currentUser?.role}
@@ -272,8 +272,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
         currentUserRole={currentUser?.role}
         onApplyDiscount={setDiscount}
         onSettle={onSettle}
-        onSendKot={sendKot}
-        onSendKotPrint={onSendKotPrint}
+          onSendKot={onSendKitchen}
         onPreBill={onPreBill}
         onCompleteDelivery={onCompleteDelivery || (() => {})}
         onDispatchDelivery={onDispatchDelivery || (() => {})}

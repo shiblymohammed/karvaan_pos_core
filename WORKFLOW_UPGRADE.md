@@ -67,6 +67,35 @@ Menu deletion now archives the product separately from its temporary 86'd availa
 
 ## Staging acceptance
 
-After deploying the latest source, verify `/health` includes `capabilities.inventoryPurchases: 1`. A healthy response without that marker does not confirm this backend update. Updating a desktop client requires rebuilding/installing the Windows app; updating the VPS frontend alone does not replace an installed app. The recovery/connectivity follow-up passes all 19 frontend queue/storage tests. Inventory commands check API compatibility before sending, and connection/acknowledgment failures remain visible without losing action identities.
+After deploying the latest source, verify `/health` includes `capabilities.inventoryPurchases: 1` and `capabilities.versionedAdminConfig: 1`. A healthy response without those markers does not confirm this backend update. Updating a desktop client requires rebuilding/installing the Windows app; updating the VPS frontend alone does not replace an installed app. Inventory and admin commands check API compatibility before sending, and connection/acknowledgment failures remain visible without losing action identities.
 
-The automated suite passes 57 tests and both app builds. Before live service, exercise counter checkout, another waiter's added items, stale-checkout review, COD/prepaid delivery, split collection/remittance, partial credit repayment, partial/remaining refunds, PO intake and reload, rejected Force Sync actions, disconnection/reconnection, receipt reprint, and backup restoration. Check invoice count, stock, balances, and sales/collection totals. CI includes a container/proxy/restore smoke test; it has not run remotely from this checkout.
+Before live service, exercise counter checkout, another waiter's added items, stale-checkout review, COD/prepaid delivery, split collection/remittance, partial credit repayment, partial/remaining refunds, PO intake and reload, rejected Force Sync actions, disconnection/reconnection, receipt reprint, and backup restoration. Check invoice count, stock, balances, and sales/collection totals. CI includes a container/proxy/restore smoke test; it has not run remotely from this checkout.
+
+## Multi-device and browser-tab update
+
+All devices for a restaurant must use the same operational backend and updated application version. Independent local/cloud databases still use timestamp replication and are not safe for simultaneous operational writes.
+
+- Cached stores now include backend, restaurant, account, and terminal in their namespace. New caches are rebuilt from server snapshots. Older ambiguous keys remain intact; they are never guessed to belong to the selected backend/account.
+- Fresh admin stores have an unknown revision until a server snapshot is loaded. They cannot publish a demo/empty list as version zero and erase existing server data. Fresh staff stores do not contain demo credentials.
+- Active carts use tab-local session storage, so two open tabs cannot overwrite each other's cart. Separate local recovery copies survive a closed tab. Review saved local drafts opens a copy only into an empty cart, after confirming its restaurant/account and checking current order/bill history. Originals remain saved. Older held orders and other ambiguous cached data remain in their original storage records for manual recovery.
+- Account, lock, and connection changes in another tab stop the old tab and require a reload. HTTP and socket responses from the old session cannot update the new account's stores.
+- IndexedDB queue processing uses a renewable lease per backend/restaurant/account. Another tab cannot send while that lease is active. If a suspended/crashed tab loses its lease, a new tab retries the same action identity, and the old sender stops before sending another action. Server receipts still prevent duplicate purchases or invoices after lost acknowledgments.
+- Staff, recipe, and settings saves include the server version they were edited against. A competing outdated save is rejected and preserved in the confirmation panel. Reload current server data, compare Saved edit for comparison, then remove reconciled actions and re-enter only missing edits. Retry does not silently advance the version or overwrite another manager's work. Removing a stock item also changes the recipe version.
+- Settings autosave is durable and versioned. A remote broadcast cannot cancel an edit during its debounce window; a scoped draft remains available for comparison. Earlier confirmations cannot replace newer queued edits.
+- Older unversioned staff/recipe snapshots remain saved separately for review and are not replayed. If an older tab blocks the IndexedDB schema update, close older Karvaan tabs and reload; do not clear site data or delete pending actions.
+
+Deploy backend and frontend together with the Compose commands above, then close older tabs and reopen/refresh every browser/PWA. Rebuild/install each Windows client. On two devices, edit the same settings/recipe/staff entry from the same starting version; one save must succeed and the other must report a reviewable conflict. With two tabs, queue one purchase offline and reconnect both; stock must increase once. Switch accounts in one tab and verify the other shows the reload message while retaining its original draft and queue.
+
+## Stock approval and workflow follow-up
+
+This source now requires manager approval before checkout or delivery dispatch can consume more recorded ingredients than are available. Configure an active administrator/manager PIN in Staff first. At a shortage prompt, review required/available quantities and enter the manager PIN and a reason. Approval is scoped to the original sale, quantities, and shortage and expires after 15 minutes. A larger shortage or deactivated manager requires fresh approval. Pending actions offer the same approval workflow; retry the original sale rather than creating a replacement invoice.
+
+Approvals and their reasons appear under Inventory & Recipes, Waste tab. Correct stock counts or record genuinely missing purchases after reviewing the exception. Previous committed invoices are not changed automatically. Normal sales with sufficient stock require no override.
+
+Waste now saves its stock movement, operator, and historical cost in one transaction. Recipe waste allowances and preparation metadata persist and are included consistently in cost and consumption. These additions require the updated database schema and rebuilt clients. Check `/health` for `inventoryWaste: 1` and `stockShortageApproval: 1`. Older waste/delivery snapshots remain recovery records and do not replay.
+
+See [UX_WORKFLOW_REVIEW.md](UX_WORKFLOW_REVIEW.md) for the confirmed UI fixes and remaining combo, guest QR, forecasting, packaging, tooling, and installation work. The automated suites now contain 110 POS tests and 12 local print-worker tests; real restaurant acceptance remains required.
+
+## Browser printing with the VPS
+
+See [PRINTING_WORKFLOW.md](PRINTING_WORKFLOW.md) for the paired local worker, Windows installation, durable queue, paper-review recovery, and staging checks. Backend and frontend must be updated together. `/health` now advertises `durablePrinting: 1`. Automatic printing is off until destinations are assigned and tested. The frontend Docker build context is the repository root; use the updated Docker Compose file.
