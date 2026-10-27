@@ -16,7 +16,13 @@
 
 const STORAGE_KEY = 'karvaan_server_url';
 const OP_MODE_KEY = 'karvaan_op_mode';
-const DEFAULT_URL = 'http://127.0.0.1:3001';
+export const DEFAULT_URL = 'http://wq8ss.aiccloud.online';
+
+function isCapacitorApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  const cap = (window as any).Capacitor;
+  return !!(cap && (cap.isNativePlatform?.() || cap.platform === 'android' || cap.platform === 'ios'));
+}
 
 export type OperatingMode = 'NODE_SERVER' | 'ANDROID_MASTER' | 'WAITER_CLIENT';
 
@@ -48,7 +54,7 @@ export function getServerUrl(): string {
   const automaticUrl = getAutomaticServerUrl();
   if (automaticUrl) return automaticUrl;
 
-  // 4. Fallback: local development / desktop app
+  // 4. Fallback: default cloud VPS server
   return DEFAULT_URL;
 }
 
@@ -63,6 +69,9 @@ export function clearServerUrl(): void {
 }
 
 export function isServerConfigured(): boolean {
+  // On Capacitor APK, bypass the setup window and connect directly to the cloud VPS
+  if (isCapacitorApp()) return true;
+
   const mode = getOperatingMode();
   if (mode === 'ANDROID_MASTER') return false;
 

@@ -5,7 +5,8 @@ const config: CapacitorConfig = {
   appName: 'Karvaan POS',
   webDir: 'dist',
   server: {
-    androidScheme: 'https',
+    androidScheme: 'http',
+    cleartext: true,
     // Allow mixed content so the app can connect to local HTTP servers (192.168.x.x)
     allowNavigation: ['*'],
   },
