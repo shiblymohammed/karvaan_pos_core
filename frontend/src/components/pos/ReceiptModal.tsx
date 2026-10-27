@@ -3,6 +3,7 @@ import { CheckCircle2, Printer, Share2, RotateCcw, X, Loader2 } from 'lucide-rea
 import { toast } from '../../store/useToastStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { isTauri, printReceipt, buildBillReceipt, buildKotReceipt, printViaRawBT, isAndroid } from '../../services/tauriCommands';
+import { isCapacitor, getSavedBtPrinter, printViaBluetoothNative } from '../../services/bluetoothPrinter';
 import { apiClient } from '../../services/apiClient';
 import { getPrinterProfile, canBackendPrintLocally } from '../../services/printerProfile';
 import { printNetworkReceipt } from '../../services/tauriCommands';
@@ -64,7 +65,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
   const paper = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const profile = getPrinterProfile();
+  const isCapacitorApp = isCapacitor();
+  const savedBtPrinter = getSavedBtPrinter();
   const isRawBTMode = !isTauri() && profile.useRawBT;
+  const isMobileBtMode = (isCapacitorApp && !!savedBtPrinter) || isRawBTMode;
 
   React.useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -74,7 +78,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
 
   const handlePrint = async (forceBrowser = false, forceRawBT = false) => {
     if (printing.current || (isReprint && (!reprintChecked || !reprintReason.trim()))) return;
-    if (printJob && !isReprint && !forceBrowser && !forceRawBT && !isRawBTMode) { window.dispatchEvent(new Event('karvaan-open-print-jobs')); return; }
+    if (printJob && !isReprint && !forceBrowser && !forceRawBT && !isMobileBtMode) { window.dispatchEvent(new Event('karvaan-open-print-jobs')); return; }
     printing.current = true;
     setIsPrinting(true);
     const currentProfile = getPrinterProfile();
@@ -85,6 +89,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
       ? buildKotReceipt({ orderNumber: bill.orderNumber || bill.billNumber, tableName: bill.table, items: lineItems.map(item => ({ name: item.name, qty: item.quantity, notes: item.notes, addons: item.addons })), time: `${bill.date} ${bill.time}`, paperWidth })
       : buildBillReceipt({ restaurantName: receiptName, restaurantAddress: receiptAddress, gstin: receiptGstin, orderType, billNumber: bill.billNumber, tableName: bill.table, cashier: bill.cashier || currentUser?.name || 'Staff', items: lineItems.map(item => ({ name: item.name, qty: item.quantity, price: item.price, notes: item.notes, addons: item.addons })), subtotal: bill.subtotal, discount: bill.discount || 0, gst: bill.cgst + bill.sgst, grandTotal: bill.grandTotal, paymentMethod: bill.method, tenders: bill.tenders, deliveryFee: bill.deliveryFee, pendingConfirmation: bill.pendingConfirmation, paymentPending: bill.paymentPending, prebill: receiptType === 'PREBILL', reprint: isReprint, time: `${bill.date} ${bill.time}`, paperWidth });
     try {
+      if (!forceBrowser && isCapacitorApp && savedBtPrinter) {
+        await printViaBluetoothNative(bytes, savedBtPrinter.address);
+        toast.success(`Receipt printed via Bluetooth (${savedBtPrinter.name})`);
+        return;
+      }
       if (forceRawBT || (!forceBrowser && !isTauri() && currentProfile.useRawBT)) {
         printViaRawBT(bytes);
         toast.success('Sent to RawBT (Bluetooth printer)');
@@ -133,7 +142,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
         <div className={`w-12 h-12 rounded-full flex items-center justify-center border ${receiptType === 'CHECKOUT' ? 'bg-pos-accent/10 text-emerald-500 border-pos-accent/30' : receiptType === 'KOT' ? 'bg-rose-100 text-rose-500 border-rose-300' : 'bg-pos-bg text-pos-text-muted border-pos-border'}`}>
           {receiptType === 'CHECKOUT' ? <CheckCircle2 className="h-7 w-7 shrink-0" /> : <Printer className="h-6 w-6 shrink-0" />}
         </div>
-        {printJob && !isRawBTMode && <p className="text-xs font-bold text-slate-600" role="status">{printStateLabel(printJob.state)}. Use Printing to check or recover this job.</p>}
+        {printJob && !isMobileBtMode && <p className="text-xs font-bold text-slate-600" role="status">{printStateLabel(printJob.state)}. Use Printing to check or recover this job.</p>}
         <div>
           <h3 className="font-extrabold text-lg text-pos-text">
             {isReprint ? 'Receipt copy' : bill.pendingConfirmation ? 'Saved on this device — awaiting confirmation' : bill.paymentPending ? 'Delivery dispatched — payment pending' : receiptType === 'CHECKOUT' ? 'Bill Settled Successfully!' : receiptType === 'KOT' ? 'Kitchen Order Ticket' : 'Pre-Bill Preview'}
@@ -239,13 +248,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
             <span>
               {isPrinting
                 ? 'Sending…'
-                : (printJob && !isRawBTMode)
+                : (printJob && !isMobileBtMode)
                 ? 'Check Print Job'
-                : receiptType === 'KOT'
-                ? isRawBTMode ? 'Print KOT (RawBT)' : 'Print Kitchen Ticket'
-                : receiptType === 'PREBILL'
-                ? isRawBTMode ? 'Print Pre-bill (RawBT)' : 'Print Pre-bill'
-                : isRawBTMode ? 'Print via RawBT' : 'Print Receipt'}
+                : isCapacitorApp && savedBtPrinter
+                ? receiptType === 'KOT' ? 'Print KOT (Bluetooth)' : 'Print (Bluetooth)'
+                : isRawBTMode
+                ? receiptType === 'KOT' ? 'Print KOT (RawBT)' : 'Print (RawBT)'
+                : 'Print Receipt'}
             </span>
           </button>
           <button
@@ -260,7 +269,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
         </div>
 
         <div className="flex items-center justify-center gap-3 text-xs text-pos-text-muted">
-          {!isRawBTMode && (
+          {!isMobileBtMode && (
             <button
               disabled={isPrinting || (isReprint && (!reprintChecked || !reprintReason.trim()))}
               className="underline hover:text-pos-text disabled:opacity-40"

@@ -17,7 +17,11 @@ Thumbs.db
 frontend/dist/
 frontend/public/karvaan-print-agent.zip
 frontend/node_modules/
-frontend/android/
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/local.properties
+frontend/android/.idea/
 frontend/ios/
 frontend/src-tauri/target/
 # Vite build cache artifacts
