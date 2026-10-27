@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSettingsStore, resetSessionSettings } from '../store/useSettingsStore';
+import { useMenuStore } from '../store/useMenuStore';
 import { initSocketListeners, socket, startMasterSyncPolling, stopMasterSyncPolling } from '../services/socket';
 import { isServerConfigured, getOperatingMode } from '../services/serverConfig';
 import { startAndroidMasterServer, stopAndroidMasterServer } from '../services/localServer';
@@ -62,7 +63,10 @@ export function useAppInit() {
         try { assertCurrentSession(); } catch { return; }
         const token = useAuthStore.getState().accessToken;
         socket.auth = { restaurantId: currentUser.restaurantId, token };
-        await useSettingsStore.getState().fetchSettings();
+        await Promise.allSettled([
+          useSettingsStore.getState().fetchSettings(),
+          useMenuStore.getState().fetchMenu(),
+        ]);
         if (cancelled) return;
         try { assertCurrentSession(); } catch { return; }
         initializeCatalogConfig();

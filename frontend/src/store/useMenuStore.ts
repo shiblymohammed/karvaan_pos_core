@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { tenantStorage } from './tenantStorage';
 import { canEditConfig } from '../services/configSnapshot';
+import { authorizedFetch } from '../services/authFetch';
 
 export interface Product {
   id: string;
@@ -37,6 +38,9 @@ interface MenuState {
   products: Product[];
   categories: Category[];
 
+  // Network sync
+  fetchMenu: () => Promise<void>;
+
   // Product actions
   addProduct: (product: Omit<Product, 'id' | 'isAvailable'>) => void;
   updateProduct: (id: string, product: Partial<Product>) => void;
@@ -57,6 +61,24 @@ export const useMenuStore = create<MenuState>()(
       products: [],
       serverRevision: -1,
       categories: [],
+
+      fetchMenu: async () => {
+        try {
+          const res = await authorizedFetch('/billing/menu');
+          if (res.ok) {
+            const data = await res.json();
+            if (data && Array.isArray(data.products) && Array.isArray(data.categories)) {
+              set({
+                products: data.products.filter((p: Product) => !p.isArchived),
+                categories: data.categories,
+                serverRevision: typeof data.serverRevision === 'number' ? data.serverRevision : 0,
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch menu from backend', e);
+        }
+      },
 
       // ─── Product Actions ───────────────────────────────────────────────────────
 

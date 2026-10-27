@@ -55,6 +55,13 @@ export const POSScreen: React.FC = () => {
     }
   }, [operatingMode, orderType, setOrderType]);
 
+  React.useEffect(() => {
+    const { serverRevision, products, fetchMenu } = useMenuStore.getState();
+    if (serverRevision < 0 || products.length === 0) {
+      void fetchMenu();
+    }
+  }, []);
+
   // ─── Modal / UI State ─────────────────────────────────────────────────────
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);

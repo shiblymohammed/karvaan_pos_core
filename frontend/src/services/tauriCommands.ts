@@ -41,14 +41,25 @@ export function uint8ArrayToBase64(bytes: Uint8Array): string {
 export function printViaRawBT(bytes: Uint8Array): boolean {
   try {
     const base64 = uint8ArrayToBase64(bytes);
-    const rawbtUrl = `rawbt:data:application/octet-stream;base64,${base64}`;
+    // RawBT standard payload format for binary/ESC-POS is "base64,<payload>"
+    // The Android Intent URL scheme is officially recommended for Android Chrome / PWAs
+    // as Chrome natively handles intent:#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;
+    const intentUrl = `intent:base64,${base64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+    const directUrl = `rawbt:base64,${base64}`;
 
-    const link = document.createElement('a');
-    link.href = rawbtUrl;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => link.remove(), 1000);
+    const urlToUse = isAndroid() ? intentUrl : directUrl;
+
+    try {
+      window.location.href = urlToUse;
+    } catch {
+      // Fallback: create an anchor element and click it
+      const link = document.createElement('a');
+      link.href = urlToUse;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => link.remove(), 1000);
+    }
     return true;
   } catch (err) {
     console.error('Failed to trigger RawBT intent:', err);

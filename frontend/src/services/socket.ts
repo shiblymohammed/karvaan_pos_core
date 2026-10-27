@@ -181,14 +181,16 @@ export function initSocketListeners() {
     
   });
 
-  // Lazy-load stores to avoid circular dep at module parse time
-  import('../store/useKdsStore').then(({ useKdsStore }) => {
-    import('../store/useTableStore').then(({ useTableStore }) => {
-      import('../store/cartStore').then(({ useCartStore }) => {
-        import('../store/useDeliveryStore').then(({ useDeliveryStore }) => {
-          import('../store/useStaffStore').then(({ useStaffStore }) => {
-                import('../store/useInventoryStore').then(({ useInventoryStore, applyInventorySnapshot }) => {
-              import('../store/useMenuStore').then(({ useMenuStore }) => {
+  // Lazy-load stores in parallel to avoid circular dep at module parse time
+  Promise.all([
+    import('../store/useKdsStore'),
+    import('../store/useTableStore'),
+    import('../store/cartStore'),
+    import('../store/useDeliveryStore'),
+    import('../store/useStaffStore'),
+    import('../store/useInventoryStore'),
+    import('../store/useMenuStore'),
+  ]).then(([{ useKdsStore }, { useTableStore }, { useCartStore }, { useDeliveryStore }, { useStaffStore }, { useInventoryStore, applyInventorySnapshot }, { useMenuStore }]) => {
 
         // --- On connect: receive master state snapshot ---
         onServer('sync_master_state', (masterState: any) => {
@@ -366,11 +368,5 @@ export function initSocketListeners() {
           console.log(`✅ [POS] Bill ${billData.billNumber} acknowledged by backend DB.`);
         });
 
-              });
-            });
-          });
-        });
-      });
-    });
   });
 }

@@ -74,7 +74,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
 
   const handlePrint = async (forceBrowser = false, forceRawBT = false) => {
     if (printing.current || (isReprint && (!reprintChecked || !reprintReason.trim()))) return;
-    if (printJob && !isReprint && !forceBrowser && !forceRawBT) { window.dispatchEvent(new Event('karvaan-open-print-jobs')); return; }
+    if (printJob && !isReprint && !forceBrowser && !forceRawBT && !isRawBTMode) { window.dispatchEvent(new Event('karvaan-open-print-jobs')); return; }
     printing.current = true;
     setIsPrinting(true);
     const currentProfile = getPrinterProfile();
@@ -133,7 +133,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
         <div className={`w-12 h-12 rounded-full flex items-center justify-center border ${receiptType === 'CHECKOUT' ? 'bg-pos-accent/10 text-emerald-500 border-pos-accent/30' : receiptType === 'KOT' ? 'bg-rose-100 text-rose-500 border-rose-300' : 'bg-pos-bg text-pos-text-muted border-pos-border'}`}>
           {receiptType === 'CHECKOUT' ? <CheckCircle2 className="h-7 w-7 shrink-0" /> : <Printer className="h-6 w-6 shrink-0" />}
         </div>
-        {printJob && <p className="text-xs font-bold text-slate-600" role="status">{printStateLabel(printJob.state)}. Use Printing to check or recover this job.</p>}
+        {printJob && !isRawBTMode && <p className="text-xs font-bold text-slate-600" role="status">{printStateLabel(printJob.state)}. Use Printing to check or recover this job.</p>}
         <div>
           <h3 className="font-extrabold text-lg text-pos-text">
             {isReprint ? 'Receipt copy' : bill.pendingConfirmation ? 'Saved on this device — awaiting confirmation' : bill.paymentPending ? 'Delivery dispatched — payment pending' : receiptType === 'CHECKOUT' ? 'Bill Settled Successfully!' : receiptType === 'KOT' ? 'Kitchen Order Ticket' : 'Pre-Bill Preview'}
@@ -239,7 +239,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
             <span>
               {isPrinting
                 ? 'Sending…'
-                : printJob
+                : (printJob && !isRawBTMode)
                 ? 'Check Print Job'
                 : receiptType === 'KOT'
                 ? isRawBTMode ? 'Print KOT (RawBT)' : 'Print Kitchen Ticket'
