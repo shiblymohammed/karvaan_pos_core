@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mail, Lock, EyeOff, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { Mail, Lock, EyeOff, ArrowRight, Check, Loader2, Server, Wifi, RefreshCw, Edit3, X } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
+import { getServerUrl, setServerUrl, probeServer } from '../services/serverConfig';
 
 export const FullLoginScreen: React.FC = () => {
   const { fullLogin } = useAuthStore();
@@ -12,6 +13,49 @@ export const FullLoginScreen: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
+
+  // Server health & switch modal state
+  const [serverUrl, setServerUrlState] = useState(getServerUrl());
+  const [serverPing, setServerPing] = useState<number | null>(null);
+  const [showServerModal, setShowServerModal] = useState(false);
+  const [customUrl, setCustomUrl] = useState(serverUrl);
+  const [isTestingServer, setIsTestingServer] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  useEffect(() => {
+    checkServerHealth(serverUrl);
+  }, [serverUrl]);
+
+  const checkServerHealth = async (urlToCheck: string) => {
+    try {
+      const res = await probeServer(urlToCheck);
+      setServerPing(res.ok ? res.latencyMs : -1);
+    } catch {
+      setServerPing(-1);
+    }
+  };
+
+  const handleTestAndSaveServer = async () => {
+    if (!customUrl.trim()) return;
+    setIsTestingServer(true);
+    setTestResult(null);
+    try {
+      const res = await probeServer(customUrl.trim());
+      if (res.ok) {
+        setServerUrl(customUrl.trim());
+        setServerUrlState(customUrl.trim());
+        setServerPing(res.latencyMs);
+        setTestResult({ ok: true, msg: `Connected successfully (${res.latencyMs}ms)` });
+        setTimeout(() => setShowServerModal(false), 800);
+      } else {
+        setTestResult({ ok: false, msg: 'Server unreachable at this address' });
+      }
+    } catch (err: any) {
+      setTestResult({ ok: false, msg: err?.message || 'Connection failed' });
+    } finally {
+      setIsTestingServer(false);
+    }
+  };
 
   const usernameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -215,10 +259,118 @@ export const FullLoginScreen: React.FC = () => {
           </button>
         </form>
 
-        <div className="mt-8 md:mt-12 mb-4 md:mb-0 flex items-center justify-center md:justify-start gap-1.5 md:gap-2 text-[#94a3b8] opacity-80 shrink-0">
-          <Lock className="h-3.5 w-3.5 md:h-4 md:w-4" />
-          <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">End-to-End Encrypted</span>
+        {/* Server Connection Indicator */}
+        <div className="mt-6 pt-4 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500 shrink-0">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span
+              className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                serverPing === null
+                  ? 'bg-amber-400 animate-pulse'
+                  : serverPing >= 0
+                  ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                  : 'bg-rose-500'
+              }`}
+            />
+            <span className="font-bold text-[#475569] shrink-0">Server:</span>
+            <span className="font-mono text-[11px] font-bold text-slate-700 bg-white/80 border border-slate-200 px-2 py-0.5 rounded-lg truncate max-w-[180px] sm:max-w-[240px]">
+              {serverUrl}
+            </span>
+            {serverPing !== null && serverPing >= 0 && (
+              <span className="text-[10px] font-bold text-emerald-600 hidden sm:inline">
+                {serverPing}ms
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setCustomUrl(serverUrl);
+              setTestResult(null);
+              setShowServerModal(true);
+            }}
+            className="text-[11px] font-extrabold text-[#78ad33] hover:text-[#5a8222] flex items-center gap-1 pl-2 shrink-0 cursor-pointer active:scale-95"
+          >
+            <Edit3 className="h-3 w-3" /> Change
+          </button>
         </div>
+
+        <div className="mt-3 mb-2 md:mb-0 flex items-center justify-between text-[#94a3b8] opacity-80 shrink-0 text-[10px] md:text-xs">
+          <div className="flex items-center gap-1.5">
+            <Lock className="h-3 w-3" />
+            <span className="font-bold uppercase tracking-wider">End-to-End Encrypted</span>
+          </div>
+          <span className="font-mono text-[10px]">v1.0.1</span>
+        </div>
+
+        {/* Server Switch Modal */}
+        {showServerModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl p-6 w-full max-w-md space-y-4 text-left">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                    <Server className="h-4 w-4" />
+                  </div>
+                  <h3 className="font-black text-base text-slate-800">Backend Server URL</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowServerModal(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-black text-slate-600 uppercase">
+                  Server Address (HTTP / HTTPS)
+                </label>
+                <input
+                  type="text"
+                  value={customUrl}
+                  onChange={e => setCustomUrl(e.target.value)}
+                  placeholder="e.g. http://wq8ss.aiccloud.online"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl font-mono text-sm text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-[#8cc63f]"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Default cloud server: <code className="font-bold text-slate-700">http://wq8ss.aiccloud.online</code>
+                </p>
+              </div>
+
+              {testResult && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-bold ${
+                    testResult.ok
+                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                      : 'bg-rose-50 border border-rose-200 text-rose-700'
+                  }`}
+                >
+                  {testResult.ok ? '✓ ' : '✗ '} {testResult.msg}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowServerModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestAndSaveServer}
+                  disabled={isTestingServer || !customUrl.trim()}
+                  className="px-5 py-2.5 bg-gradient-to-r from-[#8cc63f] to-[#78ad33] hover:from-[#7ab036] hover:to-[#6a982c] text-white text-xs font-black rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isTestingServer ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                  {isTestingServer ? 'Testing…' : 'Test & Connect'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
