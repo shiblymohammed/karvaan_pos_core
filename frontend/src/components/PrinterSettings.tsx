@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Printer, Check, AlertCircle, Loader2, Zap, ChevronDown, Bluetooth, Smartphone, ExternalLink } from 'lucide-react';
+import { Printer, Check, AlertCircle, Loader2, Zap, ChevronDown, Bluetooth, Smartphone, ExternalLink, Store, Save } from 'lucide-react';
 import { isTauri, listSerialPorts, kickCashDrawer, buildBillReceipt, printReceipt, printViaRawBT, isAndroid } from '../services/tauriCommands';
 import { getPrinterProfile, savePrinterProfile } from '../services/printerProfile';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { toast } from '../store/useToastStore';
 
 interface PrinterSettingsProps {
@@ -9,6 +10,26 @@ interface PrinterSettingsProps {
 }
 
 export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName }) => {
+  const { receiptName = '', receiptAddress = '', receiptGstin = '' } = useSettingsStore();
+  const [name, setName] = useState(receiptName || restaurantName || '');
+  const [address, setAddress] = useState(receiptAddress || '');
+  const [gstin, setGstin] = useState(receiptGstin || '');
+
+  useEffect(() => {
+    if (receiptName) setName(receiptName);
+    if (receiptAddress) setAddress(receiptAddress);
+    if (receiptGstin) setGstin(receiptGstin);
+  }, [receiptName, receiptAddress, receiptGstin]);
+
+  const saveBranding = () => {
+    useSettingsStore.setState({
+      receiptName: name.trim(),
+      receiptAddress: address.trim(),
+      receiptGstin: gstin.trim(),
+    });
+    toast.success('Receipt header saved! Receipts will now print with "' + (name.trim() || 'your restaurant name') + '"');
+  };
+
   const [ports, setPorts] = useState<string[]>([]);
   const [receiptPort, setReceiptPort] = useState(getPrinterProfile().receiptPort || '');
   const [drawerPort, setDrawerPort] = useState(getPrinterProfile().drawerPort || '');
@@ -50,7 +71,9 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
   const testRawBTPrint = () => {
     try {
       const bytes = buildBillReceipt({
-        restaurantName: restaurantName || 'Karvaan POS',
+        restaurantName: name.trim() || restaurantName || 'Karvaan POS',
+        restaurantAddress: address.trim(),
+        gstin: gstin.trim(),
         billNumber: 'TEST-BT01',
         orderType: 'RAWBT TEST',
         tableName: 'Test Table',
@@ -116,6 +139,72 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
   if (!isDesktop) {
     return (
       <div className="space-y-4">
+        {/* Receipt Branding Card */}
+        <div className="bg-pos-card rounded-2xl border border-pos-border p-5 space-y-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center border border-amber-500/20">
+              <Store className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-pos-text">Receipt Header & Business Info</h3>
+              <p className="text-xs font-bold text-pos-text-muted">Printed at the very top of thermal customer receipts</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-black text-pos-text-muted uppercase mb-1">
+                Restaurant / Business Name
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. My Restaurant & Cafe"
+                className="w-full bg-pos-bg border border-pos-border rounded-xl px-3.5 py-2.5 text-sm font-bold text-pos-text focus:outline-none focus:ring-2 focus:ring-pos-accent"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-black text-pos-text-muted uppercase mb-1">
+                  Address / Tagline
+                </label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={e => setAddress(e.target.value)}
+                  placeholder="e.g. 123 Main Street, City"
+                  className="w-full bg-pos-bg border border-pos-border rounded-xl px-3.5 py-2.5 text-sm font-bold text-pos-text focus:outline-none focus:ring-2 focus:ring-pos-accent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-pos-text-muted uppercase mb-1">
+                  GSTIN / Phone / Tax ID
+                </label>
+                <input
+                  type="text"
+                  value={gstin}
+                  onChange={e => setGstin(e.target.value)}
+                  placeholder="e.g. GSTIN: 32AAAAA0000A1Z5 | Ph: 9876543210"
+                  className="w-full bg-pos-bg border border-pos-border rounded-xl px-3.5 py-2.5 text-sm font-bold text-pos-text focus:outline-none focus:ring-2 focus:ring-pos-accent"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={saveBranding}
+                className="px-4 py-2 bg-gradient-to-r from-pos-accent to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <Save className="h-4 w-4" /> Save Receipt Header
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* RawBT Android Bluetooth Card */}
         <div className="bg-pos-card rounded-2xl border border-pos-border p-5 space-y-4 shadow-sm">
           <div className="flex items-center justify-between">

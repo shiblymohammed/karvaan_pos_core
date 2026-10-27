@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GripVertical, Plus, Trash2, Type, AlignLeft, AlignCenter, AlignRight, Barcode, ListOrdered, Image } from 'lucide-react';
+import { GripVertical, Plus, Trash2, Type, AlignLeft, AlignCenter, AlignRight, Barcode, ListOrdered, Image, Save } from 'lucide-react';
+import { useSettingsStore } from '../../store/useSettingsStore';
+import { toast } from '../../store/useToastStore';
 
 export type BlockType = 'TEXT' | 'DIVIDER' | 'DYNAMIC_ITEMS' | 'DYNAMIC_HEADER' | 'BARCODE' | 'IMAGE';
 
@@ -14,31 +16,52 @@ export interface LabelBlock {
 
 export const AdminLabelStudio: React.FC = () => {
   const [activeTemplate, setActiveTemplate] = useState<'CUP' | 'BAG' | 'KOT'>('CUP');
-  
-  const [templates, setTemplates] = useState<Record<string, LabelBlock[]>>({
-    CUP: [
-      { id: 'c1', type: 'TEXT', content: 'KARVAAN CAFE', align: 'center', size: 'title' },
-      { id: 'c2', type: 'DYNAMIC_HEADER' },
-      { id: 'c3', type: 'DIVIDER' },
-      { id: 'c4', type: 'DYNAMIC_ITEMS' },
-      { id: 'c5', type: 'BARCODE', align: 'center' }
-    ],
-    BAG: [
-      { id: 'b1', type: 'TEXT', content: 'KARVAAN CAFE', align: 'center', size: 'title' },
-      { id: 'b2', type: 'TEXT', content: 'DELIVERY ORDER', align: 'center', size: 'large' },
-      { id: 'b3', type: 'DIVIDER' },
-      { id: 'b4', type: 'DYNAMIC_HEADER' },
-      { id: 'b5', type: 'DYNAMIC_ITEMS' },
-      { id: 'b6', type: 'DIVIDER' },
-      { id: 'b7', type: 'BARCODE', align: 'center' }
-    ],
-    KOT: [
-      { id: 'k1', type: 'TEXT', content: 'KITCHEN TICKET', align: 'center', size: 'title' },
-      { id: 'k2', type: 'DYNAMIC_HEADER' },
-      { id: 'k3', type: 'DIVIDER' },
-      { id: 'k4', type: 'DYNAMIC_ITEMS' }
-    ]
+  const restaurantName = useSettingsStore(state => state.receiptName) || 'KARVAAN CAFE';
+
+  const [templates, setTemplates] = useState<Record<string, LabelBlock[]>>(() => {
+    try {
+      const saved = localStorage.getItem('karvaan_label_templates');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      CUP: [
+        { id: 'c1', type: 'TEXT', content: restaurantName, align: 'center', size: 'title' },
+        { id: 'c2', type: 'DYNAMIC_HEADER' },
+        { id: 'c3', type: 'DIVIDER' },
+        { id: 'c4', type: 'DYNAMIC_ITEMS' },
+        { id: 'c5', type: 'BARCODE', align: 'center' }
+      ],
+      BAG: [
+        { id: 'b1', type: 'TEXT', content: restaurantName, align: 'center', size: 'title' },
+        { id: 'b2', type: 'TEXT', content: 'DELIVERY ORDER', align: 'center', size: 'large' },
+        { id: 'b3', type: 'DIVIDER' },
+        { id: 'b4', type: 'DYNAMIC_HEADER' },
+        { id: 'b5', type: 'DYNAMIC_ITEMS' },
+        { id: 'b6', type: 'DIVIDER' },
+        { id: 'b7', type: 'BARCODE', align: 'center' }
+      ],
+      KOT: [
+        { id: 'k1', type: 'TEXT', content: 'KITCHEN TICKET', align: 'center', size: 'title' },
+        { id: 'k2', type: 'DYNAMIC_HEADER' },
+        { id: 'k3', type: 'DIVIDER' },
+        { id: 'k4', type: 'DYNAMIC_ITEMS' }
+      ]
+    };
   });
+
+  const saveTemplates = () => {
+    try {
+      localStorage.setItem('karvaan_label_templates', JSON.stringify(templates));
+      // If the first block is a text title, sync it to receiptName so it appears on all bill printouts
+      const firstBlock = templates[activeTemplate]?.[0];
+      if (firstBlock && firstBlock.type === 'TEXT' && firstBlock.content?.trim()) {
+        useSettingsStore.setState({ receiptName: firstBlock.content.trim() });
+      }
+      toast.success('Label templates and restaurant title saved successfully!');
+    } catch (e: any) {
+      toast.error('Failed to save templates: ' + e.message);
+    }
+  };
 
   const blocks = templates[activeTemplate];
 
@@ -73,25 +96,35 @@ export const AdminLabelStudio: React.FC = () => {
   return (
     <div className="flex flex-col gap-6">
       
-      {/* Template Selector */}
-      <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit">
-        <button 
-          onClick={() => setActiveTemplate('CUP')}
-          className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-colors ${activeTemplate === 'CUP' ? 'bg-white shadow-md text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}
+      {/* Template Selector & Save Action */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit">
+          <button 
+            onClick={() => setActiveTemplate('CUP')}
+            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-colors ${activeTemplate === 'CUP' ? 'bg-white shadow-md text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Cup / Item Label
+          </button>
+          <button 
+            onClick={() => setActiveTemplate('BAG')}
+            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-colors ${activeTemplate === 'BAG' ? 'bg-white shadow-md text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Delivery Bag Label
+          </button>
+          <button 
+            onClick={() => setActiveTemplate('KOT')}
+            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-colors ${activeTemplate === 'KOT' ? 'bg-white shadow-md text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Adhesive KOT
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={saveTemplates}
+          className="px-5 py-2.5 bg-gradient-to-r from-pos-accent to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
         >
-          Cup / Item Label
-        </button>
-        <button 
-          onClick={() => setActiveTemplate('BAG')}
-          className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-colors ${activeTemplate === 'BAG' ? 'bg-white shadow-md text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}
-        >
-          Delivery Bag Label
-        </button>
-        <button 
-          onClick={() => setActiveTemplate('KOT')}
-          className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-colors ${activeTemplate === 'KOT' ? 'bg-white shadow-md text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}
-        >
-          Adhesive KOT
+          <Save className="h-4 w-4" /> Save Label Templates
         </button>
       </div>
 

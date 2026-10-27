@@ -204,6 +204,21 @@ export class EscPos {
 }
 
 /**
+ * Format a line with left and right aligned text within a fixed column width
+ */
+function formatRow(left: string, right: string, width: number): string {
+  const l = left.trim();
+  const r = right.trim();
+  const spaceNeeded = width - l.length - r.length;
+  if (spaceNeeded >= 1) {
+    return l + ' '.repeat(spaceNeeded) + r;
+  }
+  // If left string is too long, wrap it cleanly
+  const maxLeft = Math.max(1, width - r.length - 1);
+  return l.slice(0, maxLeft) + ' ' + r;
+}
+
+/**
  * Build a complete KOT (Kitchen Order Ticket) receipt
  */
 export function buildKotReceipt(params: {
@@ -213,33 +228,41 @@ export function buildKotReceipt(params: {
   time: string;
   paperWidth?: number;
 }): Uint8Array {
+  const width = params.paperWidth === 58 ? 32 : 48;
   const esc = new EscPos()
     .init()
     .align(1)
     .bold(true)
     .doubleSize(true)
-    .text('KOT')
+    .text('KITCHEN TICKET')
     .newline()
     .doubleSize(false)
-    .text(`Order: ${params.orderNumber}`)
+    .bold(false)
+    .text(`Order: #${params.orderNumber}`)
     .newline()
     .text(`Table: ${params.tableName}`)
     .newline()
     .text(`Time: ${params.time}`)
     .newline()
     .align(0)
-    .separator()
+    .separator('-', width)
     .bold(true)
-    .text('ITEM                         QTY')
+    .text(formatRow('ITEM', 'QTY', width))
     .newline()
     .bold(false)
-    .separator();
+    .separator('-', width);
+
   params.items.forEach(item => {
-    thermalLines(`${item.qty} x ${item.name}`, params.paperWidth === 80 ? 48 : 32).forEach(line => esc.text(line).newline());
-    for (const addon of item.addons || []) thermalLines(`  + ${addon.name}`, params.paperWidth === 80 ? 48 : 32).forEach(line => esc.text(line).newline());
-    if (item.notes) thermalLines(`  NOTE: ${item.notes}`, params.paperWidth === 80 ? 48 : 32).forEach(line => esc.text(line).newline());
+    esc.bold(true).text(formatRow(item.name, `${item.qty}`, width)).newline().bold(false);
+    for (const addon of item.addons || []) {
+      thermalLines(`  + ${addon.name}`, width).forEach(line => esc.text(line).newline());
+    }
+    if (item.notes) {
+      thermalLines(`  * ${item.notes}`, width).forEach(line => esc.text(line).newline());
+    }
   });
-  return esc.separator().feed(3).cut().build();
+
+  return esc.separator('-', width).feed(3).cut().build();
 }
 
 /**
@@ -271,28 +294,33 @@ export function buildBillReceipt(params: {
   const width = params.paperWidth === 58 ? 32 : 48;
   const esc = new EscPos()
     .init()
-    .align(1)
+    .align(1) // Center
     .bold(true)
     .doubleSize(true)
-    .text(params.restaurantName)
+    .text(params.restaurantName || 'Karvaan POS')
     .newline()
-    .text(params.restaurantAddress || '')
-    .newline()
-    .text(params.gstin ? `GSTIN: ${params.gstin}` : '')
-    .newline()
-    .doubleSize(false)
-    .bold(false)
+    .doubleSize(false) // Immediately reset to normal size for address/gstin
+    .bold(false);
+
+  if (params.restaurantAddress?.trim()) {
+    thermalLines(params.restaurantAddress.trim(), width).forEach(line => esc.text(line).newline());
+  }
+  if (params.gstin?.trim()) {
+    esc.text(`GSTIN: ${params.gstin.trim()}`).newline();
+  }
+
+  esc
     .text(params.orderType)
     .newline()
     .text(params.time)
     .newline()
-    .align(0)
-    .separator()
-    .text(`Bill: ${params.billNumber}`)
+    .align(0) // Back to left align
+    .separator('-', width)
+    .text(formatRow(`Bill: #${params.billNumber}`, params.time.split(' ')[1] || '', width))
     .newline();
 
-  if (params.prebill) esc.bold(true).text('PRE-BILL - UNPAID').newline().bold(false);
-  if (params.reprint) esc.bold(true).text('REPRINT').newline().bold(false);
+  if (params.prebill) esc.bold(true).text('*** PRE-BILL - UNPAID ***').newline().bold(false);
+  if (params.reprint) esc.bold(true).text('*** DUPLICATE / REPRINT ***').newline().bold(false);
 
   if (params.tableName) {
     esc.text(`Table: ${params.tableName}`).newline();
@@ -301,55 +329,79 @@ export function buildBillReceipt(params: {
   esc
     .text(`Cashier: ${params.cashier}`)
     .newline()
-    .separator()
+    .separator('-', width)
     .bold(true)
-    .text('ITEM                 QTY  AMOUNT')
+    .text(formatRow('ITEM', 'AMOUNT', width))
     .newline()
     .bold(false)
-    .separator();
+    .separator('-', width);
 
   params.items.forEach(item => {
-    thermalLines(`${item.qty} x ${item.name}`, width).forEach(line => esc.text(line).newline());
-    esc.text(`  Rs. ${(item.qty * item.price).toFixed(2)}`).newline();
-    for (const addon of item.addons || []) thermalLines(`  + ${addon.name}`, width).forEach(line => esc.text(line).newline());
+    const itemTotal = (item.qty * item.price).toFixed(2);
+    const prefix = item.qty > 1 ? `${item.qty}x ` : '';
+    const itemHeader = `${prefix}${item.name}`;
+
+    if (itemHeader.length + itemTotal.length + 5 <= width) {
+      esc.text(formatRow(itemHeader, `Rs.${itemTotal}`, width)).newline();
+    } else {
+      thermalLines(itemHeader, width).forEach(line => esc.text(line).newline());
+      const subInfo = item.qty > 1 ? `  @ Rs.${item.price.toFixed(2)}` : '';
+      esc.text(formatRow(subInfo, `Rs.${itemTotal}`, width)).newline();
+    }
+
+    for (const addon of item.addons || []) {
+      thermalLines(`  + ${addon.name}`, width).forEach(line => esc.text(line).newline());
+    }
     if (item.notes) {
-      thermalLines(`  NOTE: ${item.notes}`, width).forEach(line => esc.text(line).newline());
+      thermalLines(`  * ${item.notes}`, width).forEach(line => esc.text(line).newline());
     }
   });
 
   esc
-    .separator()
-    .text(`${'Subtotal'.padEnd(24)}${params.subtotal.toFixed(2).padStart(8)}`)
+    .separator('-', width)
+    .text(formatRow('Subtotal', `Rs.${params.subtotal.toFixed(2)}`, width))
     .newline();
 
   if (params.discount > 0) {
-    esc.text(`${'Discount'.padEnd(24)}-${params.discount.toFixed(2).padStart(7)}`).newline();
+    esc.text(formatRow('Discount', `-Rs.${params.discount.toFixed(2)}`, width)).newline();
+  }
+
+  if (params.gst > 0) {
+    esc.text(formatRow('CGST + SGST', `Rs.${params.gst.toFixed(2)}`, width)).newline();
+  }
+
+  if (params.deliveryFee) {
+    esc.text(formatRow('Delivery Fee', `Rs.${params.deliveryFee.toFixed(2)}`, width)).newline();
   }
 
   esc
-    .text(`${'GST'.padEnd(24)}${params.gst.toFixed(2).padStart(8)}`)
-    .newline()
-  if (params.deliveryFee) esc.text(`${'Delivery fee'.padEnd(24)}${params.deliveryFee.toFixed(2).padStart(8)}`).newline();
-  esc
-    .separator()
+    .separator('=', width)
     .bold(true)
-    .doubleSize(true)
-    .text(`TOTAL   Rs.${params.grandTotal.toFixed(2)}`)
+    .text(formatRow('GRAND TOTAL', `Rs.${params.grandTotal.toFixed(2)}`, width))
     .newline()
-    .doubleSize(false)
     .bold(false)
-    .text(`Payment: ${params.paymentMethod}`)
-    .newline()
-  if (params.tenders) for (const [method, amount] of Object.entries(params.tenders)) if (amount > 0) esc.text(`${method}: Rs.${amount.toFixed(2)}`).newline();
+    .separator('-', width)
+    .text(formatRow('Payment Mode', params.paymentMethod, width))
+    .newline();
+
+  if (params.tenders) {
+    for (const [method, amount] of Object.entries(params.tenders)) {
+      if (amount > 0) {
+        esc.text(formatRow(`  ${method}`, `Rs.${Number(amount).toFixed(2)}`, width)).newline();
+      }
+    }
+  }
+
   if (params.pendingConfirmation) esc.text('AWAITING SERVER CONFIRMATION').newline();
   if (params.paymentPending) esc.text('PAYMENT PENDING').newline();
+
   esc
-    .separator()
+    .separator('-', width)
     .align(1)
     .text('Thank you! Visit again.')
     .newline()
     .align(0)
-    .feed(4)
+    .feed(3)
     .cut();
 
   return esc.build();

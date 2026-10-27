@@ -16,7 +16,7 @@ foreach ($fileName in @('agent.cjs', 'transport.cjs', 'windows-print.ps1', 'run-
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot $fileName) -Destination (Join-Path $applicationDirectory $fileName) -Force
 }
 if (-not (Test-Path -LiteralPath (Join-Path $profileDirectory 'config.json'))) {
-  if (-not $ServerUrl) { $ServerUrl = Read-Host 'HTTPS POS server URL' }
+  if (-not $ServerUrl) { $ServerUrl = Read-Host 'POS server URL (e.g. http://... or https://...)' }
   if (-not $PairingCode) { $PairingCode = Read-Host 'One-time pairing code from Printer Setup' }
   & $nodePath (Join-Path $applicationDirectory 'agent.cjs') pair $ServerUrl $PairingCode
   if ($LASTEXITCODE -ne 0) { throw 'Pairing failed. The background task was not installed.' }
