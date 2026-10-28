@@ -10,8 +10,8 @@ interface MenuItemCardProps {
   product: Product;
   is86d: boolean;
   isInCart?: boolean;
-  onAdd: (product: Product) => void;
-  onCustomize: (product: Product) => void;
+  onAdd: (product: any) => void;
+  onCustomize: (product: any) => void;
 }
 
 export const MenuItemCard: React.FC<MenuItemCardProps> = ({
@@ -22,12 +22,20 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   onCustomize
 }) => {
   const [isVibrating, setIsVibrating] = useState(false);
+  const [showVariantModal, setShowVariantModal] = useState(false);
+  const hasVariants = !!(product.variants && product.variants.length > 0);
 
   const handleClick = () => {
     if (is86d) toast.warning('Recorded stock is short. Manager approval will be required at checkout.');
     setIsVibrating(true);
-    onAdd(product);
     setTimeout(() => setIsVibrating(false), 200);
+
+    if (hasVariants) {
+      setShowVariantModal(true);
+      return;
+    }
+
+    onAdd(product);
   };
 
   return (
@@ -91,9 +99,18 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
 
         <div className="flex items-end justify-between mt-auto">
           <div className="flex flex-col gap-1">
-            <span className="text-[18px] md:text-[17px] font-black text-slate-900 leading-none tracking-tight">
-              ₹{product.price}
-            </span>
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-[18px] md:text-[17px] font-black text-slate-900 leading-none tracking-tight">
+                {hasVariants
+                  ? `₹${Math.min(...product.variants!.map(v => v.price))}`
+                  : `₹${product.price}`}
+              </span>
+              {hasVariants && (
+                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded-md">
+                  {product.variants!.length} sizes
+                </span>
+              )}
+            </div>
             {!is86d && (
               <span className="text-[11px] text-slate-500 font-bold inline-flex items-center gap-1 opacity-80">
                 <Clock className="h-3.5 w-3.5" />
@@ -105,15 +122,102 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onCustomize(product);
+              if (hasVariants) {
+                setShowVariantModal(true);
+              } else {
+                onCustomize(product);
+              }
             }}
             className={`w-10 h-10 rounded-xl flex items-center justify-center text-[#0d212b] transition-all duration-300 active:scale-90 shadow-md shrink-0 ${isInCart ? 'bg-white shadow-emerald-500/20 rotate-0' : 'bg-[#b5ef85] hover:bg-[#a2db74] hover:rotate-90'}`}
-            title="Customize / Add"
+            title={hasVariants ? "Select Size / Variant" : "Customize / Add"}
           >
             {isInCart ? <Icons.Check className="h-5 w-5 stroke-[3] text-emerald-600" /> : <Plus className="h-5 w-5 stroke-[2.5]" />}
           </button>
         </div>
       </div>
+
+      {/* Quick Variant Picker Dialog */}
+      {showVariantModal && (
+        <div
+          onClick={(e) => { e.stopPropagation(); setShowVariantModal(false); }}
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white/95 backdrop-blur-xl w-full max-w-sm rounded-[28px] border border-white shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
+                  {product.iconName ? React.createElement((Icons as any)[product.iconName] || Icons.Utensils, { className: 'w-5 h-5' }) : (product.imageEmoji || '🍽️')}
+                </div>
+                <div>
+                  <h4 className="font-black text-slate-800 text-sm leading-tight">{product.name}</h4>
+                  <p className="text-[11px] font-bold text-slate-400">Choose portion / size</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVariantModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <Icons.X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5 max-h-60 overflow-y-auto pr-0.5">
+              {product.variants!.map((variant) => (
+                <button
+                  key={variant.id}
+                  type="button"
+                  onClick={() => {
+                    onAdd({
+                      ...product,
+                      price: variant.price,
+                      variantId: variant.id,
+                      variantName: variant.name,
+                    });
+                    setShowVariantModal(false);
+                  }}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-[#b5ef85]/20 border border-slate-200 hover:border-[#b5ef85] rounded-2xl transition-all active:scale-[0.98] cursor-pointer group shadow-sm"
+                >
+                  <span className="font-black text-slate-800 text-sm group-hover:text-slate-950">
+                    {variant.name}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-emerald-600 text-base">
+                      ₹{variant.price}
+                    </span>
+                    <div className="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Plus className="w-4 h-4 stroke-[3]" />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVariantModal(false);
+                  onCustomize(product);
+                }}
+                className="text-xs font-bold text-slate-500 hover:text-emerald-600 flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <MessageSquare className="w-3.5 h-3.5" /> Customize with Notes
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowVariantModal(false)}
+                className="px-3 py-1.5 text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

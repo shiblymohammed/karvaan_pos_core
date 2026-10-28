@@ -3,21 +3,29 @@ import { Plus, Minus, X } from 'lucide-react';
 import { useAddonStore, type PaidAddon } from '../../store/useAddonStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 
+import { ProductVariant } from '../../store/useMenuStore';
+
 interface CustomizeItemModalProps {
-  product: { id: string; name: string; price: number };
-  onConfirm: (note: string, addons: PaidAddon[]) => void;
+  product: { id: string; name: string; price: number; variants?: ProductVariant[]; variantId?: string; variantName?: string };
+  onConfirm: (note: string, addons: PaidAddon[], selectedVariant?: ProductVariant) => void;
   onClose: () => void;
 }
 
 export const CustomizeItemModal: React.FC<CustomizeItemModalProps> = ({ product, onConfirm, onClose }) => {
   const [noteText, setNoteText] = useState('');
   const [selectedAddons, setSelectedAddons] = useState<PaidAddon[]>([]);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(() => {
+    if (product.variantId && product.variants) {
+      return product.variants.find(v => v.id === product.variantId);
+    }
+    return product.variants && product.variants.length > 0 ? product.variants[0] : undefined;
+  });
   const { notes: predefinedNotes } = useSettingsStore();
   const { getActiveAddons } = useAddonStore();
   const activeAddons = getActiveAddons();
 
   const handleConfirm = () => {
-    onConfirm(noteText, selectedAddons);
+    onConfirm(noteText, selectedAddons, selectedVariant);
   };
 
   const addAddon = (addon: PaidAddon) => setSelectedAddons(prev => [...prev, addon]);
@@ -31,10 +39,51 @@ export const CustomizeItemModal: React.FC<CustomizeItemModalProps> = ({ product,
     });
   };
 
+  const currentPrice = selectedVariant ? selectedVariant.price : product.price;
+  const addonsTotal = selectedAddons.reduce((sum, a) => sum + a.price, 0);
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-pos-card w-full max-w-md rounded-2xl border border-pos-border p-6 space-y-4 shadow-2xl">
-        <h3 className="font-extrabold text-pos-text">Customize: {product.name}</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="font-extrabold text-pos-text text-base">Customize: {product.name}</h3>
+          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Variant / Size Selection */}
+        {product.variants && product.variants.length > 0 && (
+          <div className="p-3 bg-pos-bg/80 rounded-xl border border-pos-border/70">
+            <label className="text-xs font-bold text-pos-text-muted mb-2 block uppercase tracking-wider">
+              Select Size / Portion
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {product.variants.map((v) => {
+                const isSelected = selectedVariant?.id === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => setSelectedVariant(v)}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-500/10 border-emerald-500 shadow-sm ring-2 ring-emerald-500/20'
+                        : 'bg-pos-card border-pos-border hover:border-slate-300'
+                    }`}
+                  >
+                    <div className={`text-xs font-black truncate ${isSelected ? 'text-emerald-600' : 'text-pos-text'}`}>
+                      {v.name}
+                    </div>
+                    <div className={`text-xs font-bold mt-0.5 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      ₹{v.price}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Notes Section */}
         <div>
@@ -114,7 +163,7 @@ export const CustomizeItemModal: React.FC<CustomizeItemModalProps> = ({ product,
             onClick={handleConfirm}
             className="px-4 py-2 bg-gradient-to-r from-pos-accent to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-extrabold rounded-xl text-sm shadow-[0_4px_12px_rgba(16,185,129,0.3)] transition-transform active:scale-95 cursor-pointer"
           >
-            Add to Cart
+            Add to Cart • ₹{(currentPrice + addonsTotal).toFixed(0)}
           </button>
         </div>
       </div>

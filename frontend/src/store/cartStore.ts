@@ -22,6 +22,8 @@ export interface CartItem {
   status: 'NEW' | 'SENT';
   isCombo?: boolean;
   comboItems?: string[];
+  variantId?: string;
+  variantName?: string;
 }
 
 export interface ParkedOrder {
@@ -72,7 +74,7 @@ interface CartState {
   
   // Actions
   setIsMobileCartOpen: (isOpen: boolean) => void;
-  addItem: (product: { id: string; name: string; price: number; category?: string }, notes?: string, addons?: { id: string; name: string; price: number }[]) => void;
+  addItem: (product: { id: string; name: string; price: number; category?: string; variantId?: string; variantName?: string; isCombo?: boolean; comboItems?: string[] }, notes?: string, addons?: { id: string; name: string; price: number }[]) => void;
   removeItemByIndex: (index: number) => void;
   updateQuantityByIndex: (index: number, delta: number) => void;
   updateItemNoteByIndex: (index: number, notes: string) => void;
@@ -143,17 +145,28 @@ export const useCartStore = create<CartState>()(
         finalNotes = finalNotes ? `${finalNotes} | ${comboStr}` : comboStr;
       }
 
-      // If there are notes or addons, we treat it as a unique line item so they don't stack directly with standard items
-      const hasCustomizations = !!finalNotes || (addons && addons.length > 0);
-      
+      const variantId = (product as any).variantId;
+      const variantName = (product as any).variantName;
+      const displayName = variantName && !product.name.includes(`(${variantName})`)
+        ? `${product.name} (${variantName})`
+        : product.name;
+
       const existing = state.items.find(
-        (i) => i.productId === product.id && i.notes === finalNotes && JSON.stringify(i.addons) === JSON.stringify(addons) && i.status === 'NEW'
+        (i) => i.productId === product.id &&
+          i.variantId === variantId &&
+          i.notes === finalNotes &&
+          JSON.stringify(i.addons) === JSON.stringify(addons) &&
+          i.status === 'NEW'
       );
 
       if (existing) {
         return {
           items: state.items.map((i) =>
-            i.productId === product.id && i.notes === finalNotes && JSON.stringify(i.addons) === JSON.stringify(addons) && i.status === 'NEW'
+            i.productId === product.id &&
+            i.variantId === variantId &&
+            i.notes === finalNotes &&
+            JSON.stringify(i.addons) === JSON.stringify(addons) &&
+            i.status === 'NEW'
               ? { ...i, quantity: i.quantity + 1 }
               : i
           ),
@@ -164,7 +177,7 @@ export const useCartStore = create<CartState>()(
           ...state.items,
           {
             productId: product.id,
-            name: product.name,
+            name: displayName,
             price: product.price,
             quantity: 1,
             notes: finalNotes || undefined,
@@ -173,6 +186,8 @@ export const useCartStore = create<CartState>()(
             status: 'NEW',
             isCombo: (product as any).isCombo,
             comboItems: (product as any).comboItems,
+            variantId,
+            variantName,
           },
         ],
       };

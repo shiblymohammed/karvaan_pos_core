@@ -4,6 +4,12 @@ import { tenantStorage } from './tenantStorage';
 import { canEditConfig } from '../services/configSnapshot';
 import { authorizedFetch } from '../services/authFetch';
 
+export interface ProductVariant {
+  id: string;
+  name: string; // e.g. "Half", "Full", "Small", "Regular"
+  price: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -21,6 +27,7 @@ export interface Product {
   isFavourite?: boolean; // Flag for user favourites
   isCombo?: boolean;
   comboItems?: string[]; // Array of product IDs included in the combo
+  variants?: ProductVariant[];
 }
 
 export interface Category {

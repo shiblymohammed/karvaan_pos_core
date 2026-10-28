@@ -206,7 +206,7 @@ export class WorkflowService {
   async menu(restaurantId: string) {
     return this.prisma.$transaction(async tx => {
       const [categories, products, version] = await Promise.all([tx.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: 'asc' } }), tx.product.findMany({ where: { restaurantId, isArchived: false }, include: { category: true } }), tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'menu_revision' } } })]);
-      return { categories, products: products.map(product => ({ ...product, category: product.category.name, prepTime: product.prepTimeMinutes })), serverRevision: readJson<number>(version?.data, 0) };
+      return { categories, products: products.map(product => ({ ...product, category: product.category.name, prepTime: product.prepTimeMinutes, variants: readJson<any>(product.variants, null) })), serverRevision: readJson<number>(version?.data, 0) };
     });
   }
 

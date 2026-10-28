@@ -28,7 +28,7 @@ export class BillingService {
     customerId?: string;
     notes?: string;
     restaurantId: string;
-    items: Array<{ productId: string; quantity: number; notes?: string }>;
+    items: Array<{ productId: string; quantity: number; notes?: string; price?: number; variantId?: string; variantName?: string }>;
   }) {
     if (!data.restaurantId) throw new UnauthorizedException('No restaurant context');
     if (!data.items || data.items.length === 0) {
@@ -49,14 +49,28 @@ export class BillingService {
         throw new NotFoundException(`Product ID ${item.productId} not found in this restaurant.`);
       }
 
-      const itemTotal = product.price * item.quantity;
+      let itemPrice = product.price;
+      if (item.variantId && product.variants) {
+        try {
+          const vars = JSON.parse(product.variants);
+          const matched = Array.isArray(vars) && vars.find((v: any) => v.id === item.variantId || v.name === item.variantName);
+          if (matched && typeof matched.price === 'number') {
+            itemPrice = matched.price;
+          }
+        } catch {}
+      } else if (Number.isFinite(item.price) && item.price > 0) {
+        itemPrice = item.price;
+      }
+
+      const itemTotal = itemPrice * item.quantity;
       totalAmount += itemTotal;
 
       orderItemsData.push({
         productId: product.id,
         quantity: item.quantity,
-        price: product.price,
+        price: itemPrice,
         notes: item.notes || null,
+        variant: item.variantName || item.variantId || null,
       });
     }
 
@@ -203,8 +217,21 @@ export class BillingService {
         if (item.quantity > remaining) throw new BadRequestException(product.isArchived ? 'This menu item was deleted. Remove new quantities; already-sent quantities can still be settled.' : 'This menu item is marked unavailable. Remove new quantities; already-sent quantities can still be settled.');
         archivedQuantities.set(signature, remaining - item.quantity);
       }
-      const price = roundMoney(product.price + addons.reduce((sum: number, a: any) => sum + a.price, 0));
-      lines.push({ product, quantity: item.quantity, price, notes: typeof item.notes === 'string' ? item.notes : null, addons });
+      // Resolve variant price if variantId or variantName provided
+      let basePrice = product.price;
+      if ((item.variantId || item.variantName) && product.variants) {
+        try {
+          const vars = JSON.parse(product.variants);
+          const matched = Array.isArray(vars) && vars.find((v: any) =>
+            (item.variantId && v.id === item.variantId) || (item.variantName && v.name === item.variantName)
+          );
+          if (matched && typeof matched.price === 'number') {
+            basePrice = matched.price;
+          }
+        } catch {}
+      }
+      const price = roundMoney(basePrice + addons.reduce((sum: number, a: any) => sum + a.price, 0));
+      lines.push({ product, quantity: item.quantity, price, notes: typeof item.notes === 'string' ? item.notes : null, addons, variant: item.variantName || null });
     }
     return { lines, settings };
   }
@@ -232,12 +259,12 @@ export class BillingService {
         }
       }
 
-      const items = lines.map(i => ({ productId: i.product.id, quantity: i.quantity, price: i.price, notes: i.notes, addons: JSON.stringify(i.addons), status: 'SENT' }));
+      const items = lines.map(i => ({ productId: i.product.id, quantity: i.quantity, price: i.price, notes: i.notes, addons: JSON.stringify(i.addons), variant: i.variant || null, status: 'SENT' }));
       const addedTotal = roundMoney(lines.reduce((sum, i) => sum + i.price * i.quantity, 0));
       const order = existing
         ? await tx.order.update({ where: { id: existing.id }, data: { status: 'COOKING', totalAmount: { increment: addedTotal }, items: { create: items } } })
         : await tx.order.create({ data: { restaurantId, orderNumber: data.orderNumber, orderType: data.orderType || 'DINE_IN', waiterId, tableId, status: 'COOKING', totalAmount: addedTotal, items: { create: items } } });
-      const printJob = await this.printQueue.kitchen(tx, restaurantId, `kot:${data.id}`, { reference: order.orderNumber, orderNumber: order.orderNumber, table: table?.tableNumber || data.tableNumber, orderType: order.orderType, items: lines.map(line => ({ name: line.product.name, quantity: line.quantity, notes: line.notes, addons: line.addons })) }, waiterId);
+      const printJob = await this.printQueue.kitchen(tx, restaurantId, `kot:${data.id}`, { reference: order.orderNumber, orderNumber: order.orderNumber, table: table?.tableNumber || data.tableNumber, orderType: order.orderType, items: lines.map(line => ({ name: line.variant ? ` ()` : line.product.name, quantity: line.quantity, notes: line.notes, addons: line.addons })) }, waiterId);
       await tx.systemSetting.create({ data: { restaurantId, settingKey: `kot:${data.id}`, data: JSON.stringify({ orderId: order.id, printJobId: printJob?.id || null }) } });
       if (tableId) await tx.table.update({ where: { id: tableId }, data: { status: 'OCCUPIED', currentOrderId: order.id } });
       return { ...await tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: { include: { product: true } }, table: true } }), printJobId: printJob?.id || null };
@@ -268,7 +295,7 @@ export class BillingService {
       const table = data.tableId ? await tx.table.findFirst({ where: { id: data.tableId, restaurantId: user.restaurantId } }) : null;
       if (data.tableId && !table) throw new BadRequestException('Table not found');
       const totals = billTotals(lines, settings, data, table?.id);
-      const job = await this.printQueue.enqueue(tx, user.restaurantId, 'RECEIPT', `prebill:${data.requestId}`, { ...await this.printQueue.branding(tx, user.restaurantId), kind: 'PREBILL', reference: `PRE-${data.requestId}`, orderType: data.orderType, table: table?.tableNumber, createdAt: new Date().toISOString(), items: lines.map(line => ({ name: line.product.name, quantity: line.quantity, price: line.price, notes: line.notes, addons: line.addons })), ...totals, discount: data.discount || 0, paymentMethod: 'UNPAID' }, user.id, false);
+      const job = await this.printQueue.enqueue(tx, user.restaurantId, 'RECEIPT', `prebill:${data.requestId}`, { ...await this.printQueue.branding(tx, user.restaurantId), kind: 'PREBILL', reference: `PRE-${data.requestId}`, orderType: data.orderType, table: table?.tableNumber, createdAt: new Date().toISOString(), items: lines.map(line => ({ name: line.variant ? ` ()` : line.product.name, quantity: line.quantity, price: line.price, notes: line.notes, addons: line.addons })), ...totals, discount: data.discount || 0, paymentMethod: 'UNPAID' }, user.id, false);
       return { id: job.id, kind: job.kind, reference: job.reference, state: job.state };
     });
   }

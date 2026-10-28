@@ -67,7 +67,7 @@ export const POSScreen: React.FC = () => {
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [receiptType, setReceiptType] = useState<'CHECKOUT' | 'PREBILL' | 'KOT' | null>(null);
   const [lastBill, setLastBill] = useState<any>(null);
-  const [customizeProduct, setCustomizeProduct] = useState<{ id: string; name: string; price: number } | null>(null);
+  const [customizeProduct, setCustomizeProduct] = useState<any | null>(null);
   const [returnModalData, setReturnModalData] = useState<ReturnOrderData | null>(null);
   const [managerAuthAction, setManagerAuthAction] = useState<{ isOpen: boolean; title: string; desc: string; onConfirm: (authBy: string) => void } | null>(null);
   const [showParkedOrders, setShowParkedOrders] = useState(false);
@@ -217,7 +217,7 @@ export const POSScreen: React.FC = () => {
         orderType: 'PARCEL',
         customerName: customer?.name || 'Walk-In Guest',
         customerPhone: customer?.phone || '',
-        items: items.map(i => ({ productId: i.productId, name: i.name, quantity: i.quantity, price: i.price, addons: i.addons, notes: i.notes })),
+        items: items.map(i => ({ productId: i.productId, name: i.name, quantity: i.quantity, price: i.price, addons: i.addons, notes: i.notes, variantId: i.variantId, variantName: i.variantName })),
         subtotal, grandTotal,
         status: 'RECEIVED',
         paymentStatus: 'COLLECTED',
@@ -252,7 +252,7 @@ export const POSScreen: React.FC = () => {
       orderNumber, billNumber, orderType: 'DELIVERY', stockAuthorization,
       customerName: customer?.name || 'Guest', customerPhone: customer?.phone || '',
       deliveryAddress: deliveryAddress || '', deliveryFee: deliveryFee || 0,
-      items: items.map(item => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price, notes: item.notes, addons: item.addons })),
+      items: items.map(item => ({ productId: item.productId, name: item.name, quantity: item.quantity, price: item.price, notes: item.notes, addons: item.addons, variantId: item.variantId, variantName: item.variantName })),
       subtotal, discount, grandTotal: total, status: 'RECEIVED',
       paymentStatus: isPrepaid ? 'COLLECTED' : 'PENDING', paymentMethod: isPrepaid ? 'UPI' : 'CASH',
       waiterName: selectedWaiter || undefined,
@@ -368,7 +368,7 @@ export const POSScreen: React.FC = () => {
             onSearchExpand={() => setIsSearchExpanded(true)}
             onSearchClose={() => { setSearchQuery(''); setIsSearchExpanded(false); }}
             onOpenAddonModal={() => setStandaloneAddonModalOpen(true)}
-            onCustomize={(product) => setCustomizeProduct({ id: product.id, name: product.name, price: product.price })}
+            onCustomize={(product) => setCustomizeProduct(product)}
           />
         )}
 
@@ -457,8 +457,24 @@ export const POSScreen: React.FC = () => {
       {customizeProduct && (
         <CustomizeItemModal
           product={customizeProduct}
-          onConfirm={(note, addons) => {
-            addItem({ id: customizeProduct.id, name: customizeProduct.name, price: customizeProduct.price }, note, addons.length > 0 ? addons.map(a => ({ id: a.id, name: a.name, price: a.price })) : undefined);
+          onConfirm={(note, addons, selectedVariant) => {
+            const finalPrice = selectedVariant ? selectedVariant.price : customizeProduct.price;
+            const variantId = selectedVariant?.id || customizeProduct.variantId;
+            const variantName = selectedVariant?.name || customizeProduct.variantName;
+            addItem(
+              {
+                id: customizeProduct.id,
+                name: customizeProduct.name,
+                price: finalPrice,
+                category: customizeProduct.category,
+                variantId,
+                variantName,
+                isCombo: customizeProduct.isCombo,
+                comboItems: customizeProduct.comboItems,
+              },
+              note,
+              addons.length > 0 ? addons.map(a => ({ id: a.id, name: a.name, price: a.price })) : undefined
+            );
             setCustomizeProduct(null);
           }}
           onClose={() => setCustomizeProduct(null)}

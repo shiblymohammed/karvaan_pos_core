@@ -135,6 +135,7 @@ model Product {
   recipeBatchSize Float @default(1)
   imageEmoji      String?
   imageUrl        String?
+  variants        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -203,6 +204,7 @@ model OrderItem {
   price     Float
   notes     String?
   addons    String? // JSON: [{name, price}]
+  variant   String?
   status    String   @default("NEW") // NEW, SENT, COOKING, READY, SERVED
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

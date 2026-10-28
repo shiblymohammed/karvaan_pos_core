@@ -3,7 +3,7 @@ import { resolveMediaUrl } from '../../services/mediaUrl';
 import { authorizedFetch } from '../../services/authFetch';
 import React, { useState, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useMenuStore, Product, Category } from '../../store/useMenuStore';
+import { useMenuStore, Product, Category, ProductVariant } from '../../store/useMenuStore';
 import {
   Plus, Edit3, Trash2, X, Check, PowerOff, ChevronUp, ChevronDown,
   Search, LayoutGrid, UtensilsCrossed, Tag, Save, AlertCircle, ImagePlus, Trash, Star
@@ -69,13 +69,40 @@ interface ProductFormProps {
 const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products, onSave, onClose, title }) => {
   const [form, setForm] = useState<Partial<Product>>({
     name: '', price: 0, category: categories[0]?.name || '', isAvailable: true,
-    prepTime: 5, gstRate: 5, imageEmoji: '', iconName: 'UtensilsCrossed', description: '', imageUrl: '', isCombo: false, comboItems: [], ...initial
+    prepTime: 5, gstRate: 5, imageEmoji: '', iconName: 'UtensilsCrossed', description: '', imageUrl: '', isCombo: false, comboItems: [], variants: [], ...initial
   });
   
   const [showIconPicker, setShowIconPicker] = useState(false);
   const nonAll = categories.filter(c => c.name !== 'All').sort((a, b) => a.sortOrder - b.sortOrder);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+
+  const handleAddVariant = () => {
+    const newVariant: ProductVariant = {
+      id: `var-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: '',
+      price: form.price || 0,
+    };
+    setForm(current => ({
+      ...current,
+      variants: [...(current.variants || []), newVariant],
+    }));
+  };
+
+  const handleUpdateVariant = (index: number, field: 'name' | 'price', value: any) => {
+    setForm(current => {
+      const updated = [...(current.variants || [])];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...current, variants: updated };
+    });
+  };
+
+  const handleRemoveVariant = (index: number) => {
+    setForm(current => ({
+      ...current,
+      variants: (current.variants || []).filter((_, i) => i !== index),
+    }));
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -94,8 +121,21 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.price) return;
-    onSave(form as Omit<Product, 'id' | 'isAvailable'>);
+    if (!form.name) return;
+    const cleanVariants = (form.variants || []).filter(v => v.name.trim() !== '');
+    let finalPrice = form.price || 0;
+    if (cleanVariants.length > 0 && (!finalPrice || finalPrice <= 0)) {
+      finalPrice = cleanVariants[0].price;
+    }
+    if (finalPrice <= 0 && cleanVariants.length === 0) {
+      alert('Please enter a valid price or add at least one variant with a price.');
+      return;
+    }
+    onSave({
+      ...form,
+      price: finalPrice,
+      variants: cleanVariants.length > 0 ? cleanVariants : undefined,
+    } as Omit<Product, 'id' | 'isAvailable'>);
   };
 
   return (
@@ -122,7 +162,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products
             )}
             <div className="flex flex-col">
               <span className="font-black text-base text-slate-800 leading-tight">{form.name || 'Product Preview'}</span>
-              <span className="text-sm font-bold text-emerald-600">₹{form.price || 0}</span>
+              <span className="text-sm font-bold text-emerald-600">
+                {form.variants && form.variants.length > 0
+                  ? `From ₹${Math.min(...form.variants.map(v => v.price || 0))} (${form.variants.length} variant${form.variants.length > 1 ? 's' : ''})`
+                  : `₹${form.price || 0}`}
+              </span>
             </div>
           </div>
 
@@ -185,8 +229,8 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className={labelCls}>Price (₹) *</label>
-              <input type="number" required min="0" value={form.price === 0 ? '' : form.price}
+              <label className={labelCls}>Price (₹) {form.variants && form.variants.length > 0 ? '(Default)' : '*'}</label>
+              <input type="number" required={!form.variants || form.variants.length === 0} min="0" value={form.price === 0 ? '' : form.price}
                 onChange={e => setForm({ ...form, price: e.target.value === '' ? 0 : Number(e.target.value) })}
                 className={`${inputCls} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} placeholder="150" />
             </div>
@@ -202,6 +246,71 @@ const ProductForm: React.FC<ProductFormProps> = ({ initial, categories, products
                 onChange={e => setForm({ ...form, prepTime: e.target.value === '' ? 0 : Number(e.target.value) })}
                 className={`${inputCls} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} placeholder="5" />
             </div>
+          </div>
+
+          {/* Variants / Portion Pricing Section */}
+          <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                  Product Variants & Pricing (Optional)
+                </h4>
+                <p className="text-[11px] font-semibold text-slate-400">
+                  Add sizes or portion options with individual prices (e.g. Half / Full, Small / Large).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddVariant}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Variant
+              </button>
+            </div>
+
+            {form.variants && form.variants.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                {form.variants.map((v, index) => (
+                  <div key={v.id || index} className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-sm animate-in fade-in duration-200">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        placeholder="Variant Name (e.g. Full, Half, 500ml)"
+                        value={v.name}
+                        onChange={(e) => handleUpdateVariant(index, 'name', e.target.value)}
+                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:border-emerald-500"
+                        required
+                      />
+                    </div>
+                    <div className="w-32 flex items-center gap-1">
+                      <span className="text-xs font-bold text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Price"
+                        value={v.price === 0 ? '' : v.price}
+                        onChange={(e) => handleUpdateVariant(index, 'price', e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black text-emerald-600 focus:outline-none focus:border-emerald-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        required
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveVariant(index)}
+                      className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      title="Remove Variant"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-2 text-slate-400 text-xs font-medium">
+                No variants added. This item will use the single base price above.
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -571,8 +680,18 @@ export const AdminMenuManager: React.FC = () => {
                               {categories.find(c => c.name === prod.category)?.emoji} {prod.category}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-black text-emerald-600 text-base">₹{prod.price}</td>
-                          <td className="py-3 px-4 text-xs font-bold text-slate-400">{prod.gstRate ?? 5}%</td>
+                          <td className="py-3 px-4">
+                            <span className="font-black text-emerald-600 text-base">₹{prod.price}</span>
+                            {prod.variants && prod.variants.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1 max-w-xs">
+                                {prod.variants.map((v) => (
+                                  <span key={v.id} className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-md border border-emerald-200 shadow-2xs whitespace-nowrap">
+                                    {v.name}: ₹{v.price}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </td>
                           <td className="py-3 px-4 text-xs font-bold text-slate-400">{prod.prepTime}m</td>
                           <td className="py-3 px-4 text-center">
                             <button onClick={() => { toggleAvailability(prod.id); triggerMenuSync(); }}
