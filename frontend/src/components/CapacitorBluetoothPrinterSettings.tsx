@@ -28,6 +28,7 @@ import {
 } from '../services/bluetoothPrinter';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { toast } from '../store/useToastStore';
+import { ReceiptLogoUploader } from './ReceiptLogoUploader';
 
 interface CapacitorBluetoothPrinterSettingsProps {
   restaurantName: string;
@@ -36,10 +37,12 @@ interface CapacitorBluetoothPrinterSettingsProps {
 export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrinterSettingsProps> = ({
   restaurantName,
 }) => {
-  const { receiptName = '', receiptAddress = '', receiptGstin = '' } = useSettingsStore();
+  const { receiptName = '', receiptAddress = '', receiptGstin = '', receiptLogo = '', receiptFooterNote = '' } = useSettingsStore();
   const [name, setName] = useState(receiptName || restaurantName || '');
   const [address, setAddress] = useState(receiptAddress || '');
   const [gstin, setGstin] = useState(receiptGstin || '');
+  const [logo, setLogo] = useState<string | undefined>(receiptLogo);
+  const [footerNote, setFooterNote] = useState(receiptFooterNote || 'Thank you! Visit again.');
 
   // Bluetooth Paired Devices
   const [btDevices, setBtDevices] = useState<BluetoothDevice[]>([]);
@@ -513,7 +516,9 @@ export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrint
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {/* Logo Uploader */}
+          <ReceiptLogoUploader logo={logo} onChange={(newLogo) => setLogo(newLogo || undefined)} />
           <div>
             <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1">
               Restaurant / Business Name
@@ -555,6 +560,19 @@ export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrint
             </div>
           </div>
 
+          <div>
+            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1">
+              Receipt Footer Note / Tagline
+            </label>
+            <input
+              type="text"
+              value={footerNote}
+              onChange={(e) => setFooterNote(e.target.value)}
+              placeholder="e.g. Thank you for dining with us! Follow us @karvaan"
+              className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
           <div className="flex justify-end pt-2">
             <button
               type="button"
@@ -569,3 +587,4 @@ export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrint
     </div>
   );
 };
+

@@ -18,6 +18,9 @@ interface ReceiptItem {
   price: number;
   notes?: string;
   addons?: { name: string; price: number }[];
+  variantId?: string;
+  variantName?: string;
+  variant?: string;
 }
 
 interface BillData {
@@ -37,7 +40,9 @@ interface BillData {
   time: string;
   date: string;
   deliveryFee?: number;
-  customer?: string;
+  customer?: any;
+  customerName?: string;
+  customerPhone?: string;
   pendingConfirmation?: boolean;
   paymentPending?: boolean;
   tableId?: string | null;
@@ -54,7 +59,7 @@ interface ReceiptModalProps {
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, orderType, onClose, onReturn, isReprint = false }) => {
   const { currentUser } = useAuthStore();
-  const { receiptName = 'Karvaan POS', receiptAddress = '', receiptGstin = '' } = useSettingsStore();
+  const { receiptName = 'Karvaan POS', receiptAddress = '', receiptGstin = '', receiptLogo = '', receiptFooterNote = '' } = useSettingsStore();
   const [isPrinting, setIsPrinting] = useState(false);
   const printing = useRef(false);
   const [requestId] = useState(createId);
@@ -86,8 +91,54 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
     const lineItems = bill.items.map(item => ({ ...item, price: item.price + (item.addons?.reduce((sum, addon) => sum + addon.price, 0) || 0) }));
     const paperWidth = Number(network?.paperSize === '58mm' ? 58 : currentProfile.browserPaperWidth || 80);
     const bytes = receiptType === 'KOT'
-      ? buildKotReceipt({ orderNumber: bill.orderNumber || bill.billNumber, tableName: bill.table, items: lineItems.map(item => ({ name: item.name, qty: item.quantity, notes: item.notes, addons: item.addons })), time: `${bill.date} ${bill.time}`, paperWidth })
-      : buildBillReceipt({ restaurantName: receiptName, restaurantAddress: receiptAddress, gstin: receiptGstin, orderType, billNumber: bill.billNumber, tableName: bill.table, cashier: bill.cashier || currentUser?.name || 'Staff', items: lineItems.map(item => ({ name: item.name, qty: item.quantity, price: item.price, notes: item.notes, addons: item.addons })), subtotal: bill.subtotal, discount: bill.discount || 0, gst: bill.cgst + bill.sgst, grandTotal: bill.grandTotal, paymentMethod: bill.method, tenders: bill.tenders, deliveryFee: bill.deliveryFee, pendingConfirmation: bill.pendingConfirmation, paymentPending: bill.paymentPending, prebill: receiptType === 'PREBILL', reprint: isReprint, time: `${bill.date} ${bill.time}`, paperWidth });
+      ? buildKotReceipt({
+          orderNumber: bill.orderNumber || bill.billNumber,
+          tableName: bill.table || 'Takeaway',
+          orderType: orderType || 'DINE_IN',
+          waiter: bill.waiter,
+          items: lineItems.map(item => ({
+            name: item.name,
+            qty: item.quantity,
+            notes: item.notes,
+            addons: item.addons,
+            variant: item.variantName || item.variant,
+          })),
+          time: `${bill.date || ''} ${bill.time || ''}`.trim() || new Date().toLocaleTimeString(),
+          paperWidth,
+        })
+      : buildBillReceipt({
+          restaurantName: receiptName,
+          restaurantAddress: receiptAddress,
+          gstin: receiptGstin,
+          orderType: orderType || 'DINE_IN',
+          billNumber: bill.billNumber,
+          tableName: bill.table,
+          cashier: bill.cashier || currentUser?.name || 'Staff',
+          customerName: bill.customerName || bill.customer?.name,
+          customerPhone: bill.customerPhone || bill.customer?.phone,
+          items: lineItems.map(item => ({
+            name: item.name,
+            qty: item.quantity,
+            price: item.price,
+            notes: item.notes,
+            addons: item.addons,
+            variant: item.variantName || item.variant,
+          })),
+          subtotal: bill.subtotal,
+          discount: bill.discount || 0,
+          gst: bill.cgst + bill.sgst,
+          grandTotal: bill.grandTotal,
+          paymentMethod: bill.method,
+          tenders: bill.tenders,
+          deliveryFee: bill.deliveryFee,
+          pendingConfirmation: bill.pendingConfirmation,
+          paymentPending: bill.paymentPending,
+          prebill: receiptType === 'PREBILL',
+          reprint: isReprint,
+          time: `${bill.date || ''} ${bill.time || ''}`.trim() || new Date().toLocaleTimeString(),
+          paperWidth,
+          footerNote: receiptFooterNote,
+        });
     try {
       if (!forceBrowser && isCapacitorApp) {
         const kotPrinter = getSavedBtKotPrinter();
@@ -158,58 +209,96 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
         </div>
 
         {/* Thermal Paper Preview */}
-        <div ref={paper} className="w-full bg-pos-accent/5 text-pos-text font-mono text-left p-4 rounded-lg shadow-inner text-xs space-y-2 border-t-4 border-dashed border-pos-border">
-          {isReprint && <p className="text-center font-bold">REPRINT</p>}
-          <p className="text-center font-bold">{receiptType === 'KOT' ? `Kitchen ticket ${bill.orderNumber}` : `${receiptType === 'PREBILL' ? 'PRE-BILL — UNPAID' : bill.paymentPending ? 'Dispatch note — UNPAID' : 'Invoice'} ${bill.billNumber}`} · {bill.date} {bill.time}</p>
-          {bill.pendingConfirmation && <p className="text-center font-bold">Awaiting server confirmation</p>}
-          {bill.paymentPending && <p className="text-center font-bold">Payment pending</p>}
-          <div className="text-center border-b border-pos-border pb-2">
-            <p className="font-extrabold text-sm uppercase">{receiptName}</p>
-            {receiptAddress && <p className="text-[10px] font-bold text-pos-text-muted">{receiptAddress}</p>}{receiptGstin && <p className="text-[10px] font-bold text-pos-text-muted">GSTIN: {receiptGstin}</p>}
-            <p className="text-[10px] font-bold text-pos-text-muted">Table: {bill.table} | {bill.method === 'SPLIT' ? 'SPLIT PAYMENT' : `Method: ${bill.method}`}</p>
-            <p className="text-[10px] font-bold text-pos-text-muted mt-1">Cashier: {bill.cashier} | Server: {bill.waiter}</p>
-          </div>
-
-          {/* Split payment breakdown */}
-          {bill.method === 'SPLIT' && bill.tenders && (
-            <div className="space-y-0.5 py-1 border-b border-pos-border">
-              <p className="text-[10px] font-black uppercase text-pos-text-muted tracking-wide mb-1">Payment Breakdown:</p>
-              {Object.entries(bill.tenders as Record<string, number>)
-                .filter(([, amt]) => amt > 0)
-                .map(([method, amt]) => (
-                  <div key={method} className="flex justify-between text-[10px] font-bold">
-                    <span>{method}:</span>
-                    <span>₹{(amt as number).toFixed(2)}</span>
-                  </div>
-                ))
-              }
+        <div ref={paper} className="w-full bg-white text-slate-900 font-mono text-left p-4 sm:p-5 rounded-2xl shadow-md text-xs space-y-2.5 border-t-4 border-slate-800">
+          {/* Receipt Logo */}
+          {receiptLogo && (
+            <div className="text-center pb-1">
+              <img src={receiptLogo} alt="Restaurant Logo" className="max-h-12 max-w-[150px] mx-auto object-contain" />
             </div>
           )}
 
-          <div className="space-y-1 py-1 border-b border-pos-border">
-            {bill.items.map((item, idx) => {
-              const addonPrice = item.addons?.reduce((sum, a) => sum + a.price, 0) || 0;
+          {/* Header Info */}
+          <div className="text-center space-y-0.5 pb-2 border-b border-dashed border-slate-300">
+            <h4 className="font-black text-sm uppercase tracking-wide text-slate-900">{receiptName}</h4>
+            {receiptAddress && <p className="text-[10px] text-slate-500 leading-tight">{receiptAddress}</p>}
+            {receiptGstin && <p className="text-[10px] text-slate-500 font-semibold">GSTIN: {receiptGstin}</p>}
+          </div>
+
+          {/* Receipt Classification Badge */}
+          <div className="text-center py-1">
+            {receiptType === 'KOT' ? (
+              <div className="inline-block px-3 py-1 bg-slate-900 text-white font-black text-[11px] uppercase tracking-wider rounded">
+                KITCHEN ORDER TICKET (KOT)
+              </div>
+            ) : receiptType === 'PREBILL' ? (
+              <div className="inline-block px-3 py-1 bg-amber-500/15 text-amber-900 border border-amber-500/40 font-black text-[11px] uppercase tracking-wider rounded">
+                *** PROVISIONAL PRE-BILL (UNPAID) ***
+              </div>
+            ) : isReprint ? (
+              <div className="inline-block px-3 py-1 bg-rose-500/20 text-rose-900 border border-rose-500/40 font-black text-[11px] uppercase tracking-wider rounded">
+                *** DUPLICATE / REPRINT ***
+              </div>
+            ) : (
+              <div className="inline-block px-3 py-0.5 bg-emerald-500/15 text-emerald-900 font-black text-[11px] uppercase tracking-wider rounded">
+                ─── TAX INVOICE ───
+              </div>
+            )}
+          </div>
+
+          {/* Metadata Grid */}
+          <div className="text-[11px] space-y-1 py-1.5 border-b border-dashed border-slate-300">
+            <div className="flex justify-between font-bold">
+              <span>{receiptType === 'KOT' ? 'Order' : receiptType === 'PREBILL' ? 'Pre-Bill' : 'Invoice'}: #{receiptType === 'KOT' ? bill.orderNumber : bill.billNumber}</span>
+              <span>{bill.time}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>Table: {bill.table || 'Takeaway'} {orderType ? `(${orderType})` : ''}</span>
+              <span>{bill.date}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>Cashier: {bill.cashier}</span>
+              {bill.waiter && <span>Server: {bill.waiter}</span>}
+            </div>
+            {(bill.customerName || bill.customer?.name) && (
+              <div className="text-slate-700 font-semibold">
+                Customer: {bill.customerName || bill.customer?.name} {bill.customerPhone ? `(${bill.customerPhone})` : ''}
+              </div>
+            )}
+          </div>
+
+          {/* Items Table */}
+          <div className="space-y-1.5 py-2 border-b border-dashed border-slate-300">
+            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 tracking-wider pb-1 border-b border-slate-200">
+              <span>Item &amp; Details</span>
+              {receiptType !== 'KOT' && <span>Amount</span>}
+            </div>
+            {bill.items.map((item: any, idx: number) => {
+              const addonPrice = item.addons?.reduce((sum: number, a: any) => sum + a.price, 0) || 0;
               const lineTotal = (item.price + addonPrice) * item.quantity;
+              const variantLabel = item.variantName || item.variant;
               return (
-                <div key={idx} className="flex flex-col">
-                  <div className="flex justify-between font-bold">
-                    <span>{item.name} x{item.quantity}</span>
+                <div key={idx} className="space-y-0.5">
+                  <div className="flex justify-between font-bold text-slate-800">
+                    <span>
+                      {item.quantity > 1 ? `${item.quantity}x ` : ''}{item.name}
+                      {variantLabel && <span className="text-slate-500 font-normal"> ({variantLabel})</span>}
+                    </span>
                     {receiptType !== 'KOT' && <span>₹{lineTotal.toFixed(2)}</span>}
                   </div>
-                  {item.notes && (
-                    <div className="text-[10px] font-black text-rose-500 pl-2 uppercase italic">
-                      * NOTE: {item.notes}
+                  {item.quantity > 1 && receiptType !== 'KOT' && (
+                    <div className="text-[10px] text-slate-400 pl-2">
+                      @ ₹{item.price.toFixed(2)} each
                     </div>
                   )}
-                  {item.addons && Object.entries(
-                    item.addons.reduce((acc: Record<string, { price: number; qty: number }>, addon) => {
-                      acc[addon.name] = { price: addon.price, qty: (acc[addon.name]?.qty || 0) + 1 };
-                      return acc;
-                    }, {})
-                  ).map(([name, data], aIdx) => (
-                    <div key={aIdx} className="flex justify-between text-[10px] text-emerald-500 pl-2">
-                      <span>{data.qty > 1 ? `${data.qty}x ` : '+ '}{name}</span>
-                      {receiptType !== 'KOT' && <span>(₹{data.price * data.qty * item.quantity})</span>}
+                  {item.notes && (
+                    <div className="text-[10px] font-black text-rose-600 pl-2 uppercase italic">
+                      * Note: {item.notes}
+                    </div>
+                  )}
+                  {item.addons && item.addons.map((addon: any, aIdx: number) => (
+                    <div key={aIdx} className="flex justify-between text-[10px] text-emerald-600 pl-2">
+                      <span>+ {addon.name}</span>
+                      {receiptType !== 'KOT' && <span>(₹{addon.price * item.quantity})</span>}
                     </div>
                   ))}
                 </div>
@@ -217,27 +306,74 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
             })}
           </div>
 
+          {/* Totals & Calculations (Bills only, omitted on KOT) */}
           {receiptType !== 'KOT' && (
-            <div className="space-y-0.5 pt-1 font-bold">
+            <div className="space-y-1 pt-1.5 text-xs text-slate-700">
               <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span>₹{bill.subtotal.toFixed(2)}</span>
+                <span>Subtotal</span>
+                <span className="font-bold">₹{bill.subtotal.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-[11px] text-pos-text-muted">
-                <span>CGST + SGST:</span>
-                <span>₹{(bill.cgst + bill.sgst).toFixed(2)}</span>
-              </div>
-              {!!bill.discount && <div className="flex justify-between"><span>Discount:</span><span>−₹{bill.discount.toFixed(2)}</span></div>}
-              {!!bill.deliveryFee && <div className="flex justify-between"><span>Delivery fee:</span><span>₹{bill.deliveryFee.toFixed(2)}</span></div>}
-              <div className="flex justify-between text-base font-black border-t border-pos-border pt-1 mt-1">
-                <span>GRAND TOTAL:</span>
+              {!!bill.discount && (
+                <div className="flex justify-between text-rose-600">
+                  <span>Discount</span>
+                  <span className="font-bold">−₹{bill.discount.toFixed(2)}</span>
+                </div>
+              )}
+              {(bill.cgst + bill.sgst) > 0 && (
+                <div className="flex justify-between text-slate-500 text-[11px]">
+                  <span>CGST + SGST</span>
+                  <span>₹{(bill.cgst + bill.sgst).toFixed(2)}</span>
+                </div>
+              )}
+              {!!bill.deliveryFee && (
+                <div className="flex justify-between text-slate-500 text-[11px]">
+                  <span>Delivery / Surcharge</span>
+                  <span>₹{bill.deliveryFee.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-base font-black border-t-2 border-b-2 border-slate-900 py-1.5 mt-2 text-slate-900">
+                <span>{receiptType === 'PREBILL' ? 'TOTAL PAYABLE' : 'GRAND TOTAL'}</span>
                 <span>₹{bill.grandTotal.toFixed(2)}</span>
               </div>
             </div>
           )}
 
-          <div className="text-center pt-2 text-[10px] font-bold text-pos-text-muted border-t border-pos-border">
-            <p>Thank you for visiting!</p>
+          {/* Payment Info */}
+          <div className="pt-1.5 text-[11px] border-b border-dashed border-slate-300 pb-2">
+            {receiptType === 'PREBILL' ? (
+              <div className="text-center font-black text-amber-700 bg-amber-50 p-1.5 rounded-lg border border-amber-200">
+                STATUS: UNPAID (PRE-BILL)<br />
+                <span className="text-[10px] font-medium text-amber-600">Please present this slip at counter for payment</span>
+              </div>
+            ) : receiptType === 'KOT' ? (
+              <div className="text-center font-bold text-slate-600">
+                Total Items: {bill.items.length} | Qty: {bill.items.reduce((s: number, i: any) => s + i.quantity, 0)}
+              </div>
+            ) : (
+              <div>
+                <div className="flex justify-between font-bold text-slate-800">
+                  <span>Payment Mode:</span>
+                  <span className="uppercase">{bill.method || 'CASH'}</span>
+                </div>
+                {bill.method === 'SPLIT' && bill.tenders && (
+                  <div className="space-y-0.5 mt-1 pl-2 border-l-2 border-emerald-500">
+                    {Object.entries(bill.tenders as Record<string, number>)
+                      .filter(([, amt]) => amt > 0)
+                      .map(([method, amt]) => (
+                        <div key={method} className="flex justify-between text-[10px] text-slate-600">
+                          <span>{method}:</span>
+                          <span>₹{amt.toFixed(2)}</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="text-center pt-1 text-[10px] font-bold text-slate-400">
+            <p>{receiptFooterNote || 'Thank you for visiting! Please visit us again.'}</p>
           </div>
         </div>
 

@@ -285,7 +285,9 @@ export const POSScreen: React.FC = () => {
       table: selectedTableName || 'Takeaway',
       cashier: currentUser?.name || 'System',
       waiter: selectedWaiter || 'Counter Staff',
-      items: [...items], subtotal, discount, cgst, sgst, grandTotal,
+      items: items.map(i => ({ ...i, variantName: i.variantName, variant: i.variantName })),
+      customerName: customer?.name, customerPhone: customer?.phone,
+      subtotal, discount, cgst, sgst, grandTotal,
       method: 'UNPAID', time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(),
       tableId: selectedTableId,
     };
@@ -307,7 +309,7 @@ export const POSScreen: React.FC = () => {
       table: selectedTableName || 'Takeaway',
       cashier: currentUser?.name || 'System',
       waiter: selectedWaiter || 'Counter Staff',
-      items: newItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, addons: i.addons })),
+      items: newItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, addons: i.addons, variantName: i.variantName, variant: i.variantName })),
       subtotal: 0, discount: 0, cgst: 0, sgst: 0, grandTotal: 0,
       method: 'KOT_PRINT', time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(),
     };

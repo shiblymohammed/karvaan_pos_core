@@ -27,16 +27,19 @@ import {
 } from '../services/bluetoothPrinter';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { toast } from '../store/useToastStore';
+import { ReceiptLogoUploader } from './ReceiptLogoUploader';
 
 interface PrinterSettingsProps {
   restaurantName: string;
 }
 
 export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName }) => {
-  const { receiptName = '', receiptAddress = '', receiptGstin = '' } = useSettingsStore();
+  const { receiptName = '', receiptAddress = '', receiptGstin = '', receiptLogo = '', receiptFooterNote = '' } = useSettingsStore();
   const [name, setName] = useState(receiptName || restaurantName || '');
   const [address, setAddress] = useState(receiptAddress || '');
   const [gstin, setGstin] = useState(receiptGstin || '');
+  const [logo, setLogo] = useState<string | undefined>(receiptLogo);
+  const [footerNote, setFooterNote] = useState(receiptFooterNote || 'Thank you! Visit again.');
 
   useEffect(() => {
     if (receiptName) setName(receiptName);
@@ -250,7 +253,8 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
+          <ReceiptLogoUploader logo={logo} onChange={(newLogo) => setLogo(newLogo || undefined)} />
           <div>
             <label className="block text-xs font-black text-pos-text-muted uppercase mb-1">
               Restaurant / Business Name
@@ -292,7 +296,20 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
             </div>
           </div>
 
-          <div className="flex justify-end pt-2">
+          <div>
+              <label className="block text-xs font-black text-pos-text-muted uppercase mb-1">
+                Receipt Footer Note / Tagline
+              </label>
+              <input
+                type="text"
+                value={footerNote}
+                onChange={e => setFooterNote(e.target.value)}
+                placeholder="e.g. Thank you for dining with us! Follow us @karvaan"
+                className="w-full bg-pos-bg border border-pos-border rounded-xl px-3.5 py-2.5 text-sm font-bold text-pos-text focus:outline-none focus:ring-2 focus:ring-pos-accent"
+              />
+            </div>
+
+            <div className="flex justify-end pt-2">
             <button
               type="button"
               onClick={saveBranding}

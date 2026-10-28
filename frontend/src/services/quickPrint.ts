@@ -9,7 +9,13 @@ import { toast } from '../store/useToastStore';
 
 export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'DINE_IN'): Promise<boolean> {
   try {
-    const { receiptName = 'Karvaan POS', receiptAddress = '', receiptGstin = '' } = useSettingsStore.getState();
+    const {
+      receiptName = 'Karvaan POS',
+      receiptAddress = '',
+      receiptGstin = '',
+      receiptFooterNote = 'Thank you for visiting! Please visit us again.',
+    } = useSettingsStore.getState();
+
     const currentUser = useAuthStore.getState().currentUser;
     const currentProfile = getPrinterProfile();
     const isCapacitorApp = isCapacitor();
@@ -37,12 +43,15 @@ export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'D
       billNumber: bill.billNumber,
       tableName: bill.table || 'Takeaway',
       cashier: bill.cashier || currentUser?.name || 'Staff',
+      customerName: bill.customerName || bill.customer?.name,
+      customerPhone: bill.customerPhone || bill.customer?.phone,
       items: lineItems.map((item: any) => ({
         name: item.name,
         qty: item.quantity,
         price: item.price,
         notes: item.notes,
         addons: item.addons,
+        variant: item.variantName || item.variant,
       })),
       subtotal: bill.subtotal,
       discount: bill.discount || 0,
@@ -57,6 +66,7 @@ export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'D
       reprint: false,
       time: `${bill.date || new Date().toLocaleDateString()} ${bill.time || new Date().toLocaleTimeString()}`,
       paperWidth,
+      footerNote: receiptFooterNote,
     });
 
     // 1. Android Capacitor Native Bluetooth Thermal Printer
@@ -147,11 +157,14 @@ export async function autoPrintKotReceipt(kotData: any): Promise<boolean> {
     const bytes = buildKotReceipt({
       orderNumber: kotData.orderNumber || 'KOT',
       tableName: kotData.table || 'Takeaway',
+      orderType: kotData.orderType,
+      waiter: kotData.waiter,
       items: (kotData.items || []).map((item: any) => ({
         name: item.name,
         qty: item.quantity,
         notes: item.notes,
         addons: item.addons,
+        variant: item.variantName || item.variant,
       })),
       time: `${kotData.date || new Date().toLocaleDateString()} ${kotData.time || new Date().toLocaleTimeString()}`,
       paperWidth,

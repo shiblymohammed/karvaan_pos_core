@@ -28,6 +28,9 @@ interface SettingsState {
   receiptName?: string;
   receiptAddress?: string;
   receiptGstin?: string;
+  receiptLogo?: string;
+  receiptFooterNote?: string;
+  setReceiptLogo?: (logo: string | null) => void;
   paidAddons?: any[];
   floorConfig?: any[];
   tableConfig?: any[];
@@ -137,6 +140,9 @@ export const useSettingsStore = create<SettingsState>()(
         { id: 'n5', label: 'Extra Cheese', icon: '🧀' },
         { id: 'n6', label: 'Jain Prep', icon: '🌱' },
       ],
+      receiptLogo: '',
+      receiptFooterNote: 'Thank you for visiting! Please visit us again.',
+      setReceiptLogo: (logo) => set({ receiptLogo: logo || '' }),
       discounts: [
         { id: 'd1', label: 'Staff Discount (10%)', amount: 10, type: 'PERCENTAGE' },
         { id: 'd2', label: 'VIP (15%)', amount: 15, type: 'PERCENTAGE' },
