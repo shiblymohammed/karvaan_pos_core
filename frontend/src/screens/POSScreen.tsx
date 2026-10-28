@@ -20,6 +20,7 @@ import { useInventoryStore } from '../store/useInventoryStore';
 import { CustomerSelectModal } from '../components/CustomerSelectModal';
 import { MapPickerModal } from '../components/MapPickerModal';
 import SettlementModal, { PaymentMethod, TenderState } from '../components/SettlementModal';
+import { autoPrintCheckoutReceipt } from '../services/quickPrint';
 import { FolioSidebar } from '../components/pos/FolioSidebar';
 import { ReturnOrderModal, ReturnOrderData } from '../components/ReturnOrderModal';
 import { ManagerAuthModal } from '../components/ManagerAuthModal';
@@ -233,10 +234,12 @@ export const POSScreen: React.FC = () => {
 
     const savedBill = result.status === 'OK' ? result.data : null;
     const invoiceItems = savedBill ? JSON.parse(savedBill.invoiceItems || 'null') : null;
-    setLastBill({ ...billData, ...(savedBill ? { subtotal: savedBill.subtotal, discount: savedBill.discount, cgst: savedBill.cgst, sgst: savedBill.sgst, grandTotal: savedBill.grandTotal, method: savedBill.paymentMethod, tenders: JSON.parse(savedBill.tenders || '{}'), items: invoiceItems ? receiptItemsFromSnapshot(invoiceItems) : billData.items } : {}), pendingConfirmation: result.status === 'QUEUED' });
+    const finalBillData = { ...billData, ...(savedBill ? { subtotal: savedBill.subtotal, discount: savedBill.discount, cgst: savedBill.cgst, sgst: savedBill.sgst, grandTotal: savedBill.grandTotal, method: savedBill.paymentMethod, tenders: JSON.parse(savedBill.tenders || '{}'), items: invoiceItems ? receiptItemsFromSnapshot(invoiceItems) : billData.items } : {}), pendingConfirmation: result.status === 'QUEUED' };
+    setLastBill(finalBillData);
     setSettleState({ isOpen: false, method: 'CASH', isProcessing: false });
-    setReceiptType('CHECKOUT');
     clearCart();
+    void autoPrintCheckoutReceipt(finalBillData, orderType);
+    toast.success("Bill #" + finalBillData.billNumber + " settled successfully (₹" + finalBillData.grandTotal.toFixed(2) + ")");
   };
 
   // ─── Delivery Dispatch ────────────────────────────────────────────────────
@@ -264,9 +267,11 @@ export const POSScreen: React.FC = () => {
       return;
     }
     if (result.status === 'QUEUED') toast.info('Delivery saved on this device; awaiting server confirmation.');
-    setLastBill({ orderNumber, billNumber, table: 'Delivery', cashier: currentUser?.name || 'Staff', waiter: selectedWaiter || 'Dispatch', items: [...items], subtotal, discount, cgst, sgst, deliveryFee: deliveryFee || 0, grandTotal: total, method: isPrepaid ? 'UPI' : 'COD', customerName: customer?.name, customerPhone: customer?.phone, time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(), pendingConfirmation: result.status === 'QUEUED', paymentPending: !isPrepaid });
-    setReceiptType('CHECKOUT');
+    const finalDeliveryBill = { orderNumber, billNumber, table: 'Delivery', cashier: currentUser?.name || 'Staff', waiter: selectedWaiter || 'Dispatch', items: [...items], subtotal, discount, cgst, sgst, deliveryFee: deliveryFee || 0, grandTotal: total, method: isPrepaid ? 'UPI' : 'COD', customerName: customer?.name, customerPhone: customer?.phone, time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(), pendingConfirmation: result.status === 'QUEUED', paymentPending: !isPrepaid };
+    setLastBill(finalDeliveryBill);
     clearCart();
+    void autoPrintCheckoutReceipt(finalDeliveryBill, 'DELIVERY');
+    toast.success("Delivery #" + billNumber + " dispatched (₹" + total.toFixed(2) + ")");
   };
 
   // ─── Pre-bill ─────────────────────────────────────────────────────────────
