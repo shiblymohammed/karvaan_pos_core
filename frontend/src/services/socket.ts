@@ -165,8 +165,11 @@ const queueRetry = setInterval(() => { if (socket.connected) void flushPendingAc
 export function startMasterSyncPolling() {}
 export function stopMasterSyncPolling() {}
 
-socket.on('disconnect', () => {
-  console.log('🔌 [POS] Disconnected from Backend WebSocket');
+socket.on('disconnect', (reason) => {
+  console.warn('🔌 [POS] Disconnected from Backend WebSocket. Reason:', reason);
+});
+socket.on('connect_error', (error) => {
+  console.error('🔌 [POS] WebSocket Connection Error:', error?.message || error);
 });
 
 // We use dynamic imports to avoid circular dependencies with the stores
