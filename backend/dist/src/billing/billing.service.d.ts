@@ -1,9 +1,13 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { KdsGateway } from '../kds/kds.gateway';
+import { StockPolicyService } from './stock-policy.service';
+import { PrintQueueService } from '../printer/print-queue.service';
 export declare class BillingService {
     private readonly prisma;
     private readonly kdsGateway;
-    constructor(prisma: PrismaService, kdsGateway: KdsGateway);
+    private readonly stockPolicy;
+    private readonly printQueue;
+    constructor(prisma: PrismaService, kdsGateway: KdsGateway, stockPolicy: StockPolicyService, printQueue: PrintQueueService);
     createOrder(data: {
         tableId?: string;
         waiterId?: string;
@@ -14,14 +18,17 @@ export declare class BillingService {
             productId: string;
             quantity: number;
             notes?: string;
+            price?: number;
+            variantId?: string;
+            variantName?: string;
         }>;
     }): Promise<{
         table: {
             id: string;
-            status: string;
+            restaurantId: string;
             createdAt: Date;
             updatedAt: Date;
-            restaurantId: string;
+            status: string;
             tableNumber: string;
             capacity: number;
             currentOrderId: string | null;
@@ -29,46 +36,51 @@ export declare class BillingService {
         items: ({
             product: {
                 id: string;
+                restaurantId: string;
                 createdAt: Date;
                 updatedAt: Date;
-                restaurantId: string;
-                price: number;
                 name: string;
+                imageUrl: string | null;
                 description: string | null;
+                price: number;
                 gstRate: number;
                 categoryId: string;
                 isAvailable: boolean;
+                isArchived: boolean;
                 prepTimeMinutes: number;
+                recipeInstructions: string | null;
+                recipeBatchSize: number;
                 imageEmoji: string | null;
-                imageUrl: string | null;
+                variants: string | null;
             };
         } & {
             id: string;
-            status: string;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
-            quantity: number;
             price: number;
-            addons: string | null;
             productId: string;
+            quantity: number;
+            status: string;
+            notes: string | null;
             orderId: string;
+            addons: string | null;
+            variant: string | null;
         })[];
     } & {
         id: string;
-        orderNumber: string;
-        orderType: string;
-        status: string;
-        totalAmount: number;
-        discount: number;
-        notes: string | null;
+        restaurantId: string;
         createdAt: Date;
         updatedAt: Date;
         syncedAt: Date | null;
+        orderNumber: string;
+        orderType: string;
+        discount: number;
+        status: string;
+        notes: string | null;
         tableId: string | null;
         waiterId: string | null;
         customerId: string | null;
-        restaurantId: string;
+        totalAmount: number;
     }>;
     calculateBillPreview(orderId: string, restaurantId: string, discountAmount?: number): Promise<{
         orderId: string;
@@ -84,52 +96,36 @@ export declare class BillingService {
         paymentMethod: 'CASH' | 'CARD' | 'UPI' | 'SPLIT';
         discount?: number;
     }, restaurantId: string, cashierId: string): Promise<{
-        bill: {
-            id: string;
-            orderType: string;
-            discount: number;
-            updatedAt: Date;
-            syncedAt: Date | null;
-            restaurantId: string;
-            orderId: string;
-            billNumber: string;
-            subtotal: number;
-            cgst: number;
-            sgst: number;
-            deliveryFee: number;
-            grandTotal: number;
-            paymentMethod: string;
-            cashierId: string | null;
-            customerName: string | null;
-            customerPhone: string | null;
-            waiterName: string | null;
-            settledAt: Date;
-        };
+        bill: any;
         order: {
             id: string;
-            orderNumber: string;
-            orderType: string;
-            status: string;
-            totalAmount: number;
-            discount: number;
-            notes: string | null;
+            restaurantId: string;
             createdAt: Date;
             updatedAt: Date;
             syncedAt: Date | null;
+            orderNumber: string;
+            orderType: string;
+            discount: number;
+            status: string;
+            notes: string | null;
             tableId: string | null;
             waiterId: string | null;
             customerId: string | null;
-            restaurantId: string;
+            totalAmount: number;
         };
     }>;
-    private pricedItems;
+    pricedItems(tx: any, items: any[], restaurantId: string, persistedItems?: any[]): Promise<{
+        lines: any[];
+        settings: any;
+    }>;
     saveKitchenOrder(data: any, restaurantId: string, waiterId: string): Promise<{
+        printJobId: any;
         table: {
             id: string;
-            status: string;
+            restaurantId: string;
             createdAt: Date;
             updatedAt: Date;
-            restaurantId: string;
+            status: string;
             tableNumber: string;
             capacity: number;
             currentOrderId: string | null;
@@ -137,70 +133,68 @@ export declare class BillingService {
         items: ({
             product: {
                 id: string;
+                restaurantId: string;
                 createdAt: Date;
                 updatedAt: Date;
-                restaurantId: string;
-                price: number;
                 name: string;
+                imageUrl: string | null;
                 description: string | null;
+                price: number;
                 gstRate: number;
                 categoryId: string;
                 isAvailable: boolean;
+                isArchived: boolean;
                 prepTimeMinutes: number;
+                recipeInstructions: string | null;
+                recipeBatchSize: number;
                 imageEmoji: string | null;
-                imageUrl: string | null;
+                variants: string | null;
             };
         } & {
             id: string;
-            status: string;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
-            quantity: number;
             price: number;
-            addons: string | null;
             productId: string;
+            quantity: number;
+            status: string;
+            notes: string | null;
             orderId: string;
+            addons: string | null;
+            variant: string | null;
         })[];
-    } & {
         id: string;
-        orderNumber: string;
-        orderType: string;
-        status: string;
-        totalAmount: number;
-        discount: number;
-        notes: string | null;
+        restaurantId: string;
         createdAt: Date;
         updatedAt: Date;
         syncedAt: Date | null;
+        orderNumber: string;
+        orderType: string;
+        discount: number;
+        status: string;
+        notes: string | null;
         tableId: string | null;
         waiterId: string | null;
         customerId: string | null;
-        restaurantId: string;
+        totalAmount: number;
     }>;
-    processDirectCheckout(data: any, restaurantId: string, cashierId: string): Promise<{
+    processDirectCheckout(data: any, restaurantId: string, cashierId: string): Promise<any>;
+    printPrebill(data: any, user: any): Promise<{
         id: string;
-        orderType: string;
-        discount: number;
-        updatedAt: Date;
-        syncedAt: Date | null;
-        restaurantId: string;
-        orderId: string;
-        billNumber: string;
-        subtotal: number;
-        cgst: number;
-        sgst: number;
-        deliveryFee: number;
-        grandTotal: number;
-        paymentMethod: string;
-        cashierId: string | null;
-        customerName: string | null;
-        customerPhone: string | null;
-        waiterName: string | null;
-        settledAt: Date;
+        kind: string;
+        reference: string;
+        state: string;
     }>;
+    recipeForProduct(tx: any, productId: string): Promise<any>;
+    checkoutInTransaction(tx: any, data: any, restaurantId: string, cashierId: string, storedPricing?: any): Promise<any>;
     getDailyDashboardSummary(restaurantId: string): Promise<{
         grossRevenue: number;
+        refundTotal: number;
+        netRevenue: number;
+        repayments: number;
+        collectionBreakdown: {
+            [x: string]: number;
+        };
         totalOrders: number;
         averageOrderValue: number;
         activeOrdersCount: number;
@@ -211,80 +205,5 @@ export declare class BillingService {
             upi: number;
         };
     }>;
-    getOrderHistory(restaurantId: string, startDate?: string, endDate?: string): Promise<({
-        order: {
-            table: {
-                tableNumber: string;
-            };
-            waiter: {
-                name: string;
-            };
-            items: ({
-                product: {
-                    id: string;
-                    createdAt: Date;
-                    updatedAt: Date;
-                    restaurantId: string;
-                    price: number;
-                    name: string;
-                    description: string | null;
-                    gstRate: number;
-                    categoryId: string;
-                    isAvailable: boolean;
-                    prepTimeMinutes: number;
-                    imageEmoji: string | null;
-                    imageUrl: string | null;
-                };
-            } & {
-                id: string;
-                status: string;
-                notes: string | null;
-                createdAt: Date;
-                updatedAt: Date;
-                quantity: number;
-                price: number;
-                addons: string | null;
-                productId: string;
-                orderId: string;
-            })[];
-        } & {
-            id: string;
-            orderNumber: string;
-            orderType: string;
-            status: string;
-            totalAmount: number;
-            discount: number;
-            notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
-            syncedAt: Date | null;
-            tableId: string | null;
-            waiterId: string | null;
-            customerId: string | null;
-            restaurantId: string;
-        };
-        cashier: {
-            name: string;
-        };
-    } & {
-        id: string;
-        orderType: string;
-        discount: number;
-        updatedAt: Date;
-        syncedAt: Date | null;
-        restaurantId: string;
-        orderId: string;
-        billNumber: string;
-        subtotal: number;
-        cgst: number;
-        sgst: number;
-        deliveryFee: number;
-        grandTotal: number;
-        paymentMethod: string;
-        cashierId: string | null;
-        customerName: string | null;
-        customerPhone: string | null;
-        waiterName: string | null;
-        settledAt: Date;
-    })[]>;
+    getOrderHistory(restaurantId: string, startDate?: string, endDate?: string): Promise<any[]>;
 }

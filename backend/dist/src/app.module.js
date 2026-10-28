@@ -12,6 +12,8 @@ const schedule_1 = require("@nestjs/schedule");
 const kds_gateway_1 = require("./kds/kds.gateway");
 const billing_service_1 = require("./billing/billing.service");
 const billing_controller_1 = require("./billing/billing.controller");
+const workflow_service_1 = require("./billing/workflow.service");
+const stock_policy_service_1 = require("./billing/stock-policy.service");
 const backup_module_1 = require("./backup/backup.module");
 const history_module_1 = require("./history/history.module");
 const sync_module_1 = require("./sync/sync.module");
@@ -39,7 +41,7 @@ exports.AppModule = AppModule = __decorate([
             printer_module_1.PrinterModule,
         ],
         controllers: [billing_controller_1.BillingController],
-        providers: [kds_gateway_1.KdsGateway, billing_service_1.BillingService],
+        providers: [kds_gateway_1.KdsGateway, billing_service_1.BillingService, workflow_service_1.WorkflowService, stock_policy_service_1.StockPolicyService],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

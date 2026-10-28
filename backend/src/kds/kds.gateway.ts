@@ -159,9 +159,13 @@ export class KdsGateway implements OnGatewayConnection {
         tables: tables.map(t => ({ ...t, number: t.tableNumber, floorId: settings.tableConfig?.find((c: any) => c.id === t.id)?.floorId || 'f-1' })),
         categories: menu.categories, products: menu.products, settings,
       });
-    } catch (error) {
-      console.error('WebSocket connection failed for client:', client.id, error);
-      client.disconnect(true);
+    } catch (error: any) {
+      const message = error?.message || 'WebSocket connection failed';
+      console.error('WebSocket connection failed for client:', client.id, message, error);
+      client.emit('auth_error', { message });
+      setTimeout(() => {
+        try { client.disconnect(true); } catch {}
+      }, 100);
     }
   }
 

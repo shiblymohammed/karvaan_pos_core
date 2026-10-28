@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Banknote,
@@ -226,9 +227,11 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
 
   const activeTendersCount = (Object.keys(tenders) as PaymentMethod[]).filter((k) => tenders[k] > 0).length;
 
-  return (
+  if (!isOpen) return null;
+
+  const modalContent = (
     <div
-      className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
@@ -477,6 +480,8 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 };
 
 export default SettlementModal;

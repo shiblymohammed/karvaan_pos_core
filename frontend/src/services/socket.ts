@@ -171,6 +171,13 @@ socket.on('disconnect', (reason) => {
 socket.on('connect_error', (error) => {
   console.error('🔌 [POS] WebSocket Connection Error:', error?.message || error);
 });
+socket.on('auth_error', (data: { message?: string }) => {
+  const msg = data?.message || 'Server rejected connection';
+  console.error('🔌 [POS] Server Authentication Error:', msg);
+  if (msg.toLowerCase().includes('jwt') || msg.toLowerCase().includes('token') || msg.toLowerCase().includes('session') || msg.toLowerCase().includes('expired')) {
+    toast.error('Session expired. Please log out and sign in again.');
+  }
+});
 
 // We use dynamic imports to avoid circular dependencies with the stores
 // These listeners are set up AFTER all modules have loaded

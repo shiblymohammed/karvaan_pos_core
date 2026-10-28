@@ -13,6 +13,7 @@ exports.HistoryService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const date_util_1 = require("../utils/date.util");
+const financial_1 = require("../billing/financial");
 let HistoryService = class HistoryService {
     constructor(prisma) {
         this.prisma = prisma;
@@ -60,7 +61,7 @@ let HistoryService = class HistoryService {
             this.prisma.bill.count({ where }),
         ]);
         return {
-            data: bills,
+            data: bills.map(financial_1.immutableHistoryBill),
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit), hasMore: skip + limit < total },
             summary: {
                 startDate: startDate.toISOString(),
@@ -83,23 +84,18 @@ let HistoryService = class HistoryService {
         const grossRevenue = aggregate._sum.grandTotal || 0;
         const totalDiscount = aggregate._sum.discount || 0;
         const totalGst = (aggregate._sum.cgst || 0) + (aggregate._sum.sgst || 0);
-        const paymentGroups = await this.prisma.bill.groupBy({
-            by: ['paymentMethod'],
-            where: { restaurantId, settledAt: { gte: start, lte: end } },
-            _sum: { grandTotal: true }
-        });
-        const byPayment = {};
-        for (const group of paymentGroups) {
-            byPayment[group.paymentMethod] = group._sum.grandTotal || 0;
-        }
+        const financial = await (0, financial_1.financialSummary)(this.prisma, restaurantId, start, end);
+        const byPayment = financial.byPayment;
         const byOrderType = {};
         return {
             date: start.toDateString(),
             totalBills: aggregate._count.id,
             grossRevenue: Number(grossRevenue.toFixed(2)),
             totalDiscount: Number(totalDiscount.toFixed(2)),
-            totalGst: Number(totalGst.toFixed(2)),
-            netRevenue: Number((grossRevenue - totalDiscount).toFixed(2)),
+            totalGst: Number((totalGst - financial.refundGst).toFixed(2)),
+            refunds: financial.refundTotal, repayments: financial.repayments,
+            collectionBreakdown: financial.collections,
+            netRevenue: financial.netRevenue,
             deliveriesCompleted: deliveryOrders,
             paymentBreakdown: byPayment,
             orderTypeBreakdown: byOrderType,
@@ -119,7 +115,7 @@ let HistoryService = class HistoryService {
         const items = await this.prisma.orderItem.groupBy({
             by: ['productId'],
             where: {
-                order: { restaurantId, createdAt: { gte: start, lte: end }, status: 'SERVED' },
+                order: { restaurantId, bill: { settledAt: { gte: start, lte: end } } },
             },
             _sum: { quantity: true },
             orderBy: { _sum: { quantity: 'desc' } },

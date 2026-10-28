@@ -44,6 +44,7 @@ const core_1 = require("@nestjs/core");
 const app_module_1 = require("./app.module");
 const express_1 = require("express");
 const global_exception_filter_1 = require("./common/filters/global-exception.filter");
+const upgrade_local_1 = require("./prisma/upgrade-local");
 function getLocalIPs() {
     const interfaces = os.networkInterfaces();
     const ips = [];
@@ -57,6 +58,8 @@ function getLocalIPs() {
     return ips;
 }
 async function bootstrap() {
+    if (process.env.IS_CLOUD !== 'true')
+        await (0, upgrade_local_1.upgradeLocalDatabase)(process.env.DATABASE_URL, path.join(backendRoot, 'prisma', 'schema.prisma'), dataDirectory);
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.useStaticAssets(process.env.UPLOAD_DIR, {
         prefix: '/uploads/',
@@ -77,6 +80,7 @@ async function bootstrap() {
             status: 'ok',
             service: 'Karvaan POS Backend',
             version: '1.0.0',
+            capabilities: { inventoryPurchases: 1, inventoryChanges: 1, menuArchiving: 1, versionedAdminConfig: 1, inventoryWaste: 1, stockShortageApproval: 1, durablePrinting: 1 },
             timestamp: new Date().toISOString(),
             localIPs: getLocalIPs(),
         });

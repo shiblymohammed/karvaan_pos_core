@@ -11,45 +11,7 @@ export declare class HistoryService {
         orderType?: string;
         paymentMethod?: string;
     }): Promise<{
-        data: ({
-            order: {
-                orderNumber: string;
-                orderType: string;
-                notes: string;
-                items: {
-                    product: {
-                        name: string;
-                    };
-                    notes: string;
-                    quantity: number;
-                    price: number;
-                }[];
-            };
-            cashier: {
-                name: string;
-                role: string;
-            };
-        } & {
-            restaurantId: string;
-            id: string;
-            orderType: string;
-            discount: number;
-            updatedAt: Date;
-            syncedAt: Date | null;
-            orderId: string;
-            customerName: string | null;
-            customerPhone: string | null;
-            paymentMethod: string;
-            grandTotal: number;
-            deliveryFee: number;
-            billNumber: string;
-            subtotal: number;
-            cgst: number;
-            sgst: number;
-            cashierId: string | null;
-            waiterName: string | null;
-            settledAt: Date;
-        })[];
+        data: any[];
         pagination: {
             total: number;
             page: number;
@@ -70,6 +32,11 @@ export declare class HistoryService {
         grossRevenue: number;
         totalDiscount: number;
         totalGst: number;
+        refunds: number;
+        repayments: number;
+        collectionBreakdown: {
+            [x: string]: number;
+        };
         netRevenue: number;
         deliveriesCompleted: number;
         paymentBreakdown: Record<string, number>;
@@ -94,26 +61,36 @@ export declare class HistoryService {
                 name: string;
             };
         } & {
-            restaurantId: string;
             id: string;
+            updatedAt: Date;
+            restaurantId: string;
+            revision: number;
             orderNumber: string;
+            orderType: string;
             status: string;
+            discount: number;
             notes: string | null;
             createdAt: Date;
-            updatedAt: Date;
             syncedAt: Date | null;
             items: string;
+            subtotal: number;
+            deliveryFee: number;
+            grandTotal: number;
+            paymentMethod: string;
+            billNumber: string | null;
             customerName: string;
             customerPhone: string | null;
+            archived: boolean;
+            inventoryConsumed: boolean;
+            collectedById: string | null;
+            collectedTenders: string | null;
+            remittedAt: Date | null;
             deliveryAddress: string | null;
             deliveryLat: number | null;
             deliveryLng: number | null;
             riderId: string | null;
             riderName: string | null;
-            paymentMethod: string;
             paymentStatus: string;
-            grandTotal: number;
-            deliveryFee: number;
             collectedAmount: number | null;
             dispatchedAt: Date | null;
             deliveredAt: Date | null;
@@ -126,28 +103,32 @@ export declare class HistoryService {
         };
     }>;
     getWasteLogs(restaurantId: string, startDate?: string, endDate?: string): Promise<{
-        restaurantId: string;
         id: string;
-        createdAt: Date;
         updatedAt: Date;
+        restaurantId: string;
+        reason: string;
+        createdAt: Date;
         syncedAt: Date | null;
-        orderId: string | null;
         quantity: number;
+        orderId: string | null;
+        billNumber: string | null;
         unit: string;
         itemName: string;
-        reason: string;
-        billNumber: string | null;
+        ingredientId: string | null;
+        costLoss: number | null;
         loggedBy: string | null;
     }[]>;
     getReturnRecords(restaurantId: string, startDate?: string, endDate?: string): Promise<{
-        restaurantId: string;
         id: string;
+        updatedAt: Date;
+        restaurantId: string;
+        reason: string;
         orderType: string;
         createdAt: Date;
-        updatedAt: Date;
         syncedAt: Date | null;
         items: string;
-        reason: string;
+        cgst: number;
+        sgst: number;
         billNumber: string;
         action: string;
         refundDest: string;

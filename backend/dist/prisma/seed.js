@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
+const bcrypt = require("bcryptjs");
 const prisma = new client_1.PrismaClient();
 async function main() {
     console.log('🌱 Checking Karvaan POS Database (Multi-Tenant)...');
@@ -11,24 +12,31 @@ async function main() {
     }
     const adminUsername = process.env.SUPER_ADMIN_USERNAME || 'admin';
     const adminPassword = process.env.SUPER_ADMIN_PASSWORD || 'password123';
+    if (process.env.IS_CLOUD === 'true' && (!process.env.SUPER_ADMIN_PASSWORD || ['password123', 'Admin@Karvaan2026', 'ChangeThisPassword123!'].includes(adminPassword))) {
+        throw new Error('Set a private SUPER_ADMIN_PASSWORD before initializing a cloud database');
+    }
     const superAdmin = await prisma.user.create({
         data: {
             name: 'System Admin',
             username: adminUsername,
-            password: adminPassword,
+            password: await bcrypt.hash(adminPassword, 10),
             role: 'SUPER_ADMIN',
         }
     });
-    console.log(`Created Super Admin: ${adminUsername} / ${adminPassword}`);
+    console.log(`Created Super Admin: ${adminUsername}`);
+    if (process.env.IS_CLOUD === 'true') {
+        console.log('Cloud database initialized. Create owners and restaurants through the Super Admin dashboard.');
+        return;
+    }
     const owner = await prisma.user.create({
         data: {
             name: 'Restaurant Group Owner',
             username: 'owner',
-            password: 'password123',
+            password: await bcrypt.hash('password123', 10),
             role: 'OWNER',
         }
     });
-    console.log('Created Owner: owner / password123');
+    console.log('Created local demo owner');
     const restaurant = await prisma.restaurant.create({
         data: {
             name: 'The Great Indian Cafe',
@@ -42,8 +50,8 @@ async function main() {
         data: {
             name: 'Cafe Manager',
             username: 'manager',
-            password: 'password123',
-            pin: '1234',
+            password: await bcrypt.hash('password123', 10),
+            pin: await bcrypt.hash('1234', 10),
             role: 'REST_ADMIN',
             restaurantId: restaurant.id
         }
@@ -52,8 +60,8 @@ async function main() {
         data: {
             name: 'Cashier Alice',
             username: 'cashier',
-            password: 'password123',
-            pin: '1111',
+            password: await bcrypt.hash('password123', 10),
+            pin: await bcrypt.hash('1111', 10),
             role: 'CASHIER',
             restaurantId: restaurant.id
         }

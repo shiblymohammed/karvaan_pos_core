@@ -1,14 +1,189 @@
 import { BillingService } from './billing.service';
+import { WorkflowService } from './workflow.service';
 export declare class BillingController {
     private readonly billingService;
-    constructor(billingService: BillingService);
+    private readonly workflows;
+    constructor(billingService: BillingService, workflows: WorkflowService);
+    printPrebill(data: any, user: any): Promise<{
+        id: string;
+        kind: string;
+        reference: string;
+        state: string;
+    }>;
+    getLedger(user: any): Promise<any>;
+    getRiderRemittance(riderId: string, user: any): Promise<{
+        legacyCount: number;
+        deliveryIds: any;
+        trips: any;
+        cash: number;
+        digital: number;
+    }>;
+    getMenu(user: any): Promise<{
+        categories: {
+            id: string;
+            restaurantId: string;
+            updatedAt: Date;
+            name: string;
+            sortOrder: number;
+            iconName: string | null;
+            imageUrl: string | null;
+        }[];
+        products: {
+            category: string;
+            prepTime: number;
+            variants: any;
+            id: string;
+            restaurantId: string;
+            createdAt: Date;
+            updatedAt: Date;
+            name: string;
+            imageUrl: string | null;
+            description: string | null;
+            price: number;
+            gstRate: number;
+            categoryId: string;
+            isAvailable: boolean;
+            isArchived: boolean;
+            prepTimeMinutes: number;
+            recipeInstructions: string | null;
+            recipeBatchSize: number;
+            imageEmoji: string | null;
+        }[];
+        serverRevision: number;
+    }>;
+    getAdminConfig(user: any): Promise<{
+        staff: {
+            pin: string;
+            permissions: {};
+            id: string;
+            name: string;
+            role: string;
+            username: string;
+            phone: string;
+            isActive: boolean;
+        }[];
+        recipes: any[];
+        staffRevision: number;
+        recipeRevision: number;
+    }>;
+    getInventory(user: any): import(".prisma/client").Prisma.PrismaPromise<{
+        category: string;
+        id: string;
+        restaurantId: string;
+        updatedAt: Date;
+        name: string;
+        revision: number;
+        isActive: boolean;
+        unit: string;
+        currentStock: number;
+        minThreshold: number;
+        costPrice: number;
+        purchaseUnit: string | null;
+        conversionFactor: number | null;
+        lastVendor: string | null;
+    }[]>;
+    getDeliveries(user: any): Promise<{
+        items: any[];
+        deliveryBoyId: string;
+        deliveryBoyName: string;
+        placedAt: Date;
+        id: string;
+        restaurantId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        revision: number;
+        riderId: string | null;
+        syncedAt: Date | null;
+        orderNumber: string;
+        orderType: string;
+        billNumber: string | null;
+        discount: number;
+        subtotal: number;
+        archived: boolean;
+        inventoryConsumed: boolean;
+        collectedById: string | null;
+        collectedTenders: string | null;
+        remittedAt: Date | null;
+        customerName: string;
+        customerPhone: string | null;
+        deliveryAddress: string | null;
+        deliveryLat: number | null;
+        deliveryLng: number | null;
+        riderName: string | null;
+        status: string;
+        paymentMethod: string;
+        paymentStatus: string;
+        grandTotal: number;
+        deliveryFee: number;
+        collectedAmount: number | null;
+        notes: string | null;
+        dispatchedAt: Date | null;
+        deliveredAt: Date | null;
+    }[]>;
+    getWaste(user: any): Promise<{
+        id: string;
+        restaurantId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        quantity: number;
+        unit: string;
+        syncedAt: Date | null;
+        billNumber: string | null;
+        itemName: string;
+        ingredientId: string | null;
+        costLoss: number | null;
+        reason: string;
+        orderId: string | null;
+        loggedBy: string | null;
+    }[]>;
+    getStockApprovals(user: any): Promise<any[]>;
+    getInvoice(billNumber: string, user: any): Promise<{
+        items: any[];
+        id: string;
+        restaurantId: string;
+        updatedAt: Date;
+        syncedAt: Date | null;
+        orderType: string;
+        billNumber: string;
+        discount: number;
+        subtotal: number;
+        customerName: string | null;
+        customerPhone: string | null;
+        paymentMethod: string;
+        grandTotal: number;
+        deliveryFee: number;
+        orderId: string;
+        cgst: number;
+        sgst: number;
+        tenders: string | null;
+        invoiceItems: string | null;
+        refundedAmount: number;
+        cashierId: string | null;
+        waiterName: string | null;
+        settledAt: Date;
+    }>;
+    getActiveOrder(orderNumber: string, tableId: string, user: any): Promise<{
+        id: string;
+        orderNumber: string;
+        version: string;
+        items: {
+            id: string;
+            productId: string;
+            name: string;
+            quantity: number;
+            price: number;
+            addons: any[];
+            notes: string;
+            status: string;
+        }[];
+    }>;
     createOrder(dto: any, user: any): Promise<{
         table: {
             id: string;
-            status: string;
+            restaurantId: string;
             createdAt: Date;
             updatedAt: Date;
-            restaurantId: string;
+            status: string;
             tableNumber: string;
             capacity: number;
             currentOrderId: string | null;
@@ -16,46 +191,51 @@ export declare class BillingController {
         items: ({
             product: {
                 id: string;
+                restaurantId: string;
                 createdAt: Date;
                 updatedAt: Date;
-                restaurantId: string;
-                price: number;
                 name: string;
+                imageUrl: string | null;
                 description: string | null;
+                price: number;
                 gstRate: number;
                 categoryId: string;
                 isAvailable: boolean;
+                isArchived: boolean;
                 prepTimeMinutes: number;
+                recipeInstructions: string | null;
+                recipeBatchSize: number;
                 imageEmoji: string | null;
-                imageUrl: string | null;
+                variants: string | null;
             };
         } & {
             id: string;
-            status: string;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
-            quantity: number;
             price: number;
-            addons: string | null;
             productId: string;
+            quantity: number;
+            status: string;
+            notes: string | null;
             orderId: string;
+            addons: string | null;
+            variant: string | null;
         })[];
     } & {
         id: string;
-        orderNumber: string;
-        orderType: string;
-        status: string;
-        totalAmount: number;
-        discount: number;
-        notes: string | null;
+        restaurantId: string;
         createdAt: Date;
         updatedAt: Date;
         syncedAt: Date | null;
+        orderNumber: string;
+        orderType: string;
+        discount: number;
+        status: string;
+        notes: string | null;
         tableId: string | null;
         waiterId: string | null;
         customerId: string | null;
-        restaurantId: string;
+        totalAmount: number;
     }>;
     getBillPreview(orderId: string, discount?: number, user?: any): Promise<{
         orderId: string;
@@ -71,46 +251,32 @@ export declare class BillingController {
         paymentMethod: 'CASH' | 'CARD' | 'UPI' | 'SPLIT';
         discount?: number;
     }, user: any): Promise<{
-        bill: {
-            id: string;
-            orderType: string;
-            discount: number;
-            updatedAt: Date;
-            syncedAt: Date | null;
-            restaurantId: string;
-            orderId: string;
-            billNumber: string;
-            subtotal: number;
-            cgst: number;
-            sgst: number;
-            deliveryFee: number;
-            grandTotal: number;
-            paymentMethod: string;
-            cashierId: string | null;
-            customerName: string | null;
-            customerPhone: string | null;
-            waiterName: string | null;
-            settledAt: Date;
-        };
+        bill: any;
         order: {
             id: string;
-            orderNumber: string;
-            orderType: string;
-            status: string;
-            totalAmount: number;
-            discount: number;
-            notes: string | null;
+            restaurantId: string;
             createdAt: Date;
             updatedAt: Date;
             syncedAt: Date | null;
+            orderNumber: string;
+            orderType: string;
+            discount: number;
+            status: string;
+            notes: string | null;
             tableId: string | null;
             waiterId: string | null;
             customerId: string | null;
-            restaurantId: string;
+            totalAmount: number;
         };
     }>;
     getDashboardSummary(user: any): Promise<{
         grossRevenue: number;
+        refundTotal: number;
+        netRevenue: number;
+        repayments: number;
+        collectionBreakdown: {
+            [x: string]: number;
+        };
         totalOrders: number;
         averageOrderValue: number;
         activeOrdersCount: number;
@@ -121,80 +287,5 @@ export declare class BillingController {
             upi: number;
         };
     }>;
-    getOrderHistory(startDate?: string, endDate?: string, user?: any): Promise<({
-        order: {
-            table: {
-                tableNumber: string;
-            };
-            waiter: {
-                name: string;
-            };
-            items: ({
-                product: {
-                    id: string;
-                    createdAt: Date;
-                    updatedAt: Date;
-                    restaurantId: string;
-                    price: number;
-                    name: string;
-                    description: string | null;
-                    gstRate: number;
-                    categoryId: string;
-                    isAvailable: boolean;
-                    prepTimeMinutes: number;
-                    imageEmoji: string | null;
-                    imageUrl: string | null;
-                };
-            } & {
-                id: string;
-                status: string;
-                notes: string | null;
-                createdAt: Date;
-                updatedAt: Date;
-                quantity: number;
-                price: number;
-                addons: string | null;
-                productId: string;
-                orderId: string;
-            })[];
-        } & {
-            id: string;
-            orderNumber: string;
-            orderType: string;
-            status: string;
-            totalAmount: number;
-            discount: number;
-            notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
-            syncedAt: Date | null;
-            tableId: string | null;
-            waiterId: string | null;
-            customerId: string | null;
-            restaurantId: string;
-        };
-        cashier: {
-            name: string;
-        };
-    } & {
-        id: string;
-        orderType: string;
-        discount: number;
-        updatedAt: Date;
-        syncedAt: Date | null;
-        restaurantId: string;
-        orderId: string;
-        billNumber: string;
-        subtotal: number;
-        cgst: number;
-        sgst: number;
-        deliveryFee: number;
-        grandTotal: number;
-        paymentMethod: string;
-        cashierId: string | null;
-        customerName: string | null;
-        customerPhone: string | null;
-        waiterName: string | null;
-        settledAt: Date;
-    })[]>;
+    getOrderHistory(startDate?: string, endDate?: string, user?: any): Promise<any[]>;
 }

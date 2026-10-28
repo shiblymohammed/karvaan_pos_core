@@ -77,7 +77,7 @@ let BackupService = BackupService_1 = class BackupService {
         catch { }
         if (settings.enabled) {
             const [hour, minute] = settings.time.split(':');
-            const job = new cron_1.CronJob(`${minute} ${hour} * * *`, () => { void this.createBackup(restaurantId, 'scheduled').catch(error => this.logger.error(error.message)); });
+            const job = new cron_1.CronJob(`${minute} ${hour} * * *`, () => { void this.createBackup(restaurantId, 'scheduled').catch(error => this.logger.error(error.message)); }, null, false, 'Asia/Kolkata');
             this.schedulerRegistry.addCronJob(jobName, job);
             job.start();
         }
@@ -116,6 +116,9 @@ let BackupService = BackupService_1 = class BackupService {
                     waste: await tx.wasteLog.findMany({ where: { restaurantId } }),
                     returns: await tx.returnRecord.findMany({ where: { restaurantId } }),
                     settings: await tx.systemSetting.findMany({ where: { restaurantId } }),
+                    printAgents: await tx.printAgent.findMany({ where: { restaurantId }, select: { id: true, restaurantId: true, name: true, lastSeenAt: true, revokedAt: true, createdAt: true } }),
+                    printDestinations: await tx.printDestination.findMany({ where: { restaurantId } }),
+                    printJobs: await tx.printJob.findMany({ where: { restaurantId } }),
                 }), { timeout: 30000 });
                 fs.writeFileSync(dest, zlib.gzipSync(JSON.stringify({ version: 1, restaurantId, createdAt: new Date().toISOString(), data })));
             }

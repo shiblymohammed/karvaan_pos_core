@@ -15,9 +15,9 @@ export declare class BackupController {
     getBackupLogs(user: any): import(".prisma/client").Prisma.PrismaPromise<{
         error: string | null;
         id: string;
+        restaurantId: string;
         status: string;
         createdAt: Date;
-        restaurantId: string;
         filename: string;
         sizeBytes: number | null;
     }[]>;

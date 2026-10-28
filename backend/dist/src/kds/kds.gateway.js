@@ -20,16 +20,21 @@ const jwt_1 = require("@nestjs/jwt");
 const bcrypt = require("bcryptjs");
 const prisma_service_1 = require("../prisma/prisma.service");
 const billing_service_1 = require("../billing/billing.service");
+const workflow_service_1 = require("../billing/workflow.service");
 const session_service_1 = require("../auth/session.service");
 const roles_guard_1 = require("../auth/roles.guard");
+const settings_service_1 = require("../settings/settings.service");
+const financial_1 = require("../billing/financial");
 const STAFF_ROLES = [...roles_guard_1.ADMIN_ROLES, 'CASHIER', 'WAITER', 'KITCHEN', 'DELIVERY'];
 const SALES_ROLES = [...roles_guard_1.ADMIN_ROLES, 'CASHIER'];
 let KdsGateway = class KdsGateway {
-    constructor(prisma, billingService, jwtService, sessions) {
+    constructor(prisma, billingService, workflows, jwtService, sessions, settingsService) {
         this.prisma = prisma;
         this.billingService = billingService;
+        this.workflows = workflows;
         this.jwtService = jwtService;
         this.sessions = sessions;
+        this.settingsService = settingsService;
     }
     async authenticate(client, roles = STAFF_ROLES) {
         const token = client.handshake.auth?.token || client.handshake.query.token;
@@ -50,13 +55,77 @@ let KdsGateway = class KdsGateway {
             return { status: 'OK', data };
         }
         catch (error) {
-            return { status: 'ERROR', message: error instanceof common_1.HttpException ? error.message : 'Unable to save action; please retry', code: error instanceof common_1.HttpException ? error.getStatus() : 500 };
+            const details = error instanceof common_1.HttpException ? error.getResponse() : null;
+            return { status: 'ERROR', message: typeof details?.message === 'string' ? details.message : error instanceof common_1.HttpException ? error.message : 'Unable to save action; please retry', code: error instanceof common_1.HttpException ? error.getStatus() : 500, ...(details?.reason === 'STOCK_APPROVAL_REQUIRED' ? { reason: details.reason, stockChallenge: details.stockChallenge, shortages: details.shortages } : {}) };
         }
     }
     list(value) {
         if (!Array.isArray(value) || value.length > 1000)
             throw new common_1.BadRequestException('Invalid action list');
         return value;
+    }
+    async broadcastOperations(restaurantId, includeWaste = false) {
+        try {
+            const [ledger, deliveries, inventory, orders] = await Promise.all([
+                this.workflows.ledger(restaurantId), this.workflows.deliveryState(restaurantId),
+                this.prisma.inventoryItem.findMany({ where: { restaurantId, isActive: true } }),
+                this.prisma.order.findMany({ where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } }, include: { items: { include: { product: true } }, table: true } }),
+            ]);
+            this.server.to(restaurantId).emit('ledger_updated', ledger);
+            this.server.to(restaurantId).emit('delivery_orders_updated', deliveries);
+            this.server.to(restaurantId).emit('inventory_updated', inventory);
+            if (includeWaste)
+                this.server.to(restaurantId).emit('waste_updated', await this.workflows.wasteState(restaurantId));
+            for (const order of orders)
+                this.server.to(restaurantId).emit('kds_new_ticket', this.ticket(order));
+        }
+        catch {
+            console.error('Action committed; live notification could not be refreshed.');
+        }
+    }
+    handleCreateDelivery(data, client) {
+        return this.run(client, SALES_ROLES, async (user) => { const result = await this.workflows.createDelivery(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+    }
+    handlePark(data, client) {
+        return this.run(client, [...SALES_ROLES, 'WAITER'], async (user) => { const result = await this.workflows.park(data, user); try {
+            this.server.to(user.restaurantId).emit('parked_orders_updated', await this.workflows.parkedSnapshot(user.restaurantId));
+        }
+        catch { } return result; });
+    }
+    handleUnpark(data, client) {
+        return this.run(client, [...SALES_ROLES, 'WAITER'], async (user) => { const result = await this.workflows.park(data, user, true); try {
+            this.server.to(user.restaurantId).emit('parked_orders_updated', await this.workflows.parkedSnapshot(user.restaurantId));
+        }
+        catch { } return result; });
+    }
+    handleUpdateDelivery(data, client) {
+        return this.run(client, [...SALES_ROLES, 'DELIVERY', 'KITCHEN'], async (user) => { const result = await this.workflows.updateDelivery(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+    }
+    handleDeliveryPayment(data, client) {
+        return this.run(client, [...SALES_ROLES, 'DELIVERY'], async (user) => { const result = await this.workflows.collectDelivery(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+    }
+    handleLedgerPayment(data, client) {
+        return this.run(client, SALES_ROLES, async (user) => { const result = await this.workflows.repay(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+    }
+    handleInventoryChanges(data, client) {
+        return this.run(client, roles_guard_1.ADMIN_ROLES, async (user) => {
+            const result = await this.workflows.inventory(data, user);
+            await this.broadcastOperations(user.restaurantId);
+            if (data.changes?.some((change) => change.remove)) {
+                try {
+                    const state = await this.workflows.adminConfig(user.restaurantId);
+                    this.server.to(user.restaurantId).emit('recipes_updated', { recipes: state.recipes, revision: state.recipeRevision });
+                }
+                catch { }
+            }
+            return result;
+        });
+    }
+    handleInventoryPurchase(data, client) {
+        return this.run(client, roles_guard_1.ADMIN_ROLES, async (user) => { const result = await this.workflows.receiveInventoryPurchase(data, user); await this.broadcastOperations(user.restaurantId); return result; });
+    }
+    handleReturn(data, client) {
+        return this.run(client, SALES_ROLES, async (user) => { const result = await this.workflows.refund(data, user); await this.broadcastOperations(user.restaurantId, true); return result; });
     }
     async owned(tx, model, id, restaurantId) {
         const record = await tx[model].findUnique({ where: { id } });
@@ -74,50 +143,42 @@ let KdsGateway = class KdsGateway {
             } })() }));
     }
     ticket(order) {
-        return { id: order.id, orderNumber: order.orderNumber, restaurantId: order.restaurantId, orderType: order.orderType, tableNumber: order.table?.tableNumber || (order.orderType === 'DELIVERY' ? '🛵 Delivery' : order.orderType === 'PARCEL' ? '📦 Parcel' : 'Takeaway'), status: order.status, firedAt: order.createdAt, elapsedMinutes: 0, items: order.items.map((item) => ({ id: item.id, productId: item.productId, name: item.product.name, price: item.price, quantity: item.quantity, notes: item.notes, status: item.status })) };
+        return { id: order.id, orderNumber: order.orderNumber, restaurantId: order.restaurantId, orderType: order.orderType, tableNumber: order.table?.tableNumber || (order.orderType === 'DELIVERY' ? '🛵 Delivery' : order.orderType === 'PARCEL' ? '📦 Parcel' : 'Takeaway'), status: order.status, firedAt: order.createdAt, elapsedMinutes: 0, items: order.items.map((item) => ({ id: item.id, productId: item.productId, name: item.product.name, price: item.price, quantity: item.quantity, notes: item.notes, addons: (0, financial_1.readJson)(item.addons, []), variant: item.variant || null, status: item.status })) };
     }
     async handleConnection(client) {
         try {
             const user = await this.authenticate(client);
             await client.join(user.restaurantId);
             const restaurantId = user.restaurantId;
-            const [orders, parked, deliveries, staff, inventory, tables, categories, products, recipes, rawSettings] = await Promise.all([
+            const [orders, parked, inventory, tables, settings, admin, menu] = await Promise.all([
                 this.prisma.order.findMany({ where: { restaurantId, status: { in: ['RECEIVED', 'COOKING', 'READY'] } }, include: { items: { include: { product: true } }, table: true }, take: 100, orderBy: { createdAt: 'desc' } }),
-                this.prisma.parkedOrder.findMany({ where: { restaurantId }, take: 100 }),
-                this.prisma.deliveryOrder.findMany({ where: { restaurantId, status: { notIn: ['DELIVERED', 'CANCELLED'] } }, take: 100 }),
-                this.staff(restaurantId), this.prisma.inventoryItem.findMany({ where: { restaurantId } }),
-                this.prisma.table.findMany({ where: { restaurantId } }), this.prisma.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: 'asc' } }),
-                this.prisma.product.findMany({ where: { restaurantId }, include: { category: true } }),
-                this.prisma.recipeIngredient.findMany({ where: { product: { restaurantId } }, include: { product: true } }),
-                this.prisma.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } } }),
+                this.workflows.parkedSnapshot(restaurantId),
+                this.prisma.inventoryItem.findMany({ where: { restaurantId, isActive: true } }),
+                this.prisma.table.findMany({ where: { restaurantId } }),
+                this.settingsService.getSettings(restaurantId), this.workflows.adminConfig(restaurantId), this.workflows.menu(restaurantId),
             ]);
-            let settings = {};
-            try {
-                settings = JSON.parse(rawSettings?.data || '{}');
-            }
-            catch { }
-            const recipeMap = new Map();
-            for (const r of recipes) {
-                if (!recipeMap.has(r.productId))
-                    recipeMap.set(r.productId, { menuItemId: r.productId, menuItemName: r.product.name, ingredients: [] });
-                recipeMap.get(r.productId).ingredients.push({ ingredientId: r.inventoryItemId, quantity: r.quantity });
-            }
             client.emit('sync_master_state', {
-                kdsTickets: orders.map(o => ({ id: o.id, orderNumber: o.orderNumber, orderType: o.orderType, tableNumber: o.table?.tableNumber || (o.orderType === 'DELIVERY' ? '🛵 Delivery' : 'Takeaway'), status: o.status, firedAt: o.createdAt, elapsedMinutes: 0, items: o.items.map(i => ({ id: i.id, productId: i.productId, name: i.product.name, price: i.price, quantity: i.quantity, notes: i.notes, status: i.status })) })),
-                parkedOrders: parked.map(p => { try {
-                    return JSON.parse(p.data);
-                }
-                catch {
-                    return null;
-                } }).filter(Boolean),
-                deliveryOrders: deliveries.map(d => ({ ...d, items: JSON.parse(d.items), deliveryBoyId: d.riderId, deliveryBoyName: d.riderName, placedAt: d.createdAt })),
-                staffMembers: staff, inventoryStock: inventory, recipes: Array.from(recipeMap.values()),
+                menuRevision: menu.serverRevision, staffRevision: admin.staffRevision, recipeRevision: admin.recipeRevision,
+                ledgerEntries: await this.workflows.ledger(restaurantId),
+                kdsTickets: orders.map(order => this.ticket(order)),
+                parkedOrders: parked.orders, parkedRevision: parked.revision,
+                deliveryOrders: await this.workflows.deliveryState(restaurantId),
+                staffMembers: admin.staff, inventoryStock: inventory, recipes: admin.recipes,
+                wasteLogs: await this.workflows.wasteState(restaurantId),
                 tables: tables.map(t => ({ ...t, number: t.tableNumber, floorId: settings.tableConfig?.find((c) => c.id === t.id)?.floorId || 'f-1' })),
-                categories, products: products.map(p => ({ ...p, category: p.category.name, prepTime: p.prepTimeMinutes })), settings,
+                categories: menu.categories, products: menu.products, settings,
             });
         }
-        catch {
-            client.disconnect(true);
+        catch (error) {
+            const message = error?.message || 'WebSocket connection failed';
+            console.error('WebSocket connection failed for client:', client.id, message, error);
+            client.emit('auth_error', { message });
+            setTimeout(() => {
+                try {
+                    client.disconnect(true);
+                }
+                catch { }
+            }, 100);
         }
     }
     handleFireOrder(data, client) {
@@ -125,18 +186,28 @@ let KdsGateway = class KdsGateway {
             const order = await this.billingService.saveKitchenOrder(data, user.restaurantId, user.id);
             const ticket = this.ticket(order);
             this.server.to(user.restaurantId).emit('kds_new_ticket', ticket);
-            return ticket;
+            return { ...ticket, printJobId: order.printJobId || null };
         });
     }
     handleStatusUpdate(data, client) {
         return this.run(client, [...SALES_ROLES, 'WAITER', 'KITCHEN'], async (user) => {
-            if (!['COOKING', 'READY', 'SERVED'].includes(data?.status))
-                throw new common_1.BadRequestException('Invalid kitchen status');
-            const order = await this.prisma.order.findFirst({ where: { restaurantId: user.restaurantId, OR: [{ id: data.orderId }, { orderNumber: data.orderNumber || data.orderId }] } });
-            if (!order)
-                throw new common_1.BadRequestException('Kitchen order not found');
-            await this.prisma.order.update({ where: { id: order.id }, data: { status: data.status } });
-            this.server.to(user.restaurantId).emit('kds_status_changed', { ...data, orderId: order.id });
+            const result = await this.workflows.kitchenStatus(data, user);
+            try {
+                const order = await this.prisma.order.findUnique({ where: { id: result.orderId } });
+                this.server.to(user.restaurantId).emit('kds_status_changed', { orderId: result.orderId, status: order.status });
+            }
+            catch (error) {
+                console.error('Kitchen notification failed', error);
+            }
+            await this.broadcastOperations(user.restaurantId);
+            return result;
+        });
+    }
+    handleRiderRemittance(data, client) {
+        return this.run(client, SALES_ROLES, async (user) => {
+            const result = await this.workflows.remitRiderCash(data, user);
+            await this.broadcastOperations(user.restaurantId);
+            return result;
         });
     }
     handleClearTableTickets(data, client) {
@@ -156,11 +227,12 @@ let KdsGateway = class KdsGateway {
                     const existing = await tx.parkedOrder.findUnique({ where: { orderId: order.id } });
                     if (existing && existing.restaurantId !== user.restaurantId)
                         throw new common_1.ForbiddenException('Invalid parked order');
+                    if (existing && existing.data !== JSON.stringify(order))
+                        throw new common_1.BadRequestException('This older client cannot overwrite a parked order. Refresh the app before editing.');
                     await tx.parkedOrder.upsert({ where: { orderId: order.id }, update: { data: JSON.stringify(order) }, create: { orderId: order.id, restaurantId: user.restaurantId, data: JSON.stringify(order) } });
                 }
-                await tx.parkedOrder.deleteMany({ where: { restaurantId: user.restaurantId, orderId: { notIn: orders.map(o => o.id) } } });
             });
-            this.server.to(user.restaurantId).emit('parked_orders_updated', orders);
+            this.server.to(user.restaurantId).emit('parked_orders_updated', await this.workflows.parkedState(user.restaurantId));
         });
     }
     handleTransferTable(data, client) {
@@ -190,41 +262,28 @@ let KdsGateway = class KdsGateway {
         });
     }
     handleSyncDeliveryOrders(data, client) {
-        return this.run(client, [...SALES_ROLES, 'DELIVERY', 'KITCHEN'], async (user) => {
-            const orders = this.list(data);
-            await this.prisma.$transaction(async (tx) => {
-                for (const order of orders) {
-                    const orderNumber = order.orderNumber || order.id;
-                    const existing = await tx.deliveryOrder.findUnique({ where: { restaurantId_orderNumber: { restaurantId: user.restaurantId, orderNumber } } });
-                    if (user.role === 'DELIVERY' && (!existing || existing.riderId !== user.id))
-                        continue;
-                    if (user.role === 'KITCHEN' && !existing)
-                        throw new common_1.ForbiddenException('Kitchen staff cannot create deliveries');
-                    if (!['RECEIVED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'].includes(order.status))
-                        throw new common_1.BadRequestException('Invalid delivery status');
-                    const riderId = order.deliveryBoyId || order.riderId;
-                    if (riderId) {
-                        const rider = await this.owned(tx, 'user', riderId, user.restaurantId);
-                        if (!rider || rider.role !== 'DELIVERY' || !rider.isActive)
-                            throw new common_1.BadRequestException('Invalid rider');
-                    }
-                    const values = { status: order.status, paymentStatus: order.paymentStatus || 'PENDING', paymentMethod: order.paymentMethod || 'CASH', collectedAmount: order.collectedAmount ?? null };
-                    const adminValues = { ...values, riderId: order.deliveryBoyId || order.riderId || null, riderName: order.deliveryBoyName || order.riderName || null, customerName: order.customerName || 'Guest', customerPhone: order.customerPhone || null, deliveryAddress: order.deliveryAddress || null, deliveryLat: order.deliveryLat ?? null, deliveryLng: order.deliveryLng ?? null, grandTotal: order.grandTotal || 0, deliveryFee: order.deliveryFee || 0, items: JSON.stringify(order.items || []), notes: order.notes || null };
-                    await tx.deliveryOrder.upsert({ where: { restaurantId_orderNumber: { restaurantId: user.restaurantId, orderNumber } }, update: user.role === 'KITCHEN' ? { status: order.status } : user.role === 'DELIVERY' ? values : adminValues, create: { ...adminValues, restaurantId: user.restaurantId, orderNumber } });
-                }
-            });
-            const records = await this.prisma.deliveryOrder.findMany({ where: { restaurantId: user.restaurantId } });
-            this.server.to(user.restaurantId).emit('delivery_orders_updated', records.map(d => ({ ...d, items: JSON.parse(d.items), deliveryBoyId: d.riderId, deliveryBoyName: d.riderName, placedAt: d.createdAt })));
-        });
+        return this.run(client, [...SALES_ROLES, 'DELIVERY', 'KITCHEN'], async () => { throw new common_1.BadRequestException('Refresh the app to use delivery commands. Legacy snapshots cannot change payment records.'); });
     }
     handleSyncStaff(data, client) {
         return this.run(client, ['ADMIN', 'REST_ADMIN'], async (user) => {
-            const staff = this.list(data);
-            await this.prisma.$transaction(async (tx) => {
+            const staff = this.list(data.staff);
+            const result = await this.workflows.versionedConfig(data, user, 'staff', async (tx) => {
                 for (const member of staff) {
                     if (!member?.id || !member.name || !STAFF_ROLES.includes(member.role))
                         throw new common_1.BadRequestException('Invalid staff member');
                     const existing = await this.owned(tx, 'user', member.id, user.restaurantId);
+                    if (typeof member.name !== 'string' || !member.name.trim())
+                        throw new common_1.BadRequestException('Staff name is required');
+                    if (member.password && (typeof member.password !== 'string' || member.password.length < 8 || member.password.length > 128))
+                        throw new common_1.BadRequestException('Staff passwords must contain 8–128 characters');
+                    if (member.pin && (typeof member.pin !== 'string' || !/^\d{4,8}$/.test(member.pin)))
+                        throw new common_1.BadRequestException('Staff PINs must contain 4–8 digits');
+                    if (!existing && (typeof member.username !== 'string' || !member.username.trim()))
+                        throw new common_1.BadRequestException('New staff require a login username');
+                    if (member.username !== undefined && member.username !== null && typeof member.username !== 'string')
+                        throw new common_1.BadRequestException('Invalid staff username');
+                    if (member.username && await tx.user.findFirst({ where: { username: member.username.trim(), id: { not: member.id } } }))
+                        throw new common_1.ConflictException('This username is already in use. Choose a different username.');
                     if (member.id === user.id && (member.role !== user.role || member.isActive === false))
                         throw new common_1.ForbiddenException('Cannot revoke your own administrator access');
                     if (!existing && !member.pin && !member.password)
@@ -234,52 +293,70 @@ let KdsGateway = class KdsGateway {
                         credentials.pin = await bcrypt.hash(member.pin, 10);
                     if (member.password)
                         credentials.password = await bcrypt.hash(member.password, 10);
-                    const values = { name: member.name, username: member.username || null, role: member.role, phone: member.phone || null, isActive: member.isActive !== false, permissions: JSON.stringify(member.permissions || {}), ...credentials };
+                    const values = { name: member.name.trim(), username: member.username?.trim() || null, role: member.role, phone: member.phone || null, isActive: member.isActive !== false, permissions: JSON.stringify(member.permissions || {}), ...credentials };
                     await tx.user.upsert({ where: { id: member.id }, update: values, create: { id: member.id, restaurantId: user.restaurantId, ...values } });
                 }
                 await tx.user.updateMany({ where: { restaurantId: user.restaurantId, id: { notIn: [...staff.map(s => s.id), user.id] } }, data: { isActive: false } });
-            }, { timeout: 30000 });
-            this.server.to(user.restaurantId).emit('staff_updated', await this.staff(user.restaurantId));
+            });
+            try {
+                const state = await this.workflows.adminConfig(user.restaurantId);
+                this.server.to(user.restaurantId).emit('staff_updated', { staff: state.staff, revision: state.staffRevision });
+            }
+            catch { }
+            return result;
         });
     }
     handleSyncInventory(data, client) {
-        return this.run(client, roles_guard_1.ADMIN_ROLES, async (user) => {
-            const inventory = this.list(data);
-            await this.prisma.$transaction(async (tx) => {
-                for (const item of inventory) {
-                    if (!item?.name || !Number.isFinite(item.currentStock) || item.currentStock < 0)
-                        throw new common_1.BadRequestException('Invalid inventory quantity');
-                    if (item.id)
-                        await this.owned(tx, 'inventoryItem', item.id, user.restaurantId);
-                    const values = { currentStock: item.currentStock, category: item.category || 'General', unit: item.unit || 'pcs', minThreshold: item.reorderLevel ?? item.minThreshold ?? 5, costPrice: item.costPerUnit ?? item.costPrice ?? 0 };
-                    await tx.inventoryItem.upsert({ where: { restaurantId_name: { restaurantId: user.restaurantId, name: item.name } }, update: values, create: { id: item.id || undefined, restaurantId: user.restaurantId, name: item.name, ...values } });
-                }
-            });
-            this.server.to(user.restaurantId).emit('inventory_updated', await this.prisma.inventoryItem.findMany({ where: { restaurantId: user.restaurantId } }));
-        });
+        return this.run(client, roles_guard_1.ADMIN_ROLES, async () => { throw new common_1.BadRequestException('Refresh the app to apply stock movements. Legacy snapshots cannot overwrite stock.'); });
     }
     handleSyncRecipes(data, client) {
         return this.run(client, roles_guard_1.ADMIN_ROLES, async (user) => {
-            await this.prisma.$transaction(async (tx) => {
-                for (const recipe of this.list(data)) {
+            const recipes = this.list(data.recipes);
+            const result = await this.workflows.versionedConfig(data, user, 'recipes', async (tx) => {
+                for (const recipe of recipes) {
                     const product = await this.owned(tx, 'product', recipe.menuItemId, user.restaurantId);
-                    if (!product)
-                        throw new common_1.BadRequestException('Recipe product not found');
+                    if (!product || product.isArchived)
+                        throw new common_1.BadRequestException('Recipe product is unavailable or archived; reload the menu');
+                    if (recipe.prepInstructions !== undefined && (typeof recipe.prepInstructions !== 'string' || recipe.prepInstructions.length > 10000))
+                        throw new common_1.BadRequestException('Invalid preparation instructions');
+                    if (recipe.batchSize !== undefined && (!Number.isFinite(recipe.batchSize) || recipe.batchSize <= 0))
+                        throw new common_1.BadRequestException('Invalid preparation batch size');
+                    await tx.product.update({ where: { id: product.id }, data: { ...(recipe.prepInstructions !== undefined ? { recipeInstructions: recipe.prepInstructions } : {}), ...(recipe.batchSize !== undefined ? { recipeBatchSize: recipe.batchSize } : {}) } });
                     await tx.recipeIngredient.deleteMany({ where: { productId: product.id } });
                     for (const item of this.list(recipe.ingredients)) {
                         const stock = await this.owned(tx, 'inventoryItem', item.ingredientId, user.restaurantId);
-                        if (!stock || !Number.isFinite(item.quantity) || item.quantity <= 0)
+                        if (!stock || !stock.isActive || !Number.isFinite(item.quantity) || item.quantity <= 0)
                             throw new common_1.BadRequestException('Invalid recipe ingredient');
-                        await tx.recipeIngredient.create({ data: { productId: product.id, inventoryItemId: stock.id, quantity: item.quantity, unit: stock.unit } });
+                        const wasteFactorPercent = item.wasteFactorPercent ?? 0;
+                        if (!Number.isFinite(wasteFactorPercent) || wasteFactorPercent < 0 || wasteFactorPercent > 100)
+                            throw new common_1.BadRequestException('Waste percentage must be between 0 and 100');
+                        await tx.recipeIngredient.create({ data: { productId: product.id, inventoryItemId: stock.id, quantity: item.quantity, unit: stock.unit, wasteFactorPercent } });
                     }
                 }
+                await tx.recipeIngredient.deleteMany({ where: { product: { restaurantId: user.restaurantId, isArchived: false }, productId: { notIn: recipes.map(recipe => recipe.menuItemId) } } });
             });
-            this.server.to(user.restaurantId).emit('recipes_updated', data);
+            try {
+                const state = await this.workflows.adminConfig(user.restaurantId);
+                this.server.to(user.restaurantId).emit('recipes_updated', { recipes: state.recipes, revision: state.recipeRevision });
+            }
+            catch { }
+            return result;
         });
+    }
+    handleUpdateSettings(data, client) {
+        return this.run(client, roles_guard_1.ADMIN_ROLES, user => this.settingsService.updateSettings({ ...data.settings, actionId: data.actionId, expectedRevision: data.expectedRevision }, user.restaurantId));
     }
     handleSyncMenu(data, client) {
         return this.run(client, roles_guard_1.ADMIN_ROLES, async (user) => {
             await this.prisma.$transaction(async (tx) => {
+                const receiptKey = { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: `command:menu:${data.actionId}` } };
+                if (data.actionId && await tx.systemSetting.findUnique({ where: receiptKey }))
+                    return;
+                const versionKey = { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: 'menu_revision' } };
+                const version = await tx.systemSetting.findUnique({ where: versionKey });
+                const revision = version ? JSON.parse(version.data) : 0;
+                if (data.expectedRevision !== revision)
+                    throw new common_1.ConflictException('Menu changed on another terminal. Reload and review your changes.');
                 const incomingCategories = this.list(data.categories);
                 const incomingProducts = this.list(data.products);
                 const newTombstones = [];
@@ -289,33 +366,29 @@ let KdsGateway = class KdsGateway {
                     await tx.category.upsert({ where: { id: category.id }, update: values, create: { id: category.id, restaurantId: user.restaurantId, ...values } });
                 }
                 for (const product of incomingProducts) {
-                    await this.owned(tx, 'product', product.id, user.restaurantId);
+                    const existingProduct = await this.owned(tx, 'product', product.id, user.restaurantId);
+                    if (existingProduct?.isArchived)
+                        throw new common_1.ConflictException('This menu item was deleted. Reload the menu before editing; create a new item to add it again.');
                     if (!Number.isFinite(product.price) || product.price < 0 || !Number.isFinite(product.gstRate ?? 5) || (product.gstRate ?? 5) < 0 || (product.gstRate ?? 5) > 100)
                         throw new common_1.BadRequestException('Invalid product price or tax');
                     const category = await tx.category.findFirst({ where: { restaurantId: user.restaurantId, name: product.category } });
                     if (!category)
                         throw new common_1.BadRequestException('Product category not found');
-                    const values = { name: product.name, price: product.price, categoryId: category.id, gstRate: product.gstRate ?? 5, prepTimeMinutes: product.prepTime ?? 12, isAvailable: product.isAvailable !== false, description: product.description || null, imageEmoji: product.imageEmoji || null, imageUrl: product.imageUrl || null };
+                    const variants = product.variants ? (typeof product.variants === 'string' ? product.variants : JSON.stringify(product.variants)) : null;
+                    const values = { name: product.name, price: product.price, categoryId: category.id, gstRate: product.gstRate ?? 5, prepTimeMinutes: product.prepTime ?? 12, isAvailable: product.isAvailable !== false, description: product.description || null, imageEmoji: product.imageEmoji || null, imageUrl: product.imageUrl || null, variants };
                     await tx.product.upsert({ where: { id: product.id }, update: values, create: { id: product.id, restaurantId: user.restaurantId, ...values } });
                 }
-                if (incomingProducts.length > 0) {
+                {
                     const incProdIds = new Set(incomingProducts.map((p) => p.id));
-                    const existingProds = await tx.product.findMany({ where: { restaurantId: user.restaurantId } });
+                    const existingProds = await tx.product.findMany({ where: { restaurantId: user.restaurantId, isArchived: false } });
                     for (const ep of existingProds) {
                         if (!incProdIds.has(ep.id)) {
-                            const orderItemCount = await tx.orderItem.count({ where: { productId: ep.id } });
-                            if (orderItemCount === 0) {
-                                await tx.recipeIngredient.deleteMany({ where: { productId: ep.id } });
-                                await tx.product.delete({ where: { id: ep.id } });
-                                newTombstones.push({ id: ep.id, model: 'product', deletedAt: new Date().toISOString() });
-                            }
-                            else if (ep.isAvailable) {
-                                await tx.product.update({ where: { id: ep.id }, data: { isAvailable: false } });
-                            }
+                            await tx.product.update({ where: { id: ep.id }, data: { isAvailable: false, isArchived: true } });
+                            newTombstones.push({ id: ep.id, model: 'product', deletedAt: new Date().toISOString() });
                         }
                     }
                 }
-                if (incomingCategories.length > 0) {
+                {
                     const incCatIds = new Set(incomingCategories.map((c) => c.id));
                     const existingCats = await tx.category.findMany({ where: { restaurantId: user.restaurantId } });
                     for (const ec of existingCats) {
@@ -341,22 +414,24 @@ let KdsGateway = class KdsGateway {
                         list = list.slice(-500);
                     await tx.systemSetting.upsert({ where: tKey, update: { data: JSON.stringify(list) }, create: { restaurantId: user.restaurantId, settingKey: 'sync_tombstones', data: JSON.stringify(list) } });
                 }
+                await tx.systemSetting.upsert({ where: versionKey, update: { data: JSON.stringify(revision + 1) }, create: { restaurantId: user.restaurantId, settingKey: 'menu_revision', data: JSON.stringify(revision + 1) } });
+                if (data.actionId)
+                    await tx.systemSetting.create({ data: { restaurantId: user.restaurantId, settingKey: receiptKey.restaurantId_settingKey.settingKey, data: 'true' } });
             });
-            client.broadcast.to(user.restaurantId).emit('sync_master_state', { categories: data.categories, products: data.products });
+            try {
+                const menu = await this.workflows.menu(user.restaurantId);
+                this.server.to(user.restaurantId).emit('sync_master_state', { ...menu, menuRevision: menu.serverRevision });
+            }
+            catch (error) {
+                console.error('Menu notification failed', error);
+            }
         });
     }
     handleSyncWaste(data, client) {
-        return this.run(client, [...roles_guard_1.ADMIN_ROLES, 'KITCHEN'], async (user) => {
-            await this.prisma.$transaction(async (tx) => {
-                for (const log of this.list(data)) {
-                    if (!log.id || !Number.isFinite(log.quantity) || log.quantity <= 0)
-                        throw new common_1.BadRequestException('Invalid waste log');
-                    await this.owned(tx, 'wasteLog', log.id, user.restaurantId);
-                    await tx.wasteLog.upsert({ where: { id: log.id }, update: {}, create: { id: log.id, restaurantId: user.restaurantId, itemName: log.itemName || log.ingredientName, quantity: log.quantity, unit: log.unit || 'pcs', reason: log.reason || 'OTHER', loggedBy: user.name } });
-                }
-            });
-            this.server.to(user.restaurantId).emit('waste_updated', data);
-        });
+        return this.run(client, [...roles_guard_1.ADMIN_ROLES, 'KITCHEN'], async () => { throw new common_1.BadRequestException('Refresh the app to record waste and its stock deduction in one transaction. Older waste snapshots require review.'); });
+    }
+    handleInventoryWaste(data, client) {
+        return this.run(client, [...roles_guard_1.ADMIN_ROLES, 'KITCHEN'], async (user) => { const result = await this.workflows.recordWaste(data, user); await this.broadcastOperations(user.restaurantId, true); return result; });
     }
     handleSettleBill(data, client) {
         return this.run(client, SALES_ROLES, async (user) => {
@@ -371,6 +446,78 @@ __decorate([
     (0, websockets_1.WebSocketServer)(),
     __metadata("design:type", socket_io_1.Server)
 ], KdsGateway.prototype, "server", void 0);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('create_delivery'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleCreateDelivery", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('park_order'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handlePark", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('remove_parked_order'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleUnpark", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('update_delivery'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleUpdateDelivery", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('collect_delivery_payment'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleDeliveryPayment", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('ledger_payment'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleLedgerPayment", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('apply_inventory_changes'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleInventoryChanges", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('receive_inventory_purchase'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleInventoryPurchase", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('record_return'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleReturn", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)('fire_order'),
     __param(0, (0, websockets_1.MessageBody)()),
@@ -387,6 +534,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], KdsGateway.prototype, "handleStatusUpdate", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('remit_rider_cash'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleRiderRemittance", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)('clear_table_tickets'),
     __param(0, (0, websockets_1.MessageBody)()),
@@ -424,7 +579,7 @@ __decorate([
     __param(0, (0, websockets_1.MessageBody)()),
     __param(1, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Array, socket_io_1.Socket]),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], KdsGateway.prototype, "handleSyncDeliveryOrders", null);
 __decorate([
@@ -432,7 +587,7 @@ __decorate([
     __param(0, (0, websockets_1.MessageBody)()),
     __param(1, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Array, socket_io_1.Socket]),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], KdsGateway.prototype, "handleSyncStaff", null);
 __decorate([
@@ -440,7 +595,7 @@ __decorate([
     __param(0, (0, websockets_1.MessageBody)()),
     __param(1, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Array, socket_io_1.Socket]),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], KdsGateway.prototype, "handleSyncInventory", null);
 __decorate([
@@ -448,9 +603,17 @@ __decorate([
     __param(0, (0, websockets_1.MessageBody)()),
     __param(1, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Array, socket_io_1.Socket]),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], KdsGateway.prototype, "handleSyncRecipes", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('update_settings'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleUpdateSettings", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)('sync_menu'),
     __param(0, (0, websockets_1.MessageBody)()),
@@ -468,6 +631,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], KdsGateway.prototype, "handleSyncWaste", null);
 __decorate([
+    (0, websockets_1.SubscribeMessage)('record_inventory_waste'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], KdsGateway.prototype, "handleInventoryWaste", null);
+__decorate([
     (0, websockets_1.SubscribeMessage)('settle_bill'),
     __param(0, (0, websockets_1.MessageBody)()),
     __param(1, (0, websockets_1.ConnectedSocket)()),
@@ -478,9 +649,12 @@ __decorate([
 exports.KdsGateway = KdsGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({ cors: { origin: '*' } }),
     __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => billing_service_1.BillingService))),
+    __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => workflow_service_1.WorkflowService))),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         billing_service_1.BillingService,
+        workflow_service_1.WorkflowService,
         jwt_1.JwtService,
-        session_service_1.SessionService])
+        session_service_1.SessionService,
+        settings_service_1.SettingsService])
 ], KdsGateway);
 //# sourceMappingURL=kds.gateway.js.map

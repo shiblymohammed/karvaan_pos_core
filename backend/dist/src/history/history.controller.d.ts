@@ -3,45 +3,7 @@ export declare class HistoryController {
     private readonly historyService;
     constructor(historyService: HistoryService);
     getBillHistory(startDate?: string, endDate?: string, page?: string, limit?: string, orderType?: string, paymentMethod?: string, user?: any): Promise<{
-        data: ({
-            order: {
-                orderNumber: string;
-                orderType: string;
-                notes: string;
-                items: {
-                    product: {
-                        name: string;
-                    };
-                    notes: string;
-                    quantity: number;
-                    price: number;
-                }[];
-            };
-            cashier: {
-                name: string;
-                role: string;
-            };
-        } & {
-            id: string;
-            orderType: string;
-            discount: number;
-            updatedAt: Date;
-            syncedAt: Date | null;
-            restaurantId: string;
-            orderId: string;
-            billNumber: string;
-            subtotal: number;
-            cgst: number;
-            sgst: number;
-            deliveryFee: number;
-            grandTotal: number;
-            paymentMethod: string;
-            cashierId: string | null;
-            customerName: string | null;
-            customerPhone: string | null;
-            waiterName: string | null;
-            settledAt: Date;
-        })[];
+        data: any[];
         pagination: {
             total: number;
             page: number;
@@ -62,6 +24,11 @@ export declare class HistoryController {
         grossRevenue: number;
         totalDiscount: number;
         totalGst: number;
+        refunds: number;
+        repayments: number;
+        collectionBreakdown: {
+            [x: string]: number;
+        };
         netRevenue: number;
         deliveriesCompleted: number;
         paymentBreakdown: Record<string, number>;
@@ -79,19 +46,29 @@ export declare class HistoryController {
             };
         } & {
             id: string;
+            updatedAt: Date;
+            restaurantId: string;
+            revision: number;
             orderNumber: string;
+            orderType: string;
             status: string;
+            discount: number;
             notes: string | null;
             createdAt: Date;
-            updatedAt: Date;
             syncedAt: Date | null;
             items: string;
-            restaurantId: string;
+            subtotal: number;
             deliveryFee: number;
             grandTotal: number;
             paymentMethod: string;
+            billNumber: string | null;
             customerName: string;
             customerPhone: string | null;
+            archived: boolean;
+            inventoryConsumed: boolean;
+            collectedById: string | null;
+            collectedTenders: string | null;
+            remittedAt: Date | null;
             deliveryAddress: string | null;
             deliveryLat: number | null;
             deliveryLng: number | null;
@@ -111,28 +88,32 @@ export declare class HistoryController {
     }>;
     getWasteLogs(startDate?: string, endDate?: string, user?: any): Promise<{
         id: string;
-        createdAt: Date;
         updatedAt: Date;
-        syncedAt: Date | null;
         restaurantId: string;
+        reason: string;
+        createdAt: Date;
+        syncedAt: Date | null;
         quantity: number;
         orderId: string | null;
         billNumber: string | null;
         unit: string;
-        reason: string;
         itemName: string;
+        ingredientId: string | null;
+        costLoss: number | null;
         loggedBy: string | null;
     }[]>;
     getReturnRecords(startDate?: string, endDate?: string, user?: any): Promise<{
         id: string;
+        updatedAt: Date;
+        restaurantId: string;
+        reason: string;
         orderType: string;
         createdAt: Date;
-        updatedAt: Date;
         syncedAt: Date | null;
         items: string;
-        restaurantId: string;
+        cgst: number;
+        sgst: number;
         billNumber: string;
-        reason: string;
         action: string;
         refundDest: string;
         totalRefund: number;
