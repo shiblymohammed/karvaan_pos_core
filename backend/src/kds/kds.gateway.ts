@@ -137,8 +137,20 @@ export class KdsGateway implements OnGatewayConnection {
   }
 
   async handleConnection(client: Socket) {
+    let user: any;
     try {
-      const user = await this.authenticate(client);
+      user = await this.authenticate(client);
+    } catch (error: any) {
+      const message = error?.message || 'Invalid restaurant session';
+      console.error('WebSocket auth rejected for client:', client.id, message);
+      client.emit('auth_error', { message });
+      setTimeout(() => {
+        try { client.disconnect(true); } catch {}
+      }, 100);
+      return;
+    }
+
+    try {
       await client.join(user.restaurantId);
       const restaurantId = user.restaurantId;
       const [orders, parked, inventory, tables, settings, admin, menu] = await Promise.all([
@@ -160,12 +172,8 @@ export class KdsGateway implements OnGatewayConnection {
         categories: menu.categories, products: menu.products, settings,
       });
     } catch (error: any) {
-      const message = error?.message || 'WebSocket connection failed';
-      console.error('WebSocket connection failed for client:', client.id, message, error);
-      client.emit('auth_error', { message });
-      setTimeout(() => {
-        try { client.disconnect(true); } catch {}
-      }, 100);
+      console.error('WebSocket state sync deferred for client:', client.id, error?.message || error);
+      client.emit('sync_state_error', { message: error?.message || 'State synchronization failed; retrying' });
     }
   }
 

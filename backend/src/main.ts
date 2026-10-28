@@ -31,8 +31,13 @@ if (process.env.IS_CLOUD !== 'true') {
   if (!fs.existsSync(activeDatabase) && fs.existsSync(template)) fs.copyFileSync(template, activeDatabase);
   process.env.DATABASE_URL = `file:${activeDatabase}`;
 } else if (process.env.DATABASE_URL?.startsWith('file:')) {
-  const configured = process.env.DATABASE_URL.slice(5);
-  process.env.DATABASE_URL = `file:${path.isAbsolute(configured) ? configured : path.resolve(backendRoot, 'prisma', configured)}`;
+  const raw = process.env.DATABASE_URL.slice(5);
+  const [filePath, query] = raw.split('?');
+  const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(backendRoot, 'prisma', filePath);
+  const params = new URLSearchParams(query || '');
+  if (!params.has('connection_limit')) params.set('connection_limit', '1');
+  if (!params.has('timeout')) params.set('timeout', '30000');
+  process.env.DATABASE_URL = `file:${absPath}?${params.toString()}`;
 }
 // Uploads and generated media must be writable in an installed desktop app.
 process.env.UPLOAD_DIR ||= path.join(dataDirectory, 'uploads');

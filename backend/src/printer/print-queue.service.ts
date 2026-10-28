@@ -49,6 +49,7 @@ export class PrintQueueService {
     if (!agent?.tokenHash || agent.revokedAt || !agent.restaurant.isActive || !timingSafeEqual(Buffer.from(agent.tokenHash), Buffer.from(actual))) throw new UnauthorizedException('Printing service is unpaired or revoked');
     return agent;
   }
+  private lastExpire = 0;
   private async expire(tx: Prisma.TransactionClient, restaurantId: string) {
     const now = new Date();
     await tx.printJob.updateMany({ where: { restaurantId, state: 'CLAIMED', leaseUntil: { lt: now } }, data: { state: 'QUEUED', claimToken: null, leaseUntil: null } });
@@ -56,17 +57,33 @@ export class PrintQueueService {
   }
   async overview(user: any) {
     this.assertStaff(user);
-    return this.prisma.$transaction(async tx => {
-      await this.expire(tx, user.restaurantId);
-      const admin = ['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user.role);
-      const agents = await tx.printAgent.findMany({ where: { restaurantId: user.restaurantId }, select: { id: true, name: true, lastSeenAt: true, revokedAt: true, pairingExpiresAt: true }, orderBy: { createdAt: 'desc' }, take: 100 });
-      const destinations = await tx.printDestination.findMany({ where: { restaurantId: user.restaurantId } });
-      const select = { id: true, kind: true, reference: true, state: true, error: true, parentId: true, createdAt: true, updatedAt: true, requestedBy: true, reviewedAt: true };
-      const recent = await tx.printJob.findMany({ where: { restaurantId: user.restaurantId }, select, orderBy: { createdAt: 'desc' }, take: 100 });
-      const unresolved = await tx.printJob.findMany({ where: { restaurantId: user.restaurantId, state: { in: ['QUEUED', 'CLAIMED', 'SENDING', 'FAILED', 'UNCERTAIN'] }, reviewedAt: null }, select, orderBy: { createdAt: 'asc' }, take: 100 });
-      const jobs = [...new Map([...unresolved, ...recent].map(job => [job.id, job])).values()];
-      return { agents: admin ? agents : [], destinations: admin ? destinations : destinations.map(d => ({ id: d.id, role: d.role, autoPrint: d.autoPrint, name: d.name })), jobs };
-    });
+    const now = Date.now();
+    if (now - this.lastExpire > 30000) {
+      this.lastExpire = now;
+      try {
+        await this.prisma.$transaction(async tx => {
+          await this.expire(tx, user.restaurantId);
+        }, { timeout: 10000 });
+      } catch (err) {
+        console.warn('Print job expiry check deferred:', err);
+      }
+    }
+
+    const admin = ['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user.role);
+    const select = { id: true, kind: true, reference: true, state: true, error: true, parentId: true, createdAt: true, updatedAt: true, requestedBy: true, reviewedAt: true };
+    const [agents, destinations, recent, unresolved] = await Promise.all([
+      admin ? this.prisma.printAgent.findMany({ where: { restaurantId: user.restaurantId }, select: { id: true, name: true, lastSeenAt: true, revokedAt: true, pairingExpiresAt: true }, orderBy: { createdAt: 'desc' }, take: 100 }) : Promise.resolve([]),
+      this.prisma.printDestination.findMany({ where: { restaurantId: user.restaurantId } }),
+      this.prisma.printJob.findMany({ where: { restaurantId: user.restaurantId }, select, orderBy: { createdAt: 'desc' }, take: 100 }),
+      this.prisma.printJob.findMany({ where: { restaurantId: user.restaurantId, state: { in: ['QUEUED', 'CLAIMED', 'SENDING', 'FAILED', 'UNCERTAIN'] }, reviewedAt: null }, select, orderBy: { createdAt: 'asc' }, take: 100 }),
+    ]);
+
+    const jobs = [...new Map([...unresolved, ...recent].map(job => [job.id, job])).values()];
+    return {
+      agents,
+      destinations: admin ? destinations : destinations.map(d => ({ id: d.id, role: d.role, autoPrint: d.autoPrint, name: d.name })),
+      jobs,
+    };
   }
   async revoke(user: any, id: string) {
     return this.prisma.$transaction(async tx => {
