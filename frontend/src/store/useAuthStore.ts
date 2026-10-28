@@ -1,3 +1,4 @@
+import { toast } from './useToastStore';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { getServerUrl } from '../services/serverConfig';
@@ -25,7 +26,10 @@ export const useAuthStore = create<AuthState>()(
       loginTime: null,
 
       fullLogin: async (username: string, password?: string, pin?: string) => {
-        const server = getServerUrl().replace(/\/$/, '');
+        let server = getServerUrl().replace(/\/$/, '');
+        if (server.includes('wq8ss.aiccloud.online') && server.startsWith('http://')) {
+          server = server.replace('http://', 'https://');
+        }
         const originalSession = localStorage.getItem('pos-auth-storage');
         try {
           const res = await fetch(`${server}/auth/login`, {
@@ -34,7 +38,15 @@ export const useAuthStore = create<AuthState>()(
             body: JSON.stringify({ username, password, pin }),
           });
           
-          if (!res.ok) return false;
+          if (!res.ok) {
+            let errorMsg = 'Invalid credentials';
+            try {
+              const errData = await res.json();
+              if (errData?.message) errorMsg = errData.message;
+            } catch {}
+            toast.error(errorMsg);
+            return false;
+          }
           
           const data = await res.json();
           if (getServerUrl().replace(/\/$/, '') !== server || localStorage.getItem('pos-auth-storage') !== originalSession) return false;
@@ -46,8 +58,9 @@ export const useAuthStore = create<AuthState>()(
             loginTime: Date.now(),
           });
           return true;
-        } catch (e) {
+        } catch (e: any) {
           console.error('Login failed', e);
+          toast.error(`Connection Error: Unable to reach ${server} (${e?.message || 'Network error'})`);
           return false;
         }
       },

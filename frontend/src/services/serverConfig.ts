@@ -16,7 +16,7 @@
 
 const STORAGE_KEY = 'karvaan_server_url';
 const OP_MODE_KEY = 'karvaan_op_mode';
-export const DEFAULT_URL = 'http://wq8ss.aiccloud.online';
+export const DEFAULT_URL = 'https://wq8ss.aiccloud.online';
 
 function isCapacitorApp(): boolean {
   if (typeof window === 'undefined') return false;
@@ -27,6 +27,7 @@ function isCapacitorApp(): boolean {
 export type OperatingMode = 'NODE_SERVER' | 'ANDROID_MASTER' | 'WAITER_CLIENT';
 
 export function getOperatingMode(): OperatingMode {
+  if (isCapacitorApp()) return 'NODE_SERVER';
   const mode = localStorage.getItem(OP_MODE_KEY) as OperatingMode;
   return mode || 'NODE_SERVER';
 }
@@ -42,13 +43,22 @@ function getAutomaticServerUrl(): string | undefined {
 }
 
 export function getServerUrl(): string {
+  // On native Android / Capacitor APK, always connect directly to the hosted cloud backend
+  if (isCapacitorApp()) {
+    return DEFAULT_URL;
+  }
+
   // 1. Env variable (set at build time for VPS / production)
   const envUrl = import.meta.env.VITE_BACKEND_URL as string | undefined;
-  if (envUrl && envUrl.trim()) return envUrl.trim();
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/^http:\/\/wq8ss\.aiccloud\.online/, 'https://wq8ss.aiccloud.online');
+  }
 
   // 2. Runtime config set via Setup Screen
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored && stored.trim()) return stored.trim();
+  if (stored && stored.trim()) {
+    return stored.trim().replace(/^http:\/\/wq8ss\.aiccloud\.online/, 'https://wq8ss.aiccloud.online');
+  }
 
   // 3. Cloud web deployment: if loaded via domain or IP in browser, default to same origin
   const automaticUrl = getAutomaticServerUrl();

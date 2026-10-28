@@ -167,6 +167,18 @@ export function stopMasterSyncPolling() {}
 
 socket.on('disconnect', (reason) => {
   console.warn('🔌 [POS] Disconnected from Backend WebSocket. Reason:', reason);
+  if (reason === 'io server disconnect') {
+    // If server forcibly disconnected (e.g. server reload or token refresh), re-authenticate and reconnect
+    setTimeout(() => {
+      try {
+        const session = assertCurrentSession();
+        if (session.accessToken && session.currentUser?.restaurantId) {
+          socket.auth = { restaurantId: session.currentUser.restaurantId, token: session.accessToken };
+          socket.connect();
+        }
+      } catch {}
+    }, 2000);
+  }
 });
 socket.on('connect_error', (error) => {
   console.error('🔌 [POS] WebSocket Connection Error:', error?.message || error);
