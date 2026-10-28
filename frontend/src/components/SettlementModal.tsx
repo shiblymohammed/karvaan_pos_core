@@ -78,20 +78,26 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
 
   const canConfirm = totalTendered >= totalAmount && (tenders.CREDIT === 0 || hasCustomer);
 
-  // Smart currency notes calculation based on totalAmount
+  // Smart currency notes calculation based on remaining or totalAmount
+  const targetCashAmount = useMemo(() => {
+    const otherTenders = (Object.keys(tenders) as PaymentMethod[])
+      .filter((k) => k !== 'CASH')
+      .reduce((sum, k) => sum + tenders[k], 0);
+    const unallocated = totalAmount - otherTenders;
+    return unallocated > 0 ? unallocated : totalAmount;
+  }, [totalAmount, tenders]);
+
   const smartCashNotes = useMemo(() => {
     const list: number[] = [];
-    const exact = Math.ceil(totalAmount);
+    const exact = Math.ceil(targetCashAmount);
     list.push(exact);
 
-    // Next round 50 / 100
     if (exact % 50 !== 0) {
       list.push(Math.ceil(exact / 50) * 50);
     } else if (exact % 100 !== 0) {
       list.push(Math.ceil(exact / 100) * 100);
     }
 
-    // Common notes: 500, 1000, 2000
     const currencyNotes = [100, 200, 500, 1000, 2000];
     for (const note of currencyNotes) {
       if (note > exact && !list.includes(note)) {
@@ -101,25 +107,32 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
     }
 
     return Array.from(new Set(list)).sort((a, b) => a - b).slice(0, 4);
-  }, [totalAmount]);
+  }, [targetCashAmount]);
 
   // Method Selection
   const handleMethodSelect = (method: PaymentMethod) => {
     setActiveMethod(method);
 
-    // If single payment (only 1 active tender), switch full balance directly
+    // If there is an unpaid remaining balance, auto-fill it into the selected method
+    if (remaining > 0 && tenders[method] === 0) {
+      setTenders((prev) => ({ ...prev, [method]: remaining }));
+      setNumpadInput(remaining.toString());
+      return;
+    }
+
+    // If this method already has an amount allocated, focus it in the numpad
+    if (tenders[method] > 0) {
+      setNumpadInput(tenders[method].toString());
+      return;
+    }
+
+    // If the previous method had the entire bill (single full payment mode)
     const nonZeroMethods = (Object.keys(tenders) as PaymentMethod[]).filter((k) => tenders[k] > 0);
-    if (nonZeroMethods.length <= 1) {
+    if (nonZeroMethods.length <= 1 && remaining === 0) {
       setTenders({ CASH: 0, UPI: 0, CARD: 0, CREDIT: 0, [method]: totalAmount });
       setNumpadInput(totalAmount.toString());
     } else {
-      // In split mode, auto-fill remaining to the newly selected method
-      if (tenders[method] === 0 && remaining > 0) {
-        setTenders((prev) => ({ ...prev, [method]: remaining }));
-        setNumpadInput(remaining.toString());
-      } else {
-        setNumpadInput(tenders[method] > 0 ? tenders[method].toString() : '');
-      }
+      setNumpadInput('');
     }
   };
 
@@ -390,11 +403,26 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
               )}
 
               {remaining > 0 && (
-                <div className="border-l border-slate-200 pl-4 animate-in fade-in duration-200">
-                  <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider block">Remaining</span>
-                  <span className="text-base sm:text-lg font-black text-amber-600 tabular-nums">
-                    ₹{remaining.toFixed(2)}
-                  </span>
+                <div className="border-l border-slate-200 pl-4 animate-in fade-in duration-200 flex items-center gap-2">
+                  <div>
+                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider block">Remaining</span>
+                    <span className="text-base sm:text-lg font-black text-amber-600 tabular-nums">
+                      ₹{remaining.toFixed(2)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentVal = tenders[activeMethod] || 0;
+                      const newVal = Number((currentVal + remaining).toFixed(2));
+                      setTenders((prev) => ({ ...prev, [activeMethod]: newVal }));
+                      setNumpadInput(newVal.toString());
+                    }}
+                    className="text-[11px] font-black bg-amber-500 hover:bg-amber-600 active:scale-95 text-white px-2.5 py-1 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                    title={`Add remaining ₹${remaining.toFixed(2)} to ${activeMethod}`}
+                  >
+                    <span>+ Fill to {activeMethod}</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -421,13 +449,25 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
                 <span className="text-[11px] font-bold text-slate-500">
                   Enter amount for <strong className="text-slate-800">{activeMethod}</strong>:
                 </span>
-                <span className="text-base font-black text-slate-900 tabular-nums bg-white px-3 py-1 rounded-lg border border-slate-200">
-                  ₹{numpadInput || '0'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-black text-slate-900 tabular-nums bg-white px-3 py-1 rounded-lg border border-slate-200">
+                    ₹{numpadInput || '0'}
+                  </span>
+                  {numpadInput && (
+                    <button
+                      type="button"
+                      onClick={() => handleNumpad('C')}
+                      className="text-xs font-bold text-slate-400 hover:text-rose-600 px-1 py-0.5 rounded cursor-pointer"
+                      title="Clear amount"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-1.5">
-                {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'DEL'].map((btn) => (
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'DEL'].map((btn) => (
                   <button
                     key={btn}
                     type="button"
@@ -435,8 +475,8 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
                     className={`h-11 rounded-xl font-black text-base shadow-2xs transition-all active:scale-95 flex items-center justify-center border cursor-pointer ${
                       btn === 'DEL'
                         ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
-                        : btn === 'C'
-                          ? 'bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-300 text-xs'
+                        : btn === '.'
+                          ? 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200 font-black'
                           : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
