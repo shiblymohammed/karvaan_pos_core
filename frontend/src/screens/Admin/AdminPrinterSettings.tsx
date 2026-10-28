@@ -8,6 +8,8 @@ import { getPrinterProfile, savePrinterProfile, canBackendPrintLocally } from '.
 import { isTauri, printNetworkReceipt, EscPos } from '../../services/tauriCommands';
 import { CloudPrintSettings } from '../../components/CloudPrintSettings';
 import { PrinterSettings } from '../../components/PrinterSettings';
+import { isCapacitor } from '../../services/bluetoothPrinter';
+import { CapacitorBluetoothPrinterSettings } from '../../components/CapacitorBluetoothPrinterSettings';
 import { useSettingsStore } from '../../store/useSettingsStore';
 
 export interface PrinterConfig {
@@ -22,7 +24,33 @@ export interface PrinterConfig {
 
 export const AdminPrinterSettings: React.FC = () => {
   const restaurantName = useSettingsStore(state => state.receiptName || 'Karvaan POS');
-  return <div className="h-full overflow-y-auto p-4 md:p-6"><div className="max-w-5xl mx-auto space-y-6"><CloudPrintSettings /><details className="rounded-2xl border bg-white p-4"><summary className="cursor-pointer font-bold">Advanced: direct desktop/local-server printing</summary><p className="text-sm text-slate-500 mt-2">These terminal-only connections are manual fallbacks. Automatic printing uses the paired service above.</p><PrinterSettings restaurantName={restaurantName} /><LegacyPrinterSettings /></details></div></div>;
+  const isCap = isCapacitor();
+
+  // On Capacitor Android APK: Render ONLY the native Bluetooth printer setup interface
+  if (isCap) {
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <div className="max-w-4xl mx-auto space-y-6">
+          <CapacitorBluetoothPrinterSettings restaurantName={restaurantName} />
+        </div>
+      </div>
+    );
+  }
+
+  // Web Browser / PWA / Desktop Tauri: Keep full cloud & network printer setup
+  return (
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="max-w-5xl mx-auto space-y-6">
+        <CloudPrintSettings />
+        <details className="rounded-2xl border bg-white p-4">
+          <summary className="cursor-pointer font-bold">Advanced: direct desktop/local-server printing</summary>
+          <p className="text-sm text-slate-500 mt-2">These terminal-only connections are manual fallbacks. Automatic printing uses the paired service above.</p>
+          <PrinterSettings restaurantName={restaurantName} />
+          <LegacyPrinterSettings />
+        </details>
+      </div>
+    </div>
+  );
 };
 
 const LegacyPrinterSettings: React.FC = () => {

@@ -20,7 +20,8 @@ import { useInventoryStore } from '../store/useInventoryStore';
 import { CustomerSelectModal } from '../components/CustomerSelectModal';
 import { MapPickerModal } from '../components/MapPickerModal';
 import SettlementModal, { PaymentMethod, TenderState } from '../components/SettlementModal';
-import { autoPrintCheckoutReceipt } from '../services/quickPrint';
+import { autoPrintCheckoutReceipt, autoPrintKotReceipt } from '../services/quickPrint';
+import { isCapacitor } from '../services/bluetoothPrinter';
 import { FolioSidebar } from '../components/pos/FolioSidebar';
 import { ReturnOrderModal, ReturnOrderData } from '../components/ReturnOrderModal';
 import { ManagerAuthModal } from '../components/ManagerAuthModal';
@@ -314,6 +315,10 @@ export const POSScreen: React.FC = () => {
     if (!result || result.status === 'ERROR') return;
     if (result.status === 'QUEUED') { toast.info('Kitchen printing will be decided when the server confirms this order.'); return; }
     if (result.data?.printJobId) { toast.info('Kitchen ticket queued for the restaurant printer.'); return; }
+    if (isCapacitor()) {
+      void autoPrintKotReceipt(kotData);
+      return;
+    }
     if (!getPrinterProfile().browserKitchenPrint) return;
     setLastBill({ ...kotData, pendingConfirmation: false });
     setReceiptType('KOT');

@@ -3,7 +3,7 @@ import { CheckCircle2, Printer, Share2, RotateCcw, X, Loader2 } from 'lucide-rea
 import { toast } from '../../store/useToastStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { isTauri, printReceipt, buildBillReceipt, buildKotReceipt, printViaRawBT, isAndroid } from '../../services/tauriCommands';
-import { isCapacitor, getSavedBtPrinter, printViaBluetoothNative } from '../../services/bluetoothPrinter';
+import { isCapacitor, getSavedBtPrinter, getSavedBtKotPrinter, printViaBluetoothNative } from '../../services/bluetoothPrinter';
 import { apiClient } from '../../services/apiClient';
 import { getPrinterProfile, canBackendPrintLocally } from '../../services/printerProfile';
 import { printNetworkReceipt } from '../../services/tauriCommands';
@@ -89,10 +89,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
       ? buildKotReceipt({ orderNumber: bill.orderNumber || bill.billNumber, tableName: bill.table, items: lineItems.map(item => ({ name: item.name, qty: item.quantity, notes: item.notes, addons: item.addons })), time: `${bill.date} ${bill.time}`, paperWidth })
       : buildBillReceipt({ restaurantName: receiptName, restaurantAddress: receiptAddress, gstin: receiptGstin, orderType, billNumber: bill.billNumber, tableName: bill.table, cashier: bill.cashier || currentUser?.name || 'Staff', items: lineItems.map(item => ({ name: item.name, qty: item.quantity, price: item.price, notes: item.notes, addons: item.addons })), subtotal: bill.subtotal, discount: bill.discount || 0, gst: bill.cgst + bill.sgst, grandTotal: bill.grandTotal, paymentMethod: bill.method, tenders: bill.tenders, deliveryFee: bill.deliveryFee, pendingConfirmation: bill.pendingConfirmation, paymentPending: bill.paymentPending, prebill: receiptType === 'PREBILL', reprint: isReprint, time: `${bill.date} ${bill.time}`, paperWidth });
     try {
-      if (!forceBrowser && isCapacitorApp && savedBtPrinter) {
-        await printViaBluetoothNative(bytes, savedBtPrinter.address);
-        toast.success(`Receipt printed via Bluetooth (${savedBtPrinter.name})`);
-        return;
+      if (!forceBrowser && isCapacitorApp) {
+        const kotPrinter = getSavedBtKotPrinter();
+        const mainPrinter = getSavedBtPrinter();
+        const target = (receiptType === 'KOT' && kotPrinter?.enabled && kotPrinter.address) ? kotPrinter : mainPrinter;
+        if (target?.address) {
+          await printViaBluetoothNative(bytes, target.address);
+          toast.success(`${receiptType === 'KOT' ? 'Kitchen Ticket' : 'Receipt'} printed via Bluetooth (${target.name})`);
+          return;
+        }
       }
       if (forceRawBT || (!forceBrowser && !isTauri() && currentProfile.useRawBT)) {
         printViaRawBT(bytes);

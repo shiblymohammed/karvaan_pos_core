@@ -1,5 +1,5 @@
-import { isTauri, printReceipt, buildBillReceipt, printViaRawBT } from './tauriCommands';
-import { isCapacitor, getSavedBtPrinter, printViaBluetoothNative } from './bluetoothPrinter';
+import { isTauri, printReceipt, buildBillReceipt, buildKotReceipt, printViaRawBT } from './tauriCommands';
+import { isCapacitor, getSavedBtPrinter, getSavedBtKotPrinter, printViaBluetoothNative } from './bluetoothPrinter';
 import { apiClient } from './apiClient';
 import { getPrinterProfile, canBackendPrintLocally } from './printerProfile';
 import { printNetworkReceipt } from './tauriCommands';
@@ -21,7 +21,13 @@ export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'D
       ...item,
       price: item.price + (item.addons?.reduce((sum: number, addon: any) => sum + addon.price, 0) || 0),
     }));
-    const paperWidth = Number(network?.paperSize === '58mm' ? 58 : currentProfile.browserPaperWidth || 80);
+    const paperWidth = Number(
+      isCapacitorApp && savedBtPrinter
+        ? savedBtPrinter.paperWidth || 58
+        : network?.paperSize === '58mm'
+        ? 58
+        : currentProfile.browserPaperWidth || 80
+    );
 
     const bytes = buildBillReceipt({
       restaurantName: receiptName,
@@ -118,6 +124,45 @@ export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'D
     return false;
   } catch (error) {
     console.warn('Auto print failed or printer not configured:', error);
+    return false;
+  }
+}
+
+/**
+ * Print KOT (Kitchen Order Ticket) directly via configured Bluetooth printer on Capacitor APK
+ */
+export async function autoPrintKotReceipt(kotData: any): Promise<boolean> {
+  try {
+    const isCapacitorApp = isCapacitor();
+    if (!isCapacitorApp) return false;
+
+    const kotPrinter = getSavedBtKotPrinter();
+    const mainPrinter = getSavedBtPrinter();
+
+    // Use dedicated KOT printer if enabled, otherwise fallback to main Bluetooth printer
+    const target = (kotPrinter?.enabled && kotPrinter?.address) ? kotPrinter : mainPrinter;
+    if (!target?.address) return false;
+
+    const paperWidth = target.paperWidth || 58;
+    const bytes = buildKotReceipt({
+      orderNumber: kotData.orderNumber || 'KOT',
+      tableName: kotData.table || 'Takeaway',
+      items: (kotData.items || []).map((item: any) => ({
+        name: item.name,
+        qty: item.quantity,
+        notes: item.notes,
+        addons: item.addons,
+      })),
+      time: `${kotData.date || new Date().toLocaleDateString()} ${kotData.time || new Date().toLocaleTimeString()}`,
+      paperWidth,
+    });
+
+    await printViaBluetoothNative(bytes, target.address);
+    toast.success(`Kitchen Ticket printed via Bluetooth (${target.name})`);
+    return true;
+  } catch (error: any) {
+    console.warn('Auto KOT print failed:', error);
+    toast.error('Bluetooth KOT print failed: ' + (error?.message || String(error)));
     return false;
   }
 }
