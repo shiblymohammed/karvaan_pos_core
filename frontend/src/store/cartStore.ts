@@ -151,22 +151,18 @@ export const useCartStore = create<CartState>()(
         ? `${product.name} (${variantName})`
         : product.name;
 
-      const existing = state.items.find(
+      const existingIndex = state.items.findIndex(
         (i) => i.productId === product.id &&
           i.variantId === variantId &&
-          i.notes === finalNotes &&
+          (i.notes || '') === finalNotes &&
           JSON.stringify(i.addons) === JSON.stringify(addons) &&
           i.status === 'NEW'
       );
 
-      if (existing) {
+      if (existingIndex >= 0) {
         return {
-          items: state.items.map((i) =>
-            i.productId === product.id &&
-            i.variantId === variantId &&
-            i.notes === finalNotes &&
-            JSON.stringify(i.addons) === JSON.stringify(addons) &&
-            i.status === 'NEW'
+          items: state.items.map((i, index) =>
+            index === existingIndex
               ? { ...i, quantity: i.quantity + 1 }
               : i
           ),

@@ -1,31 +1,42 @@
-import React, { useState } from 'react';
-import { Search, X, RefreshCw } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { useMenuStore, Product } from '../../store/useMenuStore';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useCartStore } from '../../store/cartStore';
 import { MenuItemCard } from './MenuItemCard';
+import { createMenuStockLookup, filterMenuProducts } from '../../services/menuBrowse';
 
 interface MenuGridProps {
   activeCategory: string;
   searchQuery: string;
   onCustomize: (item: Product) => void;
+  layout?: 'grid' | 'list';
 }
 
-export const MenuGrid: React.FC<MenuGridProps> = ({ activeCategory, searchQuery, onCustomize }) => {
+export const MenuGrid: React.FC<MenuGridProps> = React.memo(({ activeCategory, searchQuery, onCustomize, layout = 'grid' }) => {
   
-  const { products, serverRevision, fetchMenu } = useMenuStore();
-  const { checkIs86d } = useInventoryStore();
-  const { addItem, items } = useCartStore();
+  const products = useMenuStore(state => state.products);
+  const serverRevision = useMenuStore(state => state.serverRevision);
+  const fetchMenu = useMenuStore(state => state.fetchMenu);
+  const recipes = useInventoryStore(state => state.recipes);
+  const ingredients = useInventoryStore(state => state.ingredients);
+  const addItem = useCartStore(state => state.addItem);
+  const items = useCartStore(state => state.items);
 
-  const filteredProducts = products.filter((p) => {
-    if (!p.isAvailable) return false;
-    const matchesCat = activeCategory === 'All' 
-      ? true 
-      : activeCategory === 'Favourites' ? p.isFavourite
-      : p.category === activeCategory;
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCat && matchesSearch;
-  });
+  const filteredProducts = useMemo(() => filterMenuProducts(products, activeCategory, searchQuery), [products, activeCategory, searchQuery]);
+  const checkIs86d = useMemo(() => createMenuStockLookup(recipes, ingredients), [recipes, ingredients]);
+  const cartProductIds = useMemo(() => new Set(items.map(item => item.productId)), [items]);
+  const comboLabels = useMemo(() => {
+    const names = new Map(products.map(product => [product.id, product.name]));
+    return new Map(products.filter(product => product.isCombo).map(product => {
+      const counts = new Map<string, number>();
+      for (const id of product.comboItems || []) {
+        const name = names.get(id);
+        if (name) counts.set(name, (counts.get(name) || 0) + 1);
+      }
+      return [product.id, [...counts].map(([name, count]) => `${count}x ${name}`).join(' • ')];
+    }));
+  }, [products]);
 
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden">
@@ -50,10 +61,10 @@ export const MenuGrid: React.FC<MenuGridProps> = ({ activeCategory, searchQuery,
           )}
         </div>
       )}
-      <div className="grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 md:gap-5 overflow-y-auto pb-[240px] lg:pb-24 pr-2 pt-2">
+      <div className={`${layout === 'list' ? 'flex flex-col gap-3' : 'grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 md:gap-5'} overflow-y-auto pb-[240px] lg:pb-24 pr-2 pt-2`}>
         {filteredProducts.map((product) => {
           const is86d = checkIs86d(product.name);
-          const isInCart = items.some(item => item.productId === product.id);
+          const isInCart = cartProductIds.has(product.id);
           return (
             <MenuItemCard
               key={product.id}
@@ -62,10 +73,12 @@ export const MenuGrid: React.FC<MenuGridProps> = ({ activeCategory, searchQuery,
               isInCart={isInCart}
               onAdd={addItem}
               onCustomize={onCustomize}
+              layout={layout}
+              comboLabel={comboLabels.get(product.id)}
             />
           );
         })}
       </div>
     </div>
   );
-};
+});

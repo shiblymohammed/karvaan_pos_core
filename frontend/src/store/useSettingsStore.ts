@@ -25,8 +25,12 @@ export interface PredefinedDiscount {
 
 interface SettingsState {
   serverRevision: number;
+  posMenuLayout: 'GRID' | 'CATEGORY_LIST';
+  setPosMenuLayout: (layout: 'GRID' | 'CATEGORY_LIST') => void;
   receiptName?: string;
   receiptAddress?: string;
+  receiptPhone?: string;
+  checkoutReceiptAndKot: boolean;
   receiptGstin?: string;
   receiptLogo?: string;
   receiptFooterNote?: string;
@@ -132,6 +136,8 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()(
   (set) => ({
       serverRevision: -1,
+      posMenuLayout: 'GRID',
+      setPosMenuLayout: (layout) => set({ posMenuLayout: layout }),
       notes: [
         { id: 'n1', label: 'Extra Spicy', icon: '🔥' },
         { id: 'n2', label: 'Less Spicy', icon: '🌶️' },
@@ -141,6 +147,11 @@ export const useSettingsStore = create<SettingsState>()(
         { id: 'n6', label: 'Jain Prep', icon: '🌱' },
       ],
       receiptLogo: '',
+      receiptName: '',
+      receiptAddress: '',
+      receiptGstin: '',
+      receiptPhone: '',
+      checkoutReceiptAndKot: false,
       receiptFooterNote: 'Thank you for visiting! Please visit us again.',
       setReceiptLogo: (logo) => set({ receiptLogo: logo || '' }),
       discounts: [

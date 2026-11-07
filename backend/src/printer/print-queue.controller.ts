@@ -21,6 +21,8 @@ export class PrintQueueController {
   async test(@Req() req: any, @Body() body: any) { return summary(await this.queue.test(req.user, body)); }
   @Post('receipt')
   async receipt(@Req() req: any, @Body() body: any) { return summary(await this.queue.manualReceipt(req.user, body)); }
+  @Post('direct-receipt')
+  directReceipt(@Req() req: any, @Body() body: any) { return this.queue.claimDirectReceipt(req.user, body); }
   @Post('jobs/:id/recover')
   async recover(@Req() req: any, @Param('id') id: string, @Body() body: any) { return summary(await this.queue.recover(req.user, id, body)); }
   @Post('jobs/:id/cancel') @Roles(...ADMIN_ROLES)

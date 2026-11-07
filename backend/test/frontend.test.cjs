@@ -58,11 +58,11 @@ function browserHarness(shared = {}) {
   return { load, storage, emitted, socket, login, uploads, setFetch: fn => { context.fetch = fn; }, runTimers: async () => { const scheduled = [...timers.values()]; timers.clear(); for (const fn of scheduled) await fn(); }, setLiveAuth: value => { liveAuth = value; }, setOrigin: value => { context.window.location.origin = value; }, setUploadResponse: value => { uploadResponse = value; }, setInventoryResponse: value => { inventoryResponse = value; }, setAck: fn => { ack = fn; } };
 }
 
-test('a VPS web deployment uses its origin without repeatedly opening setup, while local terminals still require setup', () => {
+test('a VPS web deployment uses its origin while unconfigured local terminals keep the cloud fallback and require setup', () => {
   const h = browserHarness();
   const config = h.load('services/serverConfig.ts');
   assert.equal(config.isServerConfigured(), false);
-  assert.equal(config.getServerUrl(), 'http://127.0.0.1:3001');
+  assert.equal(config.getServerUrl(), config.DEFAULT_URL);
   h.setOrigin('https://pos.example.com');
   assert.equal(config.isServerConfigured(), true);
   assert.equal(config.getServerUrl(), 'https://pos.example.com');
@@ -208,9 +208,9 @@ test('printed invoice bytes contain configured business details and individual i
   assert.match(receipt, /Real Restaurant/);
   assert.match(receipt, /Real Address/);
   assert.match(receipt, /Configured GST Number/);
-  assert.match(receipt, /CASH: Rs.50.00/);
-  assert.match(receipt, /UPI: Rs.160.00/);
-  assert.match(receipt, /AWAITING SERVER CONFIRMATION/);
+  assert.match(receipt, /^CASH\s+Rs\.50\.00$/m);
+  assert.match(receipt, /^UPI\s+Rs\.160\.00$/m);
+  assert.match(receipt, /AWAITING SERVER CONFIRMATION/i);
   assert.ok(!receipt.includes('27AADCK1234F1Z9'));
 });
 
@@ -227,7 +227,9 @@ test('thermal fallback prints full modifiers and marks unpaid prebill and reprin
   const kot = Buffer.from(printing.buildKotReceipt({ orderNumber: 'KOT', tableName: '1', time: '12:00', items: [{ name: 'Meal', qty: 1, notes: instruction, addons: [{ name: 'Extra sauce' }] }] })).toString();
   assert.match(kot, /Extra sauce/); assert.match(kot.replace(/\n/g, ' '), /final cooking instruction/);
   const bill = Buffer.from(printing.buildBillReceipt({ restaurantName: 'POS', billNumber: 'PRE', orderType: 'DINE_IN', cashier: 'Staff', time: '12:00', items: [], subtotal: 0, discount: 0, gst: 0, grandTotal: 0, paymentMethod: 'UNPAID', prebill: true, reprint: true })).toString();
-  assert.match(bill, /PRE-BILL - UNPAID/); assert.match(bill, /REPRINT/);
+  assert.match(bill, /PROVISIONAL PRE-BILL/);
+  assert.match(bill, /Status: UNPAID \(PRE-BILL\)/);
+  assert.match(bill, /REPRINT/);
 });
 
 test('a different login cannot flush another cashier’s pending actions', async () => {
@@ -625,4 +627,107 @@ test('old waste and delivery snapshots stay available for review without being r
   await actions.flushPendingActions();
   assert.equal(h.emitted.length, 0); assert.equal((await queue.getPendingActions()).length, 0);
   assert.equal((await queue.getRecoveryActions()).length, 2);
+});
+
+
+test('category tiles count visible items, retain favourites and keep uncatalogued categories reachable', () => {
+  const { filterMenuProducts, menuCategoryTiles } = browserHarness().load('services/menuBrowse.ts');
+  const categories = [{ id: 'meal', name: 'Meals', sortOrder: 2 }, { id: 'drink', name: 'Drinks', sortOrder: 1 }];
+  const products = [
+    { id: 'tea', name: 'Tea', category: 'Drinks', isAvailable: true, isFavourite: true },
+    { id: 'meal', name: 'Meal', category: 'Meals', isAvailable: true },
+    { id: 'old', name: 'Old tea', category: 'Drinks', isAvailable: true, isArchived: true },
+    { id: 'off', name: 'Unavailable tea', category: 'Drinks', isAvailable: false },
+    { id: 'combo', name: 'Lunch combo', category: 'Combos', isAvailable: true },
+    { id: 'legacy', name: 'Legacy item', category: '', isAvailable: true },
+  ];
+  const tiles = menuCategoryTiles(categories, products);
+  assert.deepEqual(Array.from(tiles, tile => tile.name), ['Favourites', 'Drinks', 'Meals', 'Combos', 'Uncategorised']);
+  assert.equal(tiles.find(tile => tile.name === 'Drinks').itemCount, 1);
+  assert.deepEqual(Array.from(filterMenuProducts(products, 'Drinks', ' TEA '), product => product.id), ['tea']);
+  assert.deepEqual(Array.from(filterMenuProducts(products, 'All', 'combo'), product => product.id), ['combo']);
+  assert.equal(filterMenuProducts(products, 'Favourites').length, 1);
+  assert.equal(filterMenuProducts(products, 'Uncategorised')[0].id, 'legacy');
+  assert.equal(categories[0].name, 'Meals');
+});
+
+test('indexed menu stock checks retain legacy recipe matching, waste and missing-stock behavior', () => {
+  const h = browserHarness();
+  const { createMenuStockLookup } = h.load('services/menuBrowse.ts');
+  const inventory = h.load('store/useInventoryStore.ts').useInventoryStore;
+  const ingredients = [{ id: 'rice', currentStock: 10 }, { id: 'tea', currentStock: 4 }];
+  const recipes = [
+    { menuItemId: 'meal', menuItemName: 'Rice meal', ingredients: [{ ingredientId: 'rice', quantity: 10, wasteFactorPercent: 10 }] },
+    { menuItemId: 'tea', menuItemName: 'Tea', ingredients: [{ ingredientId: 'tea', quantity: 4 }] },
+    { menuItemId: 'missing', menuItemName: 'Missing', ingredients: [{ ingredientId: 'absent', quantity: 1 }] },
+    { menuItemId: 'empty', menuItemName: 'Empty', ingredients: [] },
+    // An earlier ID match must win over a later case-insensitive name match.
+    { menuItemId: 'collision', menuItemName: 'First', ingredients: [] },
+    { menuItemId: 'later', menuItemName: 'COLLISION', ingredients: [{ ingredientId: 'absent', quantity: 1 }] },
+  ];
+  inventory.setState({ ingredients, recipes });
+  const lookup = createMenuStockLookup(recipes, ingredients);
+  for (const query of ['Rice meal', 'RICE MEAL', 'meal', 'Tea', 'tea', 'Missing', 'missing', 'Empty', 'collision', 'COLLISION', 'unknown']) {
+    assert.equal(lookup(query), inventory.getState().checkIs86d(query), query);
+  }
+  assert.equal(lookup('Rice meal'), true);
+  assert.equal(lookup('Tea'), false);
+  assert.equal(lookup('Missing'), true);
+  assert.equal(createMenuStockLookup(recipes, [{ id: 'rice', currentStock: 11 }])('Rice meal'), false);
+});
+
+test('repeated menu adds combine ordinary lines while keeping notes, sizes, addons and sent items separate', () => {
+  const cart = browserHarness().load('store/cartStore.ts').useCartStore;
+  const product = { id: 'meal', name: 'Meal', price: 100 };
+  cart.getState().addItem(product);
+  cart.getState().addItem(product);
+  assert.equal(cart.getState().items.length, 1);
+  assert.equal(cart.getState().items[0].quantity, 2);
+  cart.getState().addItem(product, 'No spice');
+  cart.getState().addItem(product, 'No spice');
+  cart.getState().addItem({ ...product, variantId: 'large', variantName: 'Large' });
+  cart.getState().addItem(product, undefined, [{ id: 'sauce', name: 'Sauce', price: 5 }]);
+  assert.equal(cart.getState().items.length, 4);
+  assert.equal(cart.getState().items[1].quantity, 2);
+  cart.setState({ items: cart.getState().items.map(item => ({ ...item, status: 'SENT' })) });
+  cart.getState().addItem(product);
+  cart.getState().addItem(product);
+  assert.equal(cart.getState().items.length, 5);
+  assert.equal(cart.getState().items[0].quantity, 2);
+  assert.equal(cart.getState().items[4].quantity, 2);
+  // Older saved carts can already contain duplicate ordinary lines.
+  const ordinary = { productId: 'meal', name: 'Meal', price: 100, quantity: 1, status: 'NEW' };
+  cart.setState({ items: [{ ...ordinary }, { ...ordinary }] });
+  cart.getState().addItem(product);
+  assert.deepEqual(Array.from(cart.getState().items, item => item.quantity), [2, 1]);
+});
+
+test('POS layout defaults safely and is queued with versioned restaurant settings', async () => {
+  const h = browserHarness();
+  const auth = JSON.parse(h.storage.get('pos-auth-storage')); auth.state.currentUser.role = 'ADMIN'; h.storage.set('pos-auth-storage', JSON.stringify(auth));
+  const settings = h.load('store/useSettingsStore.ts'), queue = h.load('services/offlineQueue.ts');
+  settings.applyRemoteSettings({ serverRevision: 3 });
+  assert.equal(settings.useSettingsStore.getState().posMenuLayout, 'GRID');
+  h.socket.connected = false;
+  settings.useSettingsStore.getState().setPosMenuLayout('CATEGORY_LIST');
+  await h.runTimers();
+  const pending = await queue.getPendingActions();
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].type, 'update_settings');
+  assert.equal(pending[0].payload.expectedRevision, 3);
+  assert.equal(pending[0].payload.settings.posMenuLayout, 'CATEGORY_LIST');
+  settings.applyRemoteSettings({ serverRevision: 4, posMenuLayout: 'CATEGORY_LIST' }, true);
+  assert.equal(settings.useSettingsStore.getState().posMenuLayout, 'CATEGORY_LIST');
+});
+
+test('saved receipt name, address, phone, tax ID, logo and checkout mode survive frontend hydration and reset safely', () => {
+  const h = browserHarness();
+  const settings = h.load('store/useSettingsStore.ts');
+  settings.applyRemoteSettings({ serverRevision: 3, receiptName: 'Hydrated Cafe', receiptAddress: '12 Main Street\nColombo', receiptPhone: '+94 123456789', receiptGstin: 'TAX-123', receiptLogo: 'logo-fixture', checkoutReceiptAndKot: true });
+  const state = settings.useSettingsStore.getState();
+  assert.equal(state.receiptName, 'Hydrated Cafe'); assert.equal(state.receiptAddress, '12 Main Street\nColombo');
+  assert.equal(state.receiptPhone, '+94 123456789'); assert.equal(state.receiptGstin, 'TAX-123');
+  assert.equal(state.receiptLogo, 'logo-fixture'); assert.equal(state.checkoutReceiptAndKot, true);
+  settings.applyRemoteSettings({ serverRevision: 0 }, true);
+  assert.equal(settings.useSettingsStore.getState().receiptName, ''); assert.equal(settings.useSettingsStore.getState().receiptLogo, ''); assert.equal(settings.useSettingsStore.getState().checkoutReceiptAndKot, false);
 });

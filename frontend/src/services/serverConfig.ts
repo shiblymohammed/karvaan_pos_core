@@ -3,15 +3,17 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Manages the configurable backend server URL for multi-terminal LAN operation.
  *
- * Priority order:
+ * Native Android/Capacitor connects directly to DEFAULT_URL.
+ * Browser/desktop priority order:
  *  1. VITE_BACKEND_URL env variable (for production builds with a fixed VPS URL)
  *  2. localStorage 'karvaan_server_url' (set via the in-app Setup Screen)
- *  3. 'http://localhost:3001' (default — single PC mode)
+ *  3. The hosting website's origin for a cloud web deployment
+ *  4. DEFAULT_URL as the cloud fallback; unconfigured local terminals still show setup
  *
  * This allows:
  *  - A waiter tablet to connect to the cashier PC at 192.168.1.100:3001
  *  - A VPS-hosted deployment to use a domain like https://api.karvaan.app
- *  - A single-PC dev/demo setup to work with zero configuration
+ *  - A desktop or LAN terminal to select its restaurant server in Setup
  */
 
 const STORAGE_KEY = 'karvaan_server_url';

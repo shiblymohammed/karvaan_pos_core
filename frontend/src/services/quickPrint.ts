@@ -1,3 +1,4 @@
+import { receiptLogoBytes } from './receiptLogo';
 import { isTauri, printReceipt, buildBillReceipt, buildKotReceipt, printViaRawBT } from './tauriCommands';
 import { isCapacitor, getSavedBtPrinter, getSavedBtKotPrinter, printViaBluetoothNative } from './bluetoothPrinter';
 import { apiClient } from './apiClient';
@@ -6,12 +7,24 @@ import { printNetworkReceipt } from './tauriCommands';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { toast } from '../store/useToastStore';
+import { printDirectReceiptOnce } from './directPrintGuard';
 
 export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'DINE_IN'): Promise<boolean> {
   try {
+    // Never issue a second original on a terminal when the transaction already queued it.
+    if (bill.pendingConfirmation) return false;
+    if (bill.checkoutPrint?.receiptJobId) { toast.info('Receipt queued for the restaurant printer.'); return true; }
+    // Resolve server ownership before decoding a local logo or opening a direct connection.
+    const overview = bill.checkoutPrint ? null : await apiClient.get('/printer/queue');
+    if (overview?.destinations?.some((dest: any) => dest.role === 'RECEIPT' && dest.autoPrint !== false)) {
+      await apiClient.post('/printer/queue/receipt', { requestId: `auto:${bill.billNumber}`, billNumber: bill.billNumber, reprint: false });
+      toast.info('Receipt queued for the restaurant printer.'); return true;
+    }
     const {
       receiptName = 'Karvaan POS',
+      receiptLogo = '',
       receiptAddress = '',
+      receiptPhone = '',
       receiptGstin = '',
       receiptFooterNote = 'Thank you for visiting! Please visit us again.',
     } = useSettingsStore.getState();
@@ -35,9 +48,11 @@ export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'D
         : currentProfile.browserPaperWidth || 80
     );
 
-    const bytes = buildBillReceipt({
+    const receipt = buildBillReceipt({
+      logoBytes: await receiptLogoBytes(receiptLogo),
       restaurantName: receiptName,
       restaurantAddress: receiptAddress,
+      restaurantPhone: receiptPhone,
       gstin: receiptGstin,
       orderType,
       billNumber: bill.billNumber,
@@ -68,54 +83,39 @@ export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'D
       paperWidth,
       footerNote: receiptFooterNote,
     });
+    const kitchen = checkoutKitchenBytes(bill, paperWidth);
+    const bytes = new Uint8Array(receipt.length + kitchen.length);
+    bytes.set(receipt); bytes.set(kitchen, receipt.length);
 
     // 1. Android Capacitor Native Bluetooth Thermal Printer
     if (isCapacitorApp && savedBtPrinter) {
-      await printViaBluetoothNative(bytes, savedBtPrinter.address);
+      await printDirectReceiptOnce(bill.billNumber, () => printViaBluetoothNative(bytes, savedBtPrinter.address));
       toast.success(`Receipt printed via Bluetooth (${savedBtPrinter.name})`);
       return true;
     }
 
     // 2. Android RawBT Intent
     if (isRawBTMode) {
-      printViaRawBT(bytes);
+      await printDirectReceiptOnce(bill.billNumber, async () => { if (!printViaRawBT(bytes)) throw new Error('RawBT could not be opened.'); });
       toast.success('Receipt sent to Bluetooth thermal printer');
       return true;
     }
 
-    // 3. Cloud/Server Print Queue
-    try {
-      const response = await apiClient.get('/printer/queue');
-      if (response?.destinations?.some((dest: any) => dest.role === 'RECEIPT' && dest.autoPrint !== false)) {
-        await apiClient.post('/printer/queue/receipt', {
-          requestId: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          billNumber: bill.billNumber,
-          reprint: false,
-          confirmed: false,
-          reason: '',
-        });
-        toast.success('Receipt queued for counter printer');
-        return true;
-      }
-    } catch {
-      // Continue to local/network printer fallback
-    }
-
     // 4. Local Network / ESC-POS printer (Tauri or LAN IP)
     if (isTauri() && network && network.ip) {
-      await printNetworkReceipt(network.ip, Number(network.port || 9100), bytes);
+      await printDirectReceiptOnce(bill.billNumber, () => printNetworkReceipt(network.ip, Number(network.port || 9100), bytes));
       toast.success(`Receipt sent to network printer (${network.name})`);
       return true;
     }
 
     if (isTauri() && currentProfile.receiptPort) {
-      await printReceipt(currentProfile.receiptPort, bytes);
+      await printDirectReceiptOnce(bill.billNumber, () => printReceipt(currentProfile.receiptPort!, bytes));
       toast.success('Receipt printed via USB/Serial printer');
       return true;
     }
 
     if (network && network.ip && canBackendPrintLocally()) {
-      const result = await apiClient.post('/printer/print', {
+      await printDirectReceiptOnce(bill.billNumber, async () => { const result = await apiClient.post('/printer/print', {
         ip: network.ip,
         port: Number(network.port || 9100),
         type: 'RECEIPT',
@@ -124,18 +124,26 @@ export async function autoPrintCheckoutReceipt(bill: any, orderType: string = 'D
         items: lineItems,
         grandTotal: bill.grandTotal,
         data: Array.from(bytes),
-      });
-      if (result?.success) {
-        toast.success('Receipt sent to printer');
-        return true;
-      }
+      }); if (!result?.success) throw new Error('Printer did not confirm the connection. Check the paper before reprinting.'); });
+      toast.success('Receipt sent to printer');
+      return true;
     }
 
     return false;
   } catch (error) {
     console.warn('Auto print failed or printer not configured:', error);
+    toast.warning(error instanceof Error ? error.message : 'Printing needs review. The saved sale is unchanged.');
     return false;
   }
+}
+
+export function checkoutKitchenBytes(bill: any, paperWidth: number): Uint8Array {
+  const copy = !bill.pendingConfirmation && !bill.paymentPending && bill.checkoutPrint?.receiptAndKot ? bill.checkoutPrint.kitchenCopy : null;
+  if (!copy?.items?.length) return new Uint8Array();
+  return buildKotReceipt({ orderNumber: copy.orderNumber || copy.reference || bill.orderNumber,
+    tableName: copy.table || bill.table || 'Takeaway', orderType: copy.orderType, waiter: copy.cashier,
+    time: copy.createdAt ? new Date(copy.createdAt).toLocaleString() : bill.time || new Date().toLocaleTimeString(),
+    items: copy.items.map((item: any) => ({ name: item.name, qty: item.quantity, notes: item.notes, addons: item.addons, variant: item.variant })), paperWidth });
 }
 
 /**

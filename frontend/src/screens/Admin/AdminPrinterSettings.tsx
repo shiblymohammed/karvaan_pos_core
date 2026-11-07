@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Printer, RefreshCw, CheckCircle, XCircle, Settings, Save, Plus, Trash2, Search, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiClient } from '../../services/apiClient';
-import { AdminLabelStudio } from './AdminLabelStudio';
+import { PrintAppearanceSettings } from '../../components/PrintAppearanceSettings';
 import { toast } from '../../store/useToastStore';
 import { getPrinterProfile, savePrinterProfile, canBackendPrintLocally } from '../../services/printerProfile';
 import { isTauri, printNetworkReceipt, EscPos } from '../../services/tauriCommands';
@@ -29,9 +29,10 @@ export const AdminPrinterSettings: React.FC = () => {
   // On Capacitor Android APK: Render ONLY the native Bluetooth printer setup interface
   if (isCap) {
     return (
-      <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="h-full overflow-y-auto bg-slate-50 text-slate-800 p-4 md:p-6">
         <div className="max-w-4xl mx-auto space-y-6">
-          <CapacitorBluetoothPrinterSettings restaurantName={restaurantName} />
+          <PrintAppearanceSettings />
+          <CapacitorBluetoothPrinterSettings restaurantName={restaurantName} showBranding={false} />
         </div>
       </div>
     );
@@ -39,13 +40,14 @@ export const AdminPrinterSettings: React.FC = () => {
 
   // Web Browser / PWA / Desktop Tauri: Keep full cloud & network printer setup
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
+    <div className="h-full overflow-y-auto bg-slate-50 text-slate-800 p-4 md:p-6">
       <div className="max-w-5xl mx-auto space-y-6">
+        <PrintAppearanceSettings />
         <CloudPrintSettings />
         <details className="rounded-2xl border bg-white p-4">
           <summary className="cursor-pointer font-bold">Advanced: direct desktop/local-server printing</summary>
           <p className="text-sm text-slate-500 mt-2">These terminal-only connections are manual fallbacks. Automatic printing uses the paired service above.</p>
-          <PrinterSettings restaurantName={restaurantName} />
+          <PrinterSettings restaurantName={restaurantName} showBranding={false} />
           <LegacyPrinterSettings />
         </details>
       </div>
@@ -306,25 +308,6 @@ const LegacyPrinterSettings: React.FC = () => {
             ))}
           </AnimatePresence>
         </div>
-
-        {/* Label Studio Engine */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-8"
-        >
-          <div className="flex items-center gap-3 mb-6 pl-2">
-            <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
-              <Palette className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-slate-800">Label Studio Engine</h2>
-              <p className="text-sm font-bold text-slate-500">Design your perfect label block by block.</p>
-            </div>
-          </div>
-          
-          <AdminLabelStudio />
-        </motion.div>
 
       </div>
       

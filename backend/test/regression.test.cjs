@@ -828,3 +828,21 @@ test('single-restaurant backups snapshot the active SQLite database including WA
     await db.$disconnect();
   }
 });
+
+
+test('POS menu layout persists per restaurant over HTTP and rejects invalid or stale changes', async () => {
+  const fixture = await configFixture('menu-layout'), other = await configFixture('menu-layout-other');
+  const service = app.get(SettingsService);
+  assert.equal((await service.getSettings(fixture.user.restaurantId)).posMenuLayout, 'GRID');
+  const body = { actionId: 'choose-category-list', expectedRevision: 0, posMenuLayout: 'CATEGORY_LIST' };
+  const headers = { Authorization: 'Bearer ' + fixture.token, 'Content-Type': 'application/json' };
+  const response = await fetch(url + '/settings', { method: 'PUT', headers, body: JSON.stringify(body) });
+  assert.equal(response.status, 200);
+  const reload = await fetch(url + '/settings', { headers });
+  assert.equal((await reload.json()).posMenuLayout, 'CATEGORY_LIST');
+  assert.equal((await service.getSettings(other.user.restaurantId)).posMenuLayout, 'GRID');
+  await service.updateSettings(body, fixture.user.restaurantId);
+  assert.equal((await service.getSettings(fixture.user.restaurantId)).serverRevision, 1);
+  await assert.rejects(service.updateSettings({ actionId: 'invalid-layout', expectedRevision: 1, posMenuLayout: 'INVALID' }, fixture.user.restaurantId), /Invalid POS menu layout/);
+  await assert.rejects(service.updateSettings({ actionId: 'stale-layout', expectedRevision: 0, posMenuLayout: 'GRID' }, fixture.user.restaurantId), /changed on another terminal/);
+});

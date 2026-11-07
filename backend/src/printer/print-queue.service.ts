@@ -70,7 +70,7 @@ export class PrintQueueService {
     }
 
     const admin = ['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user.role);
-    const select = { id: true, kind: true, reference: true, state: true, error: true, parentId: true, createdAt: true, updatedAt: true, requestedBy: true, reviewedAt: true };
+    const select = { id: true, kind: true, reference: true, state: true, error: true, parentId: true, createdAt: true, updatedAt: true, requestedBy: true, reviewedAt: true, document: true };
     const [agents, destinations, recent, unresolved] = await Promise.all([
       admin ? this.prisma.printAgent.findMany({ where: { restaurantId: user.restaurantId }, select: { id: true, name: true, lastSeenAt: true, revokedAt: true, pairingExpiresAt: true }, orderBy: { createdAt: 'desc' }, take: 100 }) : Promise.resolve([]),
       this.prisma.printDestination.findMany({ where: { restaurantId: user.restaurantId } }),
@@ -82,7 +82,7 @@ export class PrintQueueService {
     return {
       agents,
       destinations: admin ? destinations : destinations.map(d => ({ id: d.id, role: d.role, autoPrint: d.autoPrint, name: d.name })),
-      jobs,
+      jobs: jobs.map(({ document, ...job }) => { let paired = false; try { paired = !!JSON.parse(document).kitchenCopy; } catch {} return { ...job, paired }; }),
     };
   }
   async revoke(user: any, id: string) {
@@ -125,13 +125,13 @@ export class PrintQueueService {
   async branding(tx: Prisma.TransactionClient, restaurantId: string) {
     const [restaurant, settings] = await Promise.all([tx.restaurant.findUnique({ where: { id: restaurantId } }), tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: 'general' } } })]);
     let config: any = {}; try { config = JSON.parse(settings?.data || '{}'); } catch {}
-    return { restaurantName: config.receiptName || restaurant?.name || 'Karvaan POS', address: config.receiptAddress || restaurant?.address || '', gstin: config.receiptGstin || '' };
+    return { restaurantName: config.receiptName || restaurant?.name || 'Karvaan POS', address: config.receiptAddress || restaurant?.address || '', phone: config.receiptPhone ?? restaurant?.phone ?? '', gstin: config.receiptGstin || '', receiptLogo: config.receiptLogo || '', footerNote: config.receiptFooterNote || '' };
   }
   async kitchen(tx: Prisma.TransactionClient, restaurantId: string, key: string, document: Omit<PrintDocument, 'kind' | 'createdAt'>, requestedBy: string) {
     if (!document.items.length) return;
     return this.enqueue(tx, restaurantId, 'KITCHEN', `kitchen:${key}`, { ...await this.branding(tx, restaurantId), ...document, kind: 'KOT', createdAt: new Date().toISOString() }, requestedBy);
   }
-  async receipt(tx: Prisma.TransactionClient, restaurantId: string, bill: Bill, order: Pick<Order, 'orderNumber'> & { table?: { tableNumber: string } | null }, cashier: string, automatic = true, key = `receipt:${bill.id}`, reprint = false, requestedBy = cashier) {
+  async receipt(tx: Prisma.TransactionClient, restaurantId: string, bill: Bill, order: Pick<Order, 'orderNumber'> & { table?: { tableNumber: string } | null }, cashier: string, automatic = true, key = `receipt:${bill.id}`, reprint = false, requestedBy = cashier, kitchenCopy?: PrintDocument) {
     let items: any[] = []; try { items = JSON.parse(bill.invoiceItems); } catch {}
     if (!items.length) throw new BadRequestException('This older bill has no immutable invoice snapshot to print safely');
     return this.enqueue(tx, restaurantId, 'RECEIPT', key, {
@@ -140,8 +140,46 @@ export class PrintQueueService {
       cashier, customer: bill.customerName, createdAt: bill.settledAt.toISOString(), items,
       subtotal: bill.subtotal, discount: bill.discount, cgst: bill.cgst, sgst: bill.sgst,
       deliveryFee: bill.deliveryFee, grandTotal: bill.grandTotal, paymentMethod: bill.paymentMethod,
-      tenders: JSON.parse(bill.tenders || '{}'), reprint,
+      tenders: JSON.parse(bill.tenders || '{}'), reprint, kitchenCopy: reprint ? undefined : kitchenCopy,
     }, requestedBy, automatic);
+  }
+  async checkoutPlan(tx: Prisma.TransactionClient, restaurantId: string, billId: string) {
+    const stored = await tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId, settingKey: `checkout_print:${billId}` } } });
+    try { return JSON.parse(stored?.data || 'null'); } catch { return null; }
+  }
+  async claimDirectReceipt(user: any, body: any) {
+    this.assertStaff(user);
+    if (['WAITER', 'KITCHEN'].includes(user.role)) throw new UnauthorizedException('Cashier permission is required for customer receipts');
+    if (!text(body?.billNumber) || !text(body?.requestId) || !text(body?.terminalId)) throw new BadRequestException('Bill, terminal and stable print request are required');
+    return this.prisma.$transaction(async tx => {
+      const bill = await tx.bill.findUnique({ where: { restaurantId_billNumber: { restaurantId: user.restaurantId, billNumber: body.billNumber } } });
+      const dispatch = !bill ? await tx.deliveryOrder.findFirst({ where: { restaurantId: user.restaurantId, billNumber: body.billNumber } }) : null;
+      if (!bill && !dispatch) throw new NotFoundException('Wait for the saved bill or dispatch before printing an original');
+      const reference = bill?.billNumber || dispatch!.billNumber!;
+      const key = { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: `direct_receipt:${bill?.id || `dispatch:${dispatch!.id}`}` } };
+      const previous = await tx.systemSetting.findUnique({ where: key });
+      if (previous) {
+        const claim = JSON.parse(previous.data);
+        if (claim.requestId !== body.requestId || claim.terminalId !== body.terminalId || claim.userId !== user.id) throw new ConflictException('An original receipt was already claimed by a terminal. Check its paper before requesting a marked reprint.');
+        return { allowed: true };
+      }
+      if (await tx.printJob.findFirst({ where: { restaurantId: user.restaurantId, kind: { in: ['RECEIPT', 'DISPATCH'] }, reference } })) throw new ConflictException('The restaurant printing service already owns this receipt. Check Print jobs.');
+      await tx.systemSetting.create({ data: { restaurantId: user.restaurantId, settingKey: key.restaurantId_settingKey.settingKey, data: JSON.stringify({ requestId: body.requestId, terminalId: body.terminalId, userId: user.id, claimedAt: new Date().toISOString() }) } });
+      return { allowed: true };
+    });
+  }
+  async checkout(tx: Prisma.TransactionClient, restaurantId: string, bill: Bill, order: any, cashier: string, userId: string, items: PrintDocument['items'], paired: boolean) {
+    const kitchenCopy: PrintDocument | undefined = paired && items.length ? {
+      ...await this.branding(tx, restaurantId), kind: 'KOT', reference: order.orderNumber,
+      orderNumber: order.orderNumber, orderType: bill.orderType, table: order.table?.tableNumber,
+      cashier, createdAt: bill.settledAt.toISOString(), items,
+    } : undefined;
+    const job = await this.receipt(tx, restaurantId, bill, order, cashier, true, `receipt:${bill.id}`, false, userId, kitchenCopy);
+    const kitchenJob = !paired ? await this.kitchen(tx, restaurantId, `checkout:${bill.id}`, { reference: order.orderNumber, orderType: bill.orderType, table: order.table?.tableNumber, items }, userId) : null;
+    const plan = { receiptAndKot: paired, kitchenCopy, receiptJobId: job?.id || null, kitchenJobId: kitchenJob?.id || null };
+    const storedPlan = JSON.stringify(plan);
+    await tx.systemSetting.create({ data: { restaurantId, settingKey: `checkout_print:${bill.id}`, data: storedPlan } });
+    return JSON.parse(storedPlan);
   }
   async manualReceipt(user: any, body: any) {
     this.assertStaff(user);
@@ -162,12 +200,14 @@ export class PrintQueueService {
         throw new NotFoundException('Saved bill not found. Wait for confirmation; dispatch notes can be recovered from Print jobs.');
       }
       const previous = await tx.printJob.findFirst({ where: { restaurantId: user.restaurantId, kind: 'RECEIPT', reference: bill.billNumber }, orderBy: { createdAt: 'asc' } });
+      if (!body.reprint && await tx.systemSetting.findUnique({ where: { restaurantId_settingKey: { restaurantId: user.restaurantId, settingKey: `direct_receipt:${bill.id}` } } })) throw new ConflictException('A terminal already claimed this original receipt. Check its paper and request a marked reprint if needed.');
       // A normal Print click cannot duplicate an automatic job; reprints need a deliberate new request.
       if (previous && !body.reprint) return previous;
       if (body.reprint && await tx.printJob.findFirst({ where: { restaurantId: user.restaurantId, kind: 'RECEIPT', reference: body.billNumber, state: { in: ['QUEUED', 'CLAIMED', 'SENDING'] } } })) throw new ConflictException('A receipt copy is already waiting or being sent. Review Print jobs before requesting another.');
+      const plan = await this.checkoutPlan(tx, user.restaurantId, bill.id);
       const result = previous && body.reprint
-        ? await this.enqueue(tx, user.restaurantId, 'RECEIPT', `manual:${body.requestId}`, { ...JSON.parse(previous.document), reprint: true }, user.id, false, previous.id)
-        : await this.receipt(tx, user.restaurantId, bill, bill.order, bill.cashier?.name || 'Staff', false, `manual:${body.requestId}`, !!previous || !!body.reprint, user.id);
+        ? await this.enqueue(tx, user.restaurantId, 'RECEIPT', `manual:${body.requestId}`, { ...JSON.parse(previous.document), kitchenCopy: undefined, reprint: true }, user.id, false, previous.id)
+        : await this.receipt(tx, user.restaurantId, bill, bill.order, bill.cashier?.name || 'Staff', false, `manual:${body.requestId}`, !!previous || !!body.reprint, user.id, plan?.kitchenCopy);
       if (body.reprint) {
         await tx.printJob.update({ where: { id: result.id }, data: { resolution: body.reason.trim() } });
         if (previous) await tx.printJob.update({ where: { id: previous.id }, data: { reviewedAt: new Date(), reviewedBy: user.id } });
@@ -177,11 +217,12 @@ export class PrintQueueService {
   }
   async test(user: any, body: any) {
     if (!roles.includes(body?.role) || !text(body?.requestId)) throw new BadRequestException('Choose a printer and request ID');
-    return this.prisma.$transaction(tx => this.enqueue(tx, user.restaurantId, body.role, `test:${body.requestId}`, { kind: 'TEST', reference: body.requestId, createdAt: new Date().toISOString(), items: [{ name: 'Connection and paper width test', quantity: 1 }] }, user.id, false));
+    return this.prisma.$transaction(async tx => this.enqueue(tx, user.restaurantId, body.role, `test:${body.requestId}`, { ...await this.branding(tx, user.restaurantId), kind: 'TEST', reference: body.requestId, createdAt: new Date().toISOString(), items: [{ name: 'Connection, logo and paper width test', quantity: 1 }] }, user.id, false));
   }
   async recover(user: any, id: string, body: any) {
     this.assertStaff(user);
     if (!text(body?.requestId) || !text(body?.reason, 500) || body.confirmed !== true) throw new BadRequestException('Check the paper and confirm the reason before recovery');
+    if (body.copy !== undefined && !['RECEIPT', 'KOT', 'BOTH'].includes(body.copy)) throw new BadRequestException('Choose the ticket to reprint');
     return this.prisma.$transaction(async tx => {
       await this.expire(tx, user.restaurantId);
       const job = await tx.printJob.findFirst({ where: { id, restaurantId: user.restaurantId } });
@@ -190,7 +231,12 @@ export class PrintQueueService {
       const retry = await tx.printJob.findUnique({ where: { restaurantId_dedupeKey: { restaurantId: user.restaurantId, dedupeKey: `recovery:${id}:${body.requestId}` } } });
       if (retry) return retry;
       if (await tx.printJob.findFirst({ where: { restaurantId: user.restaurantId, parentId: id, state: { in: ['QUEUED', 'CLAIMED', 'SENDING'] } } })) throw new ConflictException('Another copy is already waiting or being sent. Review Print jobs.');
-      const document = { ...JSON.parse(job.document), reprint: true };
+      let document = { ...JSON.parse(job.document), reprint: true };
+      if (document.kitchenCopy) {
+        if (!body.copy) throw new BadRequestException('Check both tickets and choose customer receipt, KOT or both');
+        if (body.copy === 'KOT') document = { ...document.kitchenCopy, reprint: true };
+        if (body.copy === 'RECEIPT') document.kitchenCopy = undefined;
+      }
       const destinationRole = JSON.parse(job.destination).role;
       const result = await this.enqueue(tx, user.restaurantId, destinationRole, `recovery:${id}:${body.requestId}`, document, user.id, false, id);
       await tx.printJob.update({ where: { id: result.id }, data: { resolution: body.reason.trim() } });
@@ -230,7 +276,13 @@ export class PrintQueueService {
       const updated = await tx.printJob.updateMany({ where: { id: job.id, state: 'QUEUED' }, data: { state: 'CLAIMED', claimToken, leaseUntil: new Date(Date.now() + 60000) } });
       if (!updated.count) return { job: null };
       const destination = JSON.parse(job.destination);
-      return { job: { id: job.id, claimToken, title: `${job.kind} ${job.reference}`, destination, data: renderPrintDocument(JSON.parse(job.document), destination.paperWidth).toString('base64') } };
+      let data: string;
+      try { data = renderPrintDocument(JSON.parse(job.document), destination.paperWidth).toString('base64'); }
+      catch {
+        await tx.printJob.update({ where: { id: job.id }, data: { state: 'FAILED', leaseUntil: null, error: 'Receipt could not be prepared. Check the saved logo and printer settings before requesting another copy.' } });
+        return { job: null };
+      }
+      return { job: { id: job.id, claimToken, title: `${job.kind} ${job.reference}`, destination, data } };
     });
   }
   async start(agent: any, id: string, token: unknown) {

@@ -28,16 +28,35 @@ export const ReceiptLogoUploader: React.FC<ReceiptLogoUploaderProps> = ({ logo, 
     reader.onload = (event) => {
       const img = new window.Image();
       img.onload = () => {
-        // Resize image to max 260px width for optimal thermal printing
+        try {
+        // Trim blank margins before resizing; large white source canvases made logos tiny.
+        const probe = document.createElement('canvas');
+        const probeScale = Math.min(1, 1024 / img.width, 1024 / img.height);
+        probe.width = Math.max(1, Math.round(img.width * probeScale));
+        probe.height = Math.max(1, Math.round(img.height * probeScale));
+        const probeContext = probe.getContext('2d');
+        if (!probeContext) throw new Error('Unable to prepare the logo.');
+        probeContext.fillStyle = '#fff'; probeContext.fillRect(0, 0, probe.width, probe.height);
+        probeContext.drawImage(img, 0, 0, probe.width, probe.height);
+        const pixels = probeContext.getImageData(0, 0, probe.width, probe.height).data;
+        let left = probe.width, top = probe.height, right = -1, bottom = -1, darkest = 255;
+        for (let y = 0; y < probe.height; y++) for (let x = 0; x < probe.width; x++) {
+          const i = (y * probe.width + x) * 4;
+          const grey = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+          darkest = Math.min(darkest, grey);
+          if (grey < 248) { left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y); }
+        }
+        if (right < left) throw new Error('This image is blank or too faint. Choose a logo with visible detail.');
+        const cropWidth = right - left + 1, cropHeight = bottom - top + 1;
         const maxW = 260;
         const maxH = 120;
-        let width = img.width;
-        let height = img.height;
+        let width = cropWidth;
+        let height = cropHeight;
 
         if (width > maxW || height > maxH) {
           const ratio = Math.min(maxW / width, maxH / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
+          width = Math.max(1, Math.round(width * ratio));
+          height = Math.max(1, Math.round(height * ratio));
         }
 
         const canvas = document.createElement('canvas');
@@ -45,23 +64,39 @@ export const ReceiptLogoUploader: React.FC<ReceiptLogoUploaderProps> = ({ logo, 
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(probe, left, top, cropWidth, cropHeight, 0, 0, width, height);
+          // Save the exact monochrome preview that a thermal printer will receive.
+          const raster = ctx.getImageData(0, 0, width, height);
+          const threshold = Math.min(250, Math.max(180, darkest + 24));
+          let inkPixels = 0;
+          for (let i = 0; i < raster.data.length; i += 4) {
+            const value = 0.299 * raster.data[i] + 0.587 * raster.data[i + 1] + 0.114 * raster.data[i + 2] < threshold ? 0 : 255;
+            if (!value) inkPixels++;
+            raster.data[i] = raster.data[i + 1] = raster.data[i + 2] = value; raster.data[i + 3] = 255;
+          }
+          if (!inkPixels) throw new Error('Logo detail is too fine at receipt size. Choose a bolder logo.');
+          ctx.putImageData(raster, 0, 0);
           const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
           onChange(compressedDataUrl);
-          toast.success('Receipt logo updated! It will appear on all printed bills and pre-bills.');
+          toast.info('Logo ready. Save the print settings to apply it to printed bills.');
         } else {
-          onChange(event.target?.result as string);
+          toast.error('Unable to prepare the logo. Please try another image.');
         }
+        } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to prepare the logo.'); }
       };
+      img.onerror = () => toast.error('Unable to read this logo. Please choose another image.');
       img.src = event.target?.result as string;
     };
+    reader.onerror = () => toast.error('Unable to read this file. Please try another logo.');
     reader.readAsDataURL(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleRemove = () => {
     onChange(null);
-    toast.info('Receipt logo removed');
+    toast.info('Logo removed from the preview. Save to apply.');
   };
 
   return (
@@ -99,14 +134,14 @@ export const ReceiptLogoUploader: React.FC<ReceiptLogoUploaderProps> = ({ logo, 
           <p className="text-xs font-bold text-slate-700">
             {logo ? (
               <span className="text-emerald-700 font-extrabold flex items-center gap-1 justify-center sm:justify-start">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Logo active on customer receipts
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Print preview ready — save to apply
               </span>
             ) : (
               'Upload your restaurant emblem or logo for thermal receipts'
             )}
           </p>
           <p className="text-[11px] font-semibold text-slate-400 leading-relaxed">
-            Recommended: High-contrast monochrome or transparent PNG (max 300px width). Automatically sized for 58mm & 80mm rolls.
+            PNG, JPG, SVG or WebP, up to 3 MB. Blank margins are trimmed and colours converted to a crisp black-and-white print preview. Sized for 58 mm and 80 mm rolls.
           </p>
 
           <div>

@@ -79,6 +79,9 @@ export const POSScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [standaloneAddonModalOpen, setStandaloneAddonModalOpen] = useState(false);
+  const expandMenuSearch = React.useCallback(() => setIsSearchExpanded(true), []);
+  const closeMenuSearch = React.useCallback(() => { setSearchQuery(''); setIsSearchExpanded(false); }, []);
+  const openMenuAddon = React.useCallback(() => setStandaloneAddonModalOpen(true), []);
   const [settleState, setSettleState] = useState<{ isOpen: boolean; method: PaymentMethod; isProcessing?: boolean }>({
     isOpen: false,
     method: 'CASH',
@@ -235,11 +238,11 @@ export const POSScreen: React.FC = () => {
 
     const savedBill = result.status === 'OK' ? result.data : null;
     const invoiceItems = savedBill ? JSON.parse(savedBill.invoiceItems || 'null') : null;
-    const finalBillData = { ...billData, ...(savedBill ? { subtotal: savedBill.subtotal, discount: savedBill.discount, cgst: savedBill.cgst, sgst: savedBill.sgst, grandTotal: savedBill.grandTotal, method: savedBill.paymentMethod, tenders: JSON.parse(savedBill.tenders || '{}'), items: invoiceItems ? receiptItemsFromSnapshot(invoiceItems) : billData.items } : {}), pendingConfirmation: result.status === 'QUEUED' };
+    const finalBillData = { ...billData, ...(savedBill ? { subtotal: savedBill.subtotal, discount: savedBill.discount, cgst: savedBill.cgst, sgst: savedBill.sgst, grandTotal: savedBill.grandTotal, method: savedBill.paymentMethod, tenders: JSON.parse(savedBill.tenders || '{}'), checkoutPrint: savedBill.checkoutPrint, items: invoiceItems ? receiptItemsFromSnapshot(invoiceItems) : billData.items } : {}), pendingConfirmation: result.status === 'QUEUED' };
     setLastBill(finalBillData);
     setSettleState({ isOpen: false, method: 'CASH', isProcessing: false });
     clearCart();
-    void autoPrintCheckoutReceipt(finalBillData, orderType);
+    void autoPrintCheckoutReceipt(finalBillData, orderType).then(printed => { if (!printed) setReceiptType('CHECKOUT'); });
     toast.success("Bill #" + finalBillData.billNumber + " settled successfully (₹" + finalBillData.grandTotal.toFixed(2) + ")");
   };
 
@@ -268,7 +271,7 @@ export const POSScreen: React.FC = () => {
       return;
     }
     if (result.status === 'QUEUED') toast.info('Delivery saved on this device; awaiting server confirmation.');
-    const finalDeliveryBill = { orderNumber, billNumber, table: 'Delivery', cashier: currentUser?.name || 'Staff', waiter: selectedWaiter || 'Dispatch', items: [...items], subtotal, discount, cgst, sgst, deliveryFee: deliveryFee || 0, grandTotal: total, method: isPrepaid ? 'UPI' : 'COD', customerName: customer?.name, customerPhone: customer?.phone, time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(), pendingConfirmation: result.status === 'QUEUED', paymentPending: !isPrepaid };
+    const finalDeliveryBill = { orderNumber, billNumber, table: 'Delivery', cashier: currentUser?.name || 'Staff', waiter: selectedWaiter || 'Dispatch', items: [...items], subtotal, discount, cgst, sgst, deliveryFee: deliveryFee || 0, grandTotal: total, method: isPrepaid ? 'UPI' : 'COD', customerName: customer?.name, customerPhone: customer?.phone, time: new Date().toLocaleTimeString(), date: new Date().toLocaleDateString(), pendingConfirmation: result.status === 'QUEUED', paymentPending: !isPrepaid, checkoutPrint: result.data?.checkoutPrint };
     setLastBill(finalDeliveryBill);
     clearCart();
     void autoPrintCheckoutReceipt(finalDeliveryBill, 'DELIVERY');
@@ -377,10 +380,10 @@ export const POSScreen: React.FC = () => {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             isSearchExpanded={isSearchExpanded}
-            onSearchExpand={() => setIsSearchExpanded(true)}
-            onSearchClose={() => { setSearchQuery(''); setIsSearchExpanded(false); }}
-            onOpenAddonModal={() => setStandaloneAddonModalOpen(true)}
-            onCustomize={(product) => setCustomizeProduct(product)}
+            onSearchExpand={expandMenuSearch}
+            onSearchClose={closeMenuSearch}
+            onOpenAddonModal={openMenuAddon}
+            onCustomize={setCustomizeProduct}
           />
         )}
 

@@ -1,3 +1,4 @@
+import { receiptLogoBytes, waitForReceiptImages } from '../../services/receiptLogo';
 import React, { useRef, useState } from 'react';
 import { CheckCircle2, Printer, Share2, RotateCcw, X, Loader2 } from 'lucide-react';
 import { toast } from '../../store/useToastStore';
@@ -9,6 +10,9 @@ import { getPrinterProfile, canBackendPrintLocally } from '../../services/printe
 import { printNetworkReceipt } from '../../services/tauriCommands';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { createId } from '../../services/createId';
+import { checkoutKitchenBytes } from '../../services/quickPrint';
+import { directReceiptWasAttempted, printDirectReceiptOnce } from '../../services/directPrintGuard';
+import { printPackagingLabels } from '../../services/packagingLabels';
 import { printStateLabel, usePrintQueue } from '../../services/printQueue';
 
 interface ReceiptItem {
@@ -46,6 +50,7 @@ interface BillData {
   pendingConfirmation?: boolean;
   paymentPending?: boolean;
   tableId?: string | null;
+  checkoutPrint?: { receiptAndKot?: boolean; receiptJobId?: string; kitchenCopy?: any };
 }
 
 interface ReceiptModalProps {
@@ -59,7 +64,8 @@ interface ReceiptModalProps {
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, orderType, onClose, onReturn, isReprint = false }) => {
   const { currentUser } = useAuthStore();
-  const { receiptName = 'Karvaan POS', receiptAddress = '', receiptGstin = '', receiptLogo = '', receiptFooterNote = '' } = useSettingsStore();
+  const { receiptName = 'Karvaan POS', receiptAddress = '', receiptPhone = '', receiptGstin = '', receiptLogo = '', receiptFooterNote = '' } = useSettingsStore();
+  const kitchenCopy = !isReprint && receiptType === 'CHECKOUT' && !bill.pendingConfirmation && !bill.paymentPending && !bill.checkoutPrint?.receiptJobId && !directReceiptWasAttempted(bill.billNumber) && bill.checkoutPrint?.receiptAndKot ? bill.checkoutPrint.kitchenCopy : null;
   const [isPrinting, setIsPrinting] = useState(false);
   const printing = useRef(false);
   const [requestId] = useState(createId);
@@ -83,94 +89,102 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
 
   const handlePrint = async (forceBrowser = false, forceRawBT = false) => {
     if (printing.current || (isReprint && (!reprintChecked || !reprintReason.trim()))) return;
-    if (printJob && !isReprint && !forceBrowser && !forceRawBT && !isMobileBtMode) { window.dispatchEvent(new Event('karvaan-open-print-jobs')); return; }
+    if ((printJob || bill.checkoutPrint?.receiptJobId) && !isReprint && !forceBrowser && !forceRawBT && receiptType === 'CHECKOUT') { window.dispatchEvent(new Event('karvaan-open-print-jobs')); return; }
     printing.current = true;
     setIsPrinting(true);
     const currentProfile = getPrinterProfile();
     const network = currentProfile.printers.find(printer => printer.id === (receiptType === 'KOT' ? currentProfile.kitchenPrinterId : currentProfile.receiptPrinterId));
     const lineItems = bill.items.map(item => ({ ...item, price: item.price + (item.addons?.reduce((sum, addon) => sum + addon.price, 0) || 0) }));
-    const paperWidth = Number(network?.paperSize === '58mm' ? 58 : currentProfile.browserPaperWidth || 80);
-    const bytes = receiptType === 'KOT'
-      ? buildKotReceipt({
-          orderNumber: bill.orderNumber || bill.billNumber,
-          tableName: bill.table || 'Takeaway',
-          orderType: orderType || 'DINE_IN',
-          waiter: bill.waiter,
-          items: lineItems.map(item => ({
-            name: item.name,
-            qty: item.quantity,
-            notes: item.notes,
-            addons: item.addons,
-            variant: item.variantName || item.variant,
-          })),
-          time: `${bill.date || ''} ${bill.time || ''}`.trim() || new Date().toLocaleTimeString(),
-          paperWidth,
-        })
-      : buildBillReceipt({
-          restaurantName: receiptName,
-          restaurantAddress: receiptAddress,
-          gstin: receiptGstin,
-          orderType: orderType || 'DINE_IN',
-          billNumber: bill.billNumber,
-          tableName: bill.table,
-          cashier: bill.cashier || currentUser?.name || 'Staff',
-          customerName: bill.customerName || bill.customer?.name,
-          customerPhone: bill.customerPhone || bill.customer?.phone,
-          items: lineItems.map(item => ({
-            name: item.name,
-            qty: item.quantity,
-            price: item.price,
-            notes: item.notes,
-            addons: item.addons,
-            variant: item.variantName || item.variant,
-          })),
-          subtotal: bill.subtotal,
-          discount: bill.discount || 0,
-          gst: bill.cgst + bill.sgst,
-          grandTotal: bill.grandTotal,
-          paymentMethod: bill.method,
-          tenders: bill.tenders,
-          deliveryFee: bill.deliveryFee,
-          pendingConfirmation: bill.pendingConfirmation,
-          paymentPending: bill.paymentPending,
-          prebill: receiptType === 'PREBILL',
-          reprint: isReprint,
-          time: `${bill.date || ''} ${bill.time || ''}`.trim() || new Date().toLocaleTimeString(),
-          paperWidth,
-          footerNote: receiptFooterNote,
-        });
+    const paperWidth = Number(isCapacitorApp && savedBtPrinter ? savedBtPrinter.paperWidth || 58 : network?.paperSize === '58mm' ? 58 : currentProfile.browserPaperWidth || 80);
     try {
+      if (bill.pendingConfirmation && !forceBrowser) throw new Error('Wait for server confirmation. A labelled browser preview is available.');
+      // Resolve server ownership before preparing a local logo or opening a connection.
+      if (!forceBrowser && !forceRawBT && receiptType !== 'KOT') {
+        const overview = bill.checkoutPrint && !isReprint ? { destinations: [] } : await refresh();
+        if (overview.destinations.some(destination => destination.role === 'RECEIPT')) {
+          if (bill.pendingConfirmation) throw new Error('Wait for the restaurant server to confirm this bill.');
+          const job = receiptType === 'PREBILL'
+            ? await apiClient.post('/billing/print-prebill', { requestId, items: bill.items, orderType, tableId: bill.tableId, discount: bill.discount, deliveryFee: bill.deliveryFee })
+            : await apiClient.post('/printer/queue/receipt', { requestId, billNumber: bill.billNumber, reprint: isReprint, confirmed: reprintChecked, reason: reprintReason });
+          toast.info(printStateLabel(job.state)); await refresh(); return;
+        }
+      }
+      const receiptBytes = receiptType === 'KOT'
+        ? buildKotReceipt({
+            orderNumber: bill.orderNumber || bill.billNumber,
+            tableName: bill.table || 'Takeaway',
+            orderType: orderType || 'DINE_IN',
+            waiter: bill.waiter,
+            items: lineItems.map(item => ({
+              name: item.name,
+              qty: item.quantity,
+              notes: item.notes,
+              addons: item.addons,
+              variant: item.variantName || item.variant,
+            })),
+            time: `${bill.date || ''} ${bill.time || ''}`.trim() || new Date().toLocaleTimeString(),
+            paperWidth,
+          })
+        : buildBillReceipt({
+            logoBytes: forceBrowser ? undefined : await receiptLogoBytes(receiptLogo),
+            restaurantName: receiptName,
+            restaurantAddress: receiptAddress,
+            restaurantPhone: receiptPhone,
+            gstin: receiptGstin,
+            orderType: orderType || 'DINE_IN',
+            billNumber: bill.billNumber,
+            tableName: bill.table,
+            cashier: bill.cashier || currentUser?.name || 'Staff',
+            customerName: bill.customerName || bill.customer?.name,
+            customerPhone: bill.customerPhone || bill.customer?.phone,
+            items: lineItems.map(item => ({
+              name: item.name,
+              qty: item.quantity,
+              price: item.price,
+              notes: item.notes,
+              addons: item.addons,
+              variant: item.variantName || item.variant,
+            })),
+            subtotal: bill.subtotal,
+            discount: bill.discount || 0,
+            gst: bill.cgst + bill.sgst,
+            grandTotal: bill.grandTotal,
+            paymentMethod: bill.method,
+            tenders: bill.tenders,
+            deliveryFee: bill.deliveryFee,
+            pendingConfirmation: bill.pendingConfirmation,
+            paymentPending: bill.paymentPending,
+            prebill: receiptType === 'PREBILL',
+            reprint: isReprint,
+            time: `${bill.date || ''} ${bill.time || ''}`.trim() || new Date().toLocaleTimeString(),
+            paperWidth,
+            footerNote: receiptFooterNote,
+          });
+      const kitchenBytes = kitchenCopy ? checkoutKitchenBytes(bill, paperWidth) : new Uint8Array();
+      const bytes = new Uint8Array(receiptBytes.length + kitchenBytes.length);
+      bytes.set(receiptBytes); bytes.set(kitchenBytes, receiptBytes.length);
+      const sendDirect = (send: () => Promise<unknown>) => receiptType === 'CHECKOUT' && !isReprint && !bill.pendingConfirmation
+        ? printDirectReceiptOnce(bill.billNumber, send) : send();
       if (!forceBrowser && isCapacitorApp) {
         const kotPrinter = getSavedBtKotPrinter();
         const mainPrinter = getSavedBtPrinter();
         const target = (receiptType === 'KOT' && kotPrinter?.enabled && kotPrinter.address) ? kotPrinter : mainPrinter;
         if (target?.address) {
-          await printViaBluetoothNative(bytes, target.address);
+          await sendDirect(() => printViaBluetoothNative(bytes, target.address));
           toast.success(`${receiptType === 'KOT' ? 'Kitchen Ticket' : 'Receipt'} printed via Bluetooth (${target.name})`);
           return;
         }
       }
       if (forceRawBT || (!forceBrowser && !isTauri() && currentProfile.useRawBT)) {
-        printViaRawBT(bytes);
+        await sendDirect(async () => { if (!printViaRawBT(bytes)) throw new Error('RawBT could not be opened.'); });
         toast.success('Sent to RawBT (Bluetooth printer)');
         return;
       }
-      if (!forceBrowser && receiptType !== 'KOT') {
-        const overview = await refresh();
-        if (overview.destinations.some(destination => destination.role === 'RECEIPT')) {
-          if (bill.pendingConfirmation) throw new Error('Wait for the server to confirm this bill before using automatic printing. A labelled browser copy is available.');
-          const job = receiptType === 'PREBILL'
-            ? await apiClient.post('/billing/print-prebill', { requestId, items: bill.items, orderType, tableId: bill.tableId, discount: bill.discount, deliveryFee: bill.deliveryFee })
-            : await apiClient.post('/printer/queue/receipt', { requestId, billNumber: bill.billNumber, reprint: isReprint, confirmed: reprintChecked, reason: reprintReason });
-          toast.info(printStateLabel(job.state) + '. Open Printing to review or request another copy.');
-          await refresh(); return;
-        }
-      }
-      if (!forceBrowser && isTauri() && network) await printNetworkReceipt(network.ip, Number(network.port || 9100), bytes);
-      else if (!forceBrowser && isTauri() && currentProfile.receiptPort && receiptType !== 'KOT') await printReceipt(currentProfile.receiptPort, bytes);
+      if (!forceBrowser && isTauri() && network) await sendDirect(() => printNetworkReceipt(network.ip, Number(network.port || 9100), bytes));
+      else if (!forceBrowser && isTauri() && currentProfile.receiptPort && receiptType !== 'KOT') await sendDirect(() => printReceipt(currentProfile.receiptPort!, bytes));
       else if (!forceBrowser && network && canBackendPrintLocally()) {
-        const result = await apiClient.post('/printer/print', { ip: network.ip, port: Number(network.port || 9100), type: receiptType === 'KOT' ? 'KOT' : 'RECEIPT', restaurantName: receiptName, orderNumber: bill.orderNumber || bill.billNumber, items: lineItems, grandTotal: bill.grandTotal, data: Array.from(bytes) });
-        if (!result.success) throw new Error('The configured printer did not accept the receipt');
+        await sendDirect(async () => { const result = await apiClient.post('/printer/print', { ip: network.ip, port: Number(network.port || 9100), type: receiptType === 'KOT' ? 'KOT' : 'RECEIPT', restaurantName: receiptName, orderNumber: bill.orderNumber || bill.billNumber, items: lineItems, grandTotal: bill.grandTotal, data: Array.from(bytes) });
+        if (!result.success) throw new Error('The configured printer did not accept the receipt'); });
       } else {
         const frame = document.createElement('iframe');
         frame.style.cssText = 'position:fixed;width:1px;height:1px;left:-10000px;border:0';
@@ -180,10 +194,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
         documentToPrint.open();
         // React escapes receipt values in the preview; print only that receipt.
         const width = currentProfile.browserPaperWidth === 58 ? 58 : 80;
-        documentToPrint.write(`<!doctype html><html><head><title>Receipt</title><style>@page{size:${width}mm auto;margin:3mm}body{max-width:${width - 6}mm;margin:0 auto;color:#000;background:#fff;font:12px monospace;overflow-wrap:anywhere}.flex{display:flex}.justify-between{justify-content:space-between;gap:4px}.text-center{text-align:center}.font-bold,.font-black,.font-extrabold{font-weight:bold}.text-base{font-size:16px}.border-t,.border-b{border-bottom:1px dashed #000;padding:5px 0}p{margin:3px 0}</style></head><body>` + (forceBrowser ? '<p><strong>MANUAL COPY</strong></p>' : '') + (paper.current?.innerHTML || '') + '</body></html>');
+        documentToPrint.write(`<!doctype html><html><head><title>Receipt</title><style>@page{size:${width}mm auto;margin:3mm}body{max-width:${width - 6}mm;margin:0 auto;color:#000;background:#fff;font:12px monospace;overflow-wrap:anywhere}.flex{display:flex}.justify-between{justify-content:space-between;gap:4px}.text-center{text-align:center}.font-bold,.font-black,.font-extrabold{font-weight:bold}.text-base{font-size:16px}.border-t,.border-b{border-bottom:1px dashed #000;padding:5px 0}p{margin:3px 0}img{display:block;max-width:150px;max-height:48px;width:auto;height:auto;margin:0 auto;object-fit:contain}</style></head><body>` + (forceBrowser ? '<p><strong>MANUAL COPY</strong></p>' : '') + (paper.current?.innerHTML || '') + '</body></html>');
         documentToPrint.close();
         printed.addEventListener('afterprint', () => frame.remove(), { once: true });
-        printed.focus(); printed.print();
+        try { await waitForReceiptImages(documentToPrint); } catch (error) { frame.remove(); throw error; }
+        try { await sendDirect(async () => { printed.focus(); printed.print(); }); } catch (error) { frame.remove(); throw error; }
         setTimeout(() => frame.remove(), 120000);
         toast.info('Receipt print dialog opened for this device.'); return;
       }
@@ -220,7 +235,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
           {/* Header Info */}
           <div className="text-center space-y-0.5 pb-2 border-b border-dashed border-slate-300">
             <h4 className="font-black text-sm uppercase tracking-wide text-slate-900">{receiptName}</h4>
-            {receiptAddress && <p className="text-[10px] text-slate-500 leading-tight">{receiptAddress}</p>}
+            {receiptAddress && <p className="text-[11px] text-slate-700 leading-tight whitespace-pre-line">{receiptAddress}</p>}
+            {receiptPhone && <p className="text-[11px] text-slate-700">Tel: {receiptPhone}</p>}
             {receiptGstin && <p className="text-[10px] text-slate-500 font-semibold">GSTIN: {receiptGstin}</p>}
           </div>
 
@@ -240,7 +256,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
               </div>
             ) : (
               <div className="inline-block px-3 py-0.5 bg-emerald-500/15 text-emerald-900 font-black text-[11px] uppercase tracking-wider rounded">
-                ─── TAX INVOICE ───
+                CUSTOMER RECEIPT
               </div>
             )}
           </div>
@@ -280,14 +296,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
                 <div key={idx} className="space-y-0.5">
                   <div className="flex justify-between font-bold text-slate-800">
                     <span>
-                      {item.quantity > 1 ? `${item.quantity}x ` : ''}{item.name}
+                      {item.quantity} × {item.name}
                       {variantLabel && <span className="text-slate-500 font-normal"> ({variantLabel})</span>}
                     </span>
                     {receiptType !== 'KOT' && <span>₹{lineTotal.toFixed(2)}</span>}
                   </div>
                   {item.quantity > 1 && receiptType !== 'KOT' && (
                     <div className="text-[10px] text-slate-400 pl-2">
-                      @ ₹{item.price.toFixed(2)} each
+                      @ ₹{(item.price + addonPrice).toFixed(2)} each
                     </div>
                   )}
                   {item.notes && (
@@ -298,7 +314,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
                   {item.addons && item.addons.map((addon: any, aIdx: number) => (
                     <div key={aIdx} className="flex justify-between text-[10px] text-emerald-600 pl-2">
                       <span>+ {addon.name}</span>
-                      {receiptType !== 'KOT' && <span>(₹{addon.price * item.quantity})</span>}
+                      {receiptType !== 'KOT' && <span>Included</span>}
                     </div>
                   ))}
                 </div>
@@ -319,12 +335,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
                   <span className="font-bold">−₹{bill.discount.toFixed(2)}</span>
                 </div>
               )}
-              {(bill.cgst + bill.sgst) > 0 && (
-                <div className="flex justify-between text-slate-500 text-[11px]">
-                  <span>CGST + SGST</span>
-                  <span>₹{(bill.cgst + bill.sgst).toFixed(2)}</span>
-                </div>
-              )}
+              {(bill.cgst + bill.sgst) > 0 && <>{[['CGST', bill.cgst], ['SGST', bill.sgst]].map(([label, amount]) => <div key={label} className="flex justify-between text-slate-600 text-[11px]"><span>{label}</span><span>₹{Number(amount).toFixed(2)}</span></div>)}</>}
               {!!bill.deliveryFee && (
                 <div className="flex justify-between text-slate-500 text-[11px]">
                   <span>Delivery / Surcharge</span>
@@ -355,6 +366,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
                   <span>Payment Mode:</span>
                   <span className="uppercase">{bill.method || 'CASH'}</span>
                 </div>
+                <p className="text-center font-bold">{bill.pendingConfirmation ? 'AWAITING CONFIRMATION' : bill.paymentPending ? 'PAYMENT PENDING' : Number(bill.tenders?.CREDIT || 0) > 0 || bill.method === 'CREDIT' ? 'CREDIT - BALANCE DUE' : 'PAID'}</p>
                 {bill.method === 'SPLIT' && bill.tenders && (
                   <div className="space-y-0.5 mt-1 pl-2 border-l-2 border-emerald-500">
                     {Object.entries(bill.tenders as Record<string, number>)
@@ -375,6 +387,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
           <div className="text-center pt-1 text-[10px] font-bold text-slate-400">
             <p>{receiptFooterNote || 'Thank you for visiting! Please visit us again.'}</p>
           </div>
+          {kitchenCopy?.items?.length > 0 && <section className="kitchen-copy" style={{ borderTop: '2px dashed #111', marginTop: 24, paddingTop: 18, textAlign: 'left', color: '#111' }}>
+            <h3 style={{ textAlign: 'center', fontSize: 20, fontWeight: 800 }}>KITCHEN TICKET</h3>
+            <p><strong>Order: {kitchenCopy.orderNumber || kitchenCopy.reference}</strong></p><p>{kitchenCopy.table || bill.table} · {orderType}</p>
+            {kitchenCopy.items.map((item: any, index: number) => <div key={index} style={{ borderBottom: '1px dashed #888', padding: '8px 0' }}><strong>{item.quantity} × {item.name}{item.variant ? ` (${item.variant})` : ''}</strong>{item.addons?.map((addon: any, i: number) => <p key={i}>+ {addon.name}</p>)}{item.notes && <p><strong>NOTE: {item.notes}</strong></p>}</div>)}
+            <p>Total quantity: {kitchenCopy.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}</p>
+          </section>}
         </div>
 
         {isReprint && <div className="w-full text-left rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2 text-sm"><label className="flex gap-2"><input type="checkbox" checked={reprintChecked} disabled={isPrinting} onChange={event => setReprintChecked(event.target.checked)} />I checked the paper and printer queue; another copy is needed.</label><label className="block">Reason<input className="border rounded-lg p-2 w-full" maxLength={500} value={reprintReason} disabled={isPrinting} onChange={event => setReprintReason(event.target.value)} /></label></div>}
@@ -427,6 +445,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ receiptType, bill, o
             Browser dialog
           </button>
         </div>
+        {receiptType === 'CHECKOUT' && !bill.pendingConfirmation && <details className="w-full rounded-xl border border-pos-border p-3 text-left text-xs"><summary className="cursor-pointer font-bold">Packaging labels</summary><p className="mt-2 text-pos-text-muted">Fixed layouts for a label printer through this device’s print dialog.</p><div className="flex flex-wrap gap-3 mt-3">{(['CUP', 'BAG'] as const).map(kind => <button key={kind} disabled={isPrinting} className="font-bold underline" onClick={() => { setIsPrinting(true); void printPackagingLabels(kind, bill, profile.browserPaperWidth || 80).catch(error => toast.error(error.message)).finally(() => setIsPrinting(false)); }}>{kind === 'CUP' ? 'Print item labels' : 'Print bag label'}</button>)}</div></details>}
         {onReturn && receiptType === 'CHECKOUT' && !bill.pendingConfirmation && !bill.paymentPending && currentUser?.role !== 'WAITER' && (
           <button
             onClick={onReturn}

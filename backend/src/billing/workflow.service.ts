@@ -89,19 +89,21 @@ export class WorkflowService {
       const permissions = readJson<any>(JSON.stringify(user.permissions || {}), {});
       if (totals.discount > 0 && !['ADMIN', 'REST_ADMIN', 'MANAGER'].includes(user.role) && !permissions.canDiscount) throw new ForbiddenException('Discount permission is required');
       const storedLines = [];
-      for (const line of lines) storedLines.push({ productId: line.product.id, name: line.product.name, price: line.price, basePrice: line.product.price, gstRate: line.product.gstRate, quantity: line.quantity, notes: line.notes, addons: line.addons, recipe: await this.billing.recipeForProduct(tx, line.product.id) });
+      for (const line of lines) storedLines.push({ productId: line.product.id, name: line.product.name, variant: line.variant || null, price: line.price, basePrice: line.product.price, gstRate: line.product.gstRate, quantity: line.quantity, notes: line.notes, addons: line.addons, recipe: await this.billing.recipeForProduct(tx, line.product.id) });
       if (order?.bill && data.orderType !== 'PARCEL') throw new BadRequestException('This order is already settled');
       if (order && !order.bill) ensurePersistedItemsPresent(order.items, storedLines);
-      if (!order) order = await tx.order.create({ data: { restaurantId: user.restaurantId, orderNumber: data.orderNumber, orderType: data.orderType, status: 'COOKING', totalAmount: totals.subtotal, discount: totals.discount, waiterId: user.id, items: { create: storedLines.map(line => ({ productId: line.productId, price: line.price, quantity: line.quantity, notes: line.notes, addons: JSON.stringify(line.addons), status: 'SENT' })) } }, include: { bill: true, items: true } });
-      else if (!order.bill) order = await tx.order.update({ where: { id: order.id }, data: { totalAmount: totals.subtotal, discount: totals.discount, items: { deleteMany: {}, create: storedLines.map(line => ({ productId: line.productId, price: line.price, quantity: line.quantity, notes: line.notes, addons: JSON.stringify(line.addons), status: 'SENT' })) } }, include: { bill: true, items: true } });
+      if (!order) order = await tx.order.create({ data: { restaurantId: user.restaurantId, orderNumber: data.orderNumber, orderType: data.orderType, status: 'COOKING', totalAmount: totals.subtotal, discount: totals.discount, waiterId: user.id, items: { create: storedLines.map(line => ({ productId: line.productId, price: line.price, quantity: line.quantity, notes: line.notes, variant: line.variant, addons: JSON.stringify(line.addons), status: 'SENT' })) } }, include: { bill: true, items: true } });
+      else if (!order.bill) order = await tx.order.update({ where: { id: order.id }, data: { totalAmount: totals.subtotal, discount: totals.discount, items: { deleteMany: {}, create: storedLines.map(line => ({ productId: line.productId, price: line.price, quantity: line.quantity, notes: line.notes, variant: line.variant, addons: JSON.stringify(line.addons), status: 'SENT' })) } }, include: { bill: true, items: true } });
       const paid = !!order.bill || data.paymentStatus === 'COLLECTED';
       const delivery = await tx.deliveryOrder.create({ data: { id: data.id || undefined, restaurantId: user.restaurantId, orderNumber: data.orderNumber, orderType: data.orderType, billNumber: order.bill?.billNumber || data.billNumber, customerName: data.customerName || 'Guest', customerPhone: data.customerPhone || null, deliveryAddress: data.deliveryAddress || null, deliveryFee: totals.deliveryFee, discount: totals.discount, subtotal: totals.subtotal, grandTotal: totals.grandTotal, items: JSON.stringify(storedLines), status: 'RECEIVED', paymentStatus: order.bill ? 'COLLECTED' : 'PENDING', inventoryConsumed: !!order.bill } });
       if (!order.bill) {
         await this.stockPolicy.consume(tx, storedLines, user, 'dispatch', data.orderNumber, order.id, data.stockAuthorization);
         await tx.deliveryOrder.update({ where: { id: delivery.id }, data: { inventoryConsumed: true } });
       }
+      let checkoutPrint: any;
       if (paid && !order.bill) {
-        const bill = await this.billing.checkoutInTransaction(tx, { ...data, method: data.paymentMethod || 'UPI' }, user.restaurantId, user.id);
+        const bill = await this.billing.checkoutInTransaction(tx, { ...data, method: data.paymentMethod || 'UPI' }, user.restaurantId, user.id, undefined, previousKitchenItems);
+        checkoutPrint = bill.checkoutPrint;
         await tx.deliveryOrder.update({ where: { id: delivery.id }, data: { paymentStatus: 'COLLECTED', paymentMethod: bill.paymentMethod, collectedAmount: bill.grandTotal } });
       }
       const previousQuantities = new Map<string, number>();
@@ -115,9 +117,9 @@ export class WorkflowService {
         return item.quantity > previous ? [{ ...item, quantity: item.quantity - previous }] : [];
       });
       if ([...previousQuantities.values()].some(quantity => quantity > 0)) throw new BadRequestException('Cooking instructions for already-sent food changed. Reload the latest order before dispatch.');
-      await this.printQueue.kitchen(tx, user.restaurantId, `dispatch:${delivery.id}`, { reference: order.orderNumber, orderType: data.orderType, customer: data.customerName, items: unsent }, user.id);
+      if (!checkoutPrint) await this.printQueue.kitchen(tx, user.restaurantId, `dispatch:${delivery.id}`, { reference: order.orderNumber, orderType: data.orderType, customer: data.customerName, items: unsent }, user.id);
       if (!paid) await this.printQueue.enqueue(tx, user.restaurantId, 'RECEIPT', `dispatch:${delivery.id}`, { ...await this.printQueue.branding(tx, user.restaurantId), kind: 'DISPATCH', reference: delivery.billNumber || delivery.orderNumber, orderNumber: delivery.orderNumber, orderType: delivery.orderType, createdAt: delivery.createdAt.toISOString(), customer: delivery.customerName, items: storedLines, subtotal: totals.subtotal, discount: totals.discount, cgst: totals.cgst, sgst: totals.sgst, deliveryFee: totals.deliveryFee, grandTotal: totals.grandTotal, paymentMethod: 'UNPAID' }, user.id);
-      return { id: delivery.id, orderNumber: delivery.orderNumber };
+      return { id: delivery.id, orderNumber: delivery.orderNumber, checkoutPrint };
     });
   }
 

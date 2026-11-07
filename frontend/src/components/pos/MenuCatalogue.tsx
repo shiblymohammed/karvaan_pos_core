@@ -1,7 +1,9 @@
 import React from 'react';
-import { Search, X } from 'lucide-react';
+import { ArrowLeft, Search, X } from 'lucide-react';
 import { CategorySidebar } from './CategorySidebar';
 import { MenuGrid } from './MenuGrid';
+import { CategoryTiles } from './CategoryTiles';
+import { useSettingsStore } from '../../store/useSettingsStore';
 
 interface MenuCatalogueProps {
   activeCategory: string;
@@ -15,7 +17,7 @@ interface MenuCatalogueProps {
   onCustomize: (product: any) => void;
 }
 
-export const MenuCatalogue: React.FC<MenuCatalogueProps> = ({
+export const MenuCatalogue: React.FC<MenuCatalogueProps> = React.memo(({
   activeCategory,
   onSelectCategory,
   searchQuery,
@@ -26,12 +28,35 @@ export const MenuCatalogue: React.FC<MenuCatalogueProps> = ({
   onOpenAddonModal,
   onCustomize,
 }) => {
+  const categoryFirst = useSettingsStore(state => state.posMenuLayout === 'CATEGORY_LIST');
+  const showCategories = categoryFirst && activeCategory === 'All' && !searchQuery.trim();
+  React.useEffect(() => {
+    if (categoryFirst) {
+      onSelectCategory('All');
+      onSearchChange('');
+    }
+  }, [categoryFirst, onSelectCategory, onSearchChange]);
+  const openCategories = () => {
+    onSearchChange('');
+    onSelectCategory('All');
+  };
   return (
     <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 pt-10 md:pt-14">
       {/* Unified Top Bar: Categories + Search */}
       <div className="flex items-center gap-1.5 md:gap-2 px-1.5 md:px-4 z-30 bg-white/40 backdrop-blur-md rounded-2xl mx-1.5 md:mx-4 py-1.5 border border-white/40 shadow-sm mt-1">
         <div className="flex-1 overflow-hidden">
-          <CategorySidebar activeCategory={activeCategory} onSelectCategory={onSelectCategory} />
+          {categoryFirst
+            ? <div className="flex min-h-[44px] items-center gap-3">
+                {showCategories
+                  ? <span className="px-3 font-bold text-slate-800">Categories</span>
+                  : <>
+                      <button type="button" onClick={openCategories} className="flex shrink-0 items-center gap-1 rounded-xl bg-white/80 px-3 py-2 text-sm font-bold text-violet-700 focus-visible:ring-2 focus-visible:ring-violet-500">
+                        <ArrowLeft className="h-4 w-4" /> Categories
+                      </button>
+                      <span className="truncate text-sm font-bold text-slate-700">{activeCategory === 'All' ? 'Search results' : activeCategory}</span>
+                    </>}
+              </div>
+            : <CategorySidebar activeCategory={activeCategory} onSelectCategory={onSelectCategory} />}
         </div>
 
         <div className="shrink-0 flex items-center justify-end gap-1.5 md:gap-2 relative z-30">
@@ -73,8 +98,10 @@ export const MenuCatalogue: React.FC<MenuCatalogueProps> = ({
       </div>
 
       <div className="flex-1 flex flex-col p-2 md:p-5 md:pb-24 lg:pb-5 overflow-hidden">
-        <MenuGrid activeCategory={activeCategory} onCustomize={onCustomize} searchQuery={searchQuery} />
+        {showCategories
+          ? <CategoryTiles onSelectCategory={onSelectCategory} />
+          : <MenuGrid activeCategory={activeCategory} onCustomize={onCustomize} searchQuery={searchQuery} layout={categoryFirst ? 'list' : 'grid'} />}
       </div>
     </div>
   );
-};
+});

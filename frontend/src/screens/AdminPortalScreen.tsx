@@ -71,7 +71,7 @@ export const AdminPortalScreen: React.FC = () => {
             { id: 'INVENTORY', label: 'Inventory & Recipes', icon: Package },
             { id: 'LEDGER', label: 'Customer Ledger', icon: BookOpen },
             { id: 'HISTORY', label: 'Order History', icon: History },
-            { id: 'PRINTER', label: 'Label & Printers', icon: Printer },
+            { id: 'PRINTER', label: 'Printing', icon: Printer },
             { id: 'SETTINGS', label: 'Settings', icon: Settings },
           ].map(({ id, label, icon: Icon }) => {
             const isActive = activeTab === id;

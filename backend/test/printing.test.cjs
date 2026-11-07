@@ -13,6 +13,9 @@ const { BillingService } = require('../src/billing/billing.service');
 const { WorkflowService } = require('../src/billing/workflow.service');
 const { PrintQueueService } = require('../src/printer/print-queue.service');
 const { renderPrintDocument } = require('../src/printer/print-document');
+const { PNG } = require('pngjs');
+const { SettingsService } = require('../src/settings/settings.service');
+const { receiptLogoBytes } = require('../src/printer/receipt-logo');
 let app, db, queue, url, adminToken, cashierToken;
 const admin = { id: 'print-admin', restaurantId: 'print-a', role: 'ADMIN' };
 async function api(endpoint, token, body, method = 'POST') {
@@ -46,6 +49,12 @@ before(async () => {
   cashierToken = (await app.get(AuthService).login('print-cashier', 'test-password')).accessToken;
 });
 after(async () => { if (app) await app.close(); });
+
+async function pairedMode(enabled) {
+  const settings = app.get(SettingsService), current = await settings.getSettings(admin.restaurantId);
+  await settings.updateSettings({ actionId: `pair-mode:${enabled}:${current.serverRevision}`, expectedRevision: current.serverRevision, checkoutReceiptAndKot: enabled, receiptName: 'Structured Cafe', receiptPhone: '+94 123 456789', receiptAddress: '12 Main Street', receiptFooterNote: 'Thank you from our team' }, admin.restaurantId);
+}
+const cuts = bytes => { let count = 0; for (let i = 0; i < bytes.length - 2; i++) if (bytes[i] === 0x1d && bytes[i + 1] === 0x56 && bytes[i + 2] === 0) count++; return count; };
 test('pairing is single-use, expires, and cashier JWTs cannot impersonate agents or configure printers', async () => {
   const pairing = await api('/printer/queue/pairing', adminToken, { name: 'Counter' }); assert.equal(pairing.status, 201);
   const paired = await api('/printer/agent/pair', null, { code: pairing.body.code }); assert.equal(paired.status, 201);
@@ -174,4 +183,159 @@ test('thermal output wraps modifiers/instructions, strips commands, and marks un
   const document = { kind: 'PREBILL', reference: 'PRE-1', reprint: true, createdAt: '2026-10-15T08:00:00Z', items: [{ name: 'A sufficiently long menu item name that must not disappear', quantity: 1, notes: '\x1b\x40Keep every part of this long cooking instruction visible to the kitchen', addons: [{ name: 'Extra sauce in a separate cup' }] }], grandTotal: 12 };
   const rendered = renderPrintDocument(document, 58).subarray(2, -3).toString();
   assert.match(rendered, /PRE-BILL - UNPAID/); assert.match(rendered, /REPRINT/); assert.match(rendered.replace(/\n/g, ' '), /instruction visible to the kitchen/); assert.match(rendered, /Extra sauce/); assert.ok(!rendered.includes('\x1b'));
+});
+
+
+test('saved receipt logo survives settings reload and is frozen in queued print data', async () => {
+  const png = new PNG({ width: 8, height: 1 }); png.data.fill(0); png.data[3] = 255;
+  const receiptLogo = 'data:image/png;base64,' + PNG.sync.write(png).toString('base64');
+  const settings = app.get(SettingsService), current = await settings.getSettings(admin.restaurantId);
+  await settings.updateSettings({ actionId: 'save-receipt-logo', expectedRevision: current.serverRevision, receiptLogo }, admin.restaurantId);
+  assert.equal((await settings.getSettings(admin.restaurantId)).receiptLogo, receiptLogo);
+  const { agent } = await agentFixture('Logo'); await assign(agent);
+  await db.$transaction(async tx => queue.enqueue(tx, admin.restaurantId, 'RECEIPT', 'logo-snapshot', { ...await queue.branding(tx, admin.restaurantId), kind: 'PREBILL', reference: 'LOGO', createdAt: new Date().toISOString(), items: [] }, admin.id, false));
+  const updated = await settings.getSettings(admin.restaurantId);
+  await settings.updateSettings({ actionId: 'clear-receipt-logo', expectedRevision: updated.serverRevision, receiptLogo: '' }, admin.restaurantId);
+  const claimed = await queue.claim(agent);
+  assert.ok(Buffer.from(claimed.job.data, 'base64').includes(receiptLogoBytes(receiptLogo)));
+  await assert.rejects(settings.updateSettings({ actionId: 'bad-logo', expectedRevision: updated.serverRevision + 1, receiptLogo: 'data:image/png;base64,AAAA' }, admin.restaurantId), /Invalid receipt logo/);
+});
+
+test('cafe checkout commits one ordered receipt/KOT bundle, retains its plan on retry and supports selective recovery', async () => {
+  await pairedMode(true);
+  const { agent } = await agentFixture('Cafe pair'); await assign(agent, 'RECEIPT', true); await assign(agent, 'KITCHEN', true);
+  const billing = app.get(BillingService);
+  const sale = { billNumber: 'CAFE-BILL', orderNumber: 'CAFE-ORDER', items: [{ productId: 'print-product', quantity: 2, notes: 'No onion' }], paymentMethod: 'CASH', orderType: 'DINE_IN' };
+  const bill = await billing.processDirectCheckout(sale, admin.restaurantId, admin.id);
+  const retry = await billing.processDirectCheckout(sale, admin.restaurantId, admin.id);
+  assert.deepEqual(retry.checkoutPrint, bill.checkoutPrint);
+  const jobs = await db.printJob.findMany({ where: { reference: { in: ['CAFE-BILL', 'CAFE-ORDER'] } } });
+  assert.equal(jobs.length, 1); assert.equal(jobs[0].kind, 'RECEIPT');
+  assert.equal(bill.checkoutPrint.receiptJobId, jobs[0].id);
+  const document = JSON.parse(jobs[0].document);
+  assert.equal(document.kitchenCopy.items[0].quantity, 2);
+  for (const width of [58, 80]) {
+    const bytes = renderPrintDocument(document, width), text = bytes.toString();
+    assert.equal(cuts(bytes), 2);
+    assert.ok(text.indexOf('CUSTOMER RECEIPT') < text.indexOf('KITCHEN TICKET'));
+    assert.match(text, /Tel: \+94 123 456789/); assert.match(text, /Thank you from our team/);
+    assert.match(text, /PAID/); assert.match(text, /No onion/);
+    assert.doesNotMatch(text.slice(text.indexOf('KITCHEN TICKET')), /TOTAL Rs\.|Payment:|100\.00/);
+  }
+  const overview = await queue.overview(admin);
+  assert.equal(overview.jobs.find(job => job.id === jobs[0].id).paired, true);
+  assert.equal('document' in overview.jobs.find(job => job.id === jobs[0].id), false);
+  await db.printJob.update({ where: { id: jobs[0].id }, data: { state: 'SENT' } });
+  const customerCopy = await queue.manualReceipt(admin, { billNumber: 'CAFE-BILL', requestId: 'customer-only', reprint: true, confirmed: true, reason: 'Customer asks for copy' });
+  assert.equal(JSON.parse(customerCopy.document).kitchenCopy, undefined);
+  assert.equal(cuts(renderPrintDocument(JSON.parse(customerCopy.document), 80)), 1);
+  await db.printJob.update({ where: { id: customerCopy.id }, data: { state: 'SENT' } });
+  await assert.rejects(queue.recover(admin, jobs[0].id, { requestId: 'choose-copy', reason: 'Checked paper', confirmed: true }), /choose/);
+  const kitchenCopy = await queue.recover(admin, jobs[0].id, { requestId: 'kitchen-only', reason: 'Kitchen paper missing', confirmed: true, copy: 'KOT' });
+  assert.equal(kitchenCopy.kind, 'KOT'); assert.equal(JSON.parse(kitchenCopy.document).reprint, true);
+  assert.equal(cuts(renderPrintDocument(JSON.parse(kitchenCopy.document), 58)), 1);
+  assert.equal((await queue.recover(admin, jobs[0].id, { requestId: 'kitchen-only', reason: 'Retry same request', confirmed: true, copy: 'KOT' })).id, kitchenCopy.id);
+  assert.equal(await db.bill.count({ where: { billNumber: 'CAFE-BILL' } }), 1);
+  await pairedMode(false);
+});
+
+test('paired checkout sends only unsent variant quantities and omits an empty kitchen copy', async () => {
+  await pairedMode(true);
+  const { agent } = await agentFixture('Cafe variants'); await assign(agent, 'RECEIPT', true); await assign(agent, 'KITCHEN', true);
+  await db.product.update({ where: { id: 'print-product' }, data: { variants: JSON.stringify([{ id: 'large', name: 'Large', price: 120 }, { id: 'small', name: 'Small', price: 80 }]) } });
+  const billing = app.get(BillingService);
+  await billing.saveKitchenOrder({ id: 'cafe-first-kot', orderNumber: 'CAFE-SENT', items: [{ productId: 'print-product', quantity: 1, variantId: 'large' }] }, admin.restaurantId, admin.id);
+  const originalKot = await db.printJob.findFirst({ where: { reference: 'CAFE-SENT', kind: 'KOT' } });
+  const kotText = renderPrintDocument(JSON.parse(originalKot.document), 58).toString().replace(/\n/g, ' ');
+  assert.ok(kotText.includes((await db.product.findUnique({ where: { id: 'print-product' } })).name));
+  assert.match(kotText, /\(Large\)/);
+  const sale = await billing.processDirectCheckout({ billNumber: 'CAFE-VARIANTS', orderNumber: 'CAFE-SENT', items: [{ productId: 'print-product', quantity: 1, variantId: 'large' }, { productId: 'print-product', quantity: 2, variantId: 'small' }], paymentMethod: 'CASH' }, admin.restaurantId, admin.id);
+  assert.equal(sale.checkoutPrint.kitchenCopy.items.length, 1);
+  assert.equal(sale.checkoutPrint.kitchenCopy.items[0].variant, 'Small'); assert.equal(sale.checkoutPrint.kitchenCopy.items[0].quantity, 2);
+  assert.equal(await db.printJob.count({ where: { reference: 'CAFE-SENT', kind: 'KOT' } }), 1);
+  await billing.saveKitchenOrder({ id: 'cafe-all-sent-kot', orderNumber: 'CAFE-ALL-SENT', items: [{ productId: 'print-product', quantity: 1 }] }, admin.restaurantId, admin.id);
+  const sent = await billing.processDirectCheckout({ billNumber: 'CAFE-NO-NEW', orderNumber: 'CAFE-ALL-SENT', items: [{ productId: 'print-product', quantity: 1 }], paymentMethod: 'CASH' }, admin.restaurantId, admin.id);
+  assert.equal(sent.checkoutPrint.kitchenCopy, undefined);
+  const job = await db.printJob.findUnique({ where: { id: sent.checkoutPrint.receiptJobId } });
+  assert.equal(cuts(renderPrintDocument(JSON.parse(job.document), 80)), 1);
+  await db.product.update({ where: { id: 'print-product' }, data: { variants: null } });
+  await pairedMode(false);
+});
+
+test('paired mode retains a manual print plan without a receipt auto destination and validates settings per restaurant', async () => {
+  await pairedMode(true);
+  const { agent } = await agentFixture('Manual pair'); await assign(agent, 'RECEIPT', false); await assign(agent, 'KITCHEN', true);
+  const billing = app.get(BillingService);
+  const sale = { billNumber: 'MANUAL-PAIR', orderNumber: 'MANUAL-PAIR-ORDER', items: [{ productId: 'print-product', quantity: 1 }], paymentMethod: 'CASH' };
+  const saved = await billing.processDirectCheckout(sale, admin.restaurantId, admin.id);
+  assert.equal(saved.checkoutPrint.receiptJobId, null); assert.equal(saved.checkoutPrint.kitchenCopy.items.length, 1);
+  assert.equal(await db.printJob.count({ where: { reference: { in: ['MANUAL-PAIR', 'MANUAL-PAIR-ORDER'] } } }), 0);
+  const manual = await queue.manualReceipt(admin, { billNumber: 'MANUAL-PAIR', requestId: 'manual-pair' });
+  assert.equal(cuts(renderPrintDocument(JSON.parse(manual.document), 58)), 2);
+  const settings = app.get(SettingsService), current = await settings.getSettings(admin.restaurantId);
+  assert.equal((await settings.getSettings('print-b')).checkoutReceiptAndKot, false);
+  await assert.rejects(settings.updateSettings({ actionId: 'bad-pair-setting', expectedRevision: current.serverRevision, checkoutReceiptAndKot: 'true' }, admin.restaurantId), /Invalid checkout/);
+  await assert.rejects(settings.updateSettings({ actionId: 'bad-phone-setting', expectedRevision: current.serverRevision, receiptPhone: 123 }, admin.restaurantId), /receiptPhone/);
+  await pairedMode(false);
+});
+
+test('prepaid delivery respects the receipt/KOT bundle while unpaid dispatch stays a separate unpaid slip', async () => {
+  await pairedMode(true);
+  const { agent } = await agentFixture('Prepaid pair'); await assign(agent, 'RECEIPT', true); await assign(agent, 'KITCHEN', true);
+  const workflows = app.get(WorkflowService);
+  const data = { id: 'cafe-prepaid', actionId: 'cafe-prepaid-action', orderNumber: 'CAFE-PREPAID-ORDER', billNumber: 'CAFE-PREPAID-BILL', orderType: 'DELIVERY', customerName: 'Guest', paymentStatus: 'COLLECTED', paymentMethod: 'CASH', items: [{ productId: 'print-product', quantity: 1 }] };
+  const result = await workflows.createDelivery(data, { ...admin, name: 'Admin', permissions: {} });
+  assert.equal(result.checkoutPrint.kitchenCopy.items.length, 1);
+  assert.equal(await db.printJob.count({ where: { reference: 'CAFE-PREPAID-ORDER', kind: 'KOT' } }), 0);
+  const receipt = await db.printJob.findFirst({ where: { reference: 'CAFE-PREPAID-BILL' } });
+  assert.equal(cuts(renderPrintDocument(JSON.parse(receipt.document), 80)), 2);
+  await workflows.createDelivery({ ...data, id: 'cafe-cod', actionId: 'cafe-cod-action', orderNumber: 'CAFE-COD-ORDER', billNumber: 'CAFE-COD-BILL', paymentStatus: 'PENDING' }, { ...admin, name: 'Admin', permissions: {} });
+  const dispatch = await db.printJob.findFirst({ where: { reference: 'CAFE-COD-BILL' } });
+  assert.equal(dispatch.kind, 'DISPATCH'); assert.match(renderPrintDocument(JSON.parse(dispatch.document), 80).toString(), /PAYMENT PENDING/);
+  assert.equal(await db.bill.count({ where: { billNumber: 'CAFE-COD-BILL' } }), 0);
+  await pairedMode(false);
+});
+
+test('direct original print claims fence other terminals and normal queue requests without changing the sale', async () => {
+  const { agent } = await agentFixture('Direct ownership'); await assign(agent, 'RECEIPT', false); await assign(agent, 'KITCHEN', false);
+  const billing = app.get(BillingService);
+  const sale = { billNumber: 'DIRECT-ORIGINAL', orderNumber: 'DIRECT-ORDER', items: [{ productId: 'print-product', quantity: 1 }], paymentMethod: 'CASH' };
+  await billing.processDirectCheckout(sale, admin.restaurantId, admin.id);
+  const claim = { billNumber: sale.billNumber, terminalId: 'counter-one', requestId: 'direct-original' };
+  assert.equal((await queue.claimDirectReceipt(admin, claim)).allowed, true);
+  assert.equal((await queue.claimDirectReceipt(admin, claim)).allowed, true);
+  await assert.rejects(queue.claimDirectReceipt(admin, { ...claim, terminalId: 'counter-two', requestId: 'different' }), /already claimed/);
+  await assert.rejects(queue.claimDirectReceipt({ ...admin, restaurantId: 'print-b' }, claim), /saved bill/);
+  await assert.rejects(queue.manualReceipt(admin, { billNumber: sale.billNumber, requestId: 'another-original' }), /already claimed/);
+  const copy = await queue.manualReceipt(admin, { billNumber: sale.billNumber, requestId: 'direct-marked', reprint: true, confirmed: true, reason: 'Paper was checked' });
+  assert.equal(JSON.parse(copy.document).reprint, true);
+  assert.equal(await db.bill.count({ where: { billNumber: sale.billNumber } }), 1);
+  await assign(agent, 'RECEIPT', true);
+  await billing.processDirectCheckout({ ...sale, billNumber: 'QUEUED-ORIGINAL', orderNumber: 'QUEUED-ORDER' }, admin.restaurantId, admin.id);
+  await assert.rejects(queue.claimDirectReceipt(admin, { ...claim, billNumber: 'QUEUED-ORIGINAL', requestId: 'local-duplicate' }), /already owns/);
+});
+
+test('destination test tickets include the saved logo and business details without becoming sales', async () => {
+  const png = new PNG({ width: 8, height: 1 }); png.data.fill(255); png.data[0] = png.data[1] = png.data[2] = 0;
+  const receiptLogo = 'data:image/png;base64,' + PNG.sync.write(png).toString('base64');
+  const settings = app.get(SettingsService), current = await settings.getSettings(admin.restaurantId);
+  await settings.updateSettings({ actionId: 'logo-hardware-test', expectedRevision: current.serverRevision, receiptLogo }, admin.restaurantId);
+  const { agent } = await agentFixture('Branding test'); await assign(agent, 'RECEIPT', false);
+  const bills = await db.bill.count();
+  const job = await queue.test(admin, { role: 'RECEIPT', requestId: 'branded-hardware-test' });
+  const bytes = renderPrintDocument(JSON.parse(job.document), 58);
+  assert.ok(bytes.includes(receiptLogoBytes(receiptLogo)));
+  assert.match(bytes.toString(), /Structured Cafe/); assert.match(bytes.toString(), /Tel: \+94 123 456789/);
+  assert.match(bytes.toString(), /PRINTER TEST - NOT A SALE/); assert.equal(await db.bill.count(), bills);
+  const updated = await settings.getSettings(admin.restaurantId);
+  await settings.updateSettings({ actionId: 'clear-hardware-test-logo', expectedRevision: updated.serverRevision, receiptLogo: '' }, admin.restaurantId);
+});
+
+test('a corrupt legacy logo fails visibly without blocking later print jobs', async () => {
+  const { agent } = await agentFixture('Corrupt logo'); await assign(agent);
+  const bad = await db.$transaction(tx => queue.enqueue(tx, admin.restaurantId, 'RECEIPT', 'bad-logo-job', { kind: 'RECEIPT', receiptLogo: 'broken', reference: 'BAD', createdAt: new Date().toISOString(), items: [] }, admin.id, false));
+  assert.equal((await queue.claim(agent)).job, null);
+  assert.equal((await db.printJob.findUnique({ where: { id: bad.id } })).state, 'FAILED');
+  const good = await enqueue(agent, 'after-bad-logo');
+  assert.equal((await queue.claim(agent)).job.id, good.id);
 });

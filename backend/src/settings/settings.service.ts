@@ -1,3 +1,4 @@
+import { receiptLogoBytes } from '../printer/receipt-logo';
 import { Injectable, UnauthorizedException, OnModuleInit, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,7 +25,7 @@ export class SettingsService implements OnModuleInit {
     });
     
     const restaurant = await this.prisma.restaurant.findUnique({ where: { id: restaurantId } });
-    const receipt = { receiptName: restaurant?.name || 'Karvaan POS', receiptAddress: restaurant?.address || '', receiptGstin: '' };
+    const receipt = { receiptName: restaurant?.name || 'Karvaan POS', receiptAddress: restaurant?.address || '', receiptPhone: restaurant?.phone || '', receiptGstin: '', checkoutReceiptAndKot: false, posMenuLayout: 'GRID' };
     if (!setting) return { ...receipt, serverRevision: 0 };
     try {
       return { ...receipt, serverRevision: 0, ...JSON.parse(setting.data) };
@@ -37,6 +38,14 @@ export class SettingsService implements OnModuleInit {
     if (!restaurantId) throw new UnauthorizedException('No restaurant context');
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new BadRequestException('Invalid settings');
     if (typeof data.actionId !== 'string' || !data.actionId || data.actionId.length > 200 || !Number.isInteger(data.expectedRevision)) throw new BadRequestException('Refresh the app before editing settings; a stable action ID and revision are required');
+    if (data.posMenuLayout !== undefined && !['GRID', 'CATEGORY_LIST'].includes(data.posMenuLayout)) throw new BadRequestException('Invalid POS menu layout');
+    if (data.checkoutReceiptAndKot !== undefined && typeof data.checkoutReceiptAndKot !== 'boolean') throw new BadRequestException('Invalid checkout printing option');
+    for (const [field, limit] of Object.entries({ receiptName: 120, receiptPhone: 60, receiptAddress: 500, receiptGstin: 60, receiptFooterNote: 300 })) {
+      if (data[field] !== undefined && (typeof data[field] !== 'string' || data[field].length > limit)) throw new BadRequestException(`Invalid ${field}`);
+    }
+    if (data.receiptLogo !== undefined) {
+      try { receiptLogoBytes(data.receiptLogo); } catch { throw new BadRequestException('Invalid receipt logo. Upload it again in printer settings.'); }
+    }
     if (data.paidAddons !== undefined && (!Array.isArray(data.paidAddons) || data.paidAddons.some((a: any) => !a?.id || !a.name || !Number.isFinite(a.price) || a.price < 0))) throw new BadRequestException('Invalid add-on catalogue');
     if (data.floorConfig !== undefined && (!Array.isArray(data.floorConfig) || data.floorConfig.some((f: any) => !f?.id || !['FIXED', 'PERCENTAGE'].includes(f.surchargeType) || !Number.isFinite(f.surchargeValue) || f.surchargeValue < 0))) throw new BadRequestException('Invalid floor surcharge');
     if (data.parcelChargeAmount !== undefined && (!Number.isFinite(data.parcelChargeAmount) || data.parcelChargeAmount < 0)) throw new BadRequestException('Invalid parcel charge');

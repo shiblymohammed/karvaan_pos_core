@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Banknote, QrCode, CreditCard, Smartphone } from 'lucide-react';
 import { PaymentMethod } from '../SettlementModal';
+import { useSettingsStore } from '../../store/useSettingsStore';
 
 interface PaymentGridProps {
   onSettle: (method: PaymentMethod) => void;
@@ -9,6 +10,7 @@ interface PaymentGridProps {
 
 export const PaymentGrid: React.FC<PaymentGridProps> = ({ onSettle, disabled }) => {
   const gridRef = useRef<HTMLDivElement>(null);
+  const paired = useSettingsStore(state => state.checkoutReceiptAndKot);
 
   // Global Keyboard Shortcuts for Payment Grid
   useEffect(() => {
@@ -60,6 +62,7 @@ export const PaymentGrid: React.FC<PaymentGridProps> = ({ onSettle, disabled }) 
 
   return (
     <div ref={gridRef} className="grid grid-cols-4 gap-2">
+      {paired && <p className="col-span-4 rounded-lg bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800">Checkout prints customer bill + new kitchen items on the receipt printer.</p>}
       {methods.map(m => (
         <button 
           key={m.id}

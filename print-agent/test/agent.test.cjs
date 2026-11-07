@@ -82,6 +82,9 @@ test('TCP distinguishes failed connection from ambiguous partial write', async (
 test('agent requires HTTPS and rejects credentials, redirects embedded in the URL, and remote HTTP', () => {
   assert.equal(serverUrl('https://pos.example/'), 'https://pos.example');
   assert.equal(serverUrl('http://127.0.0.1:3001'), 'http://127.0.0.1:3001');
+  assert.equal(serverUrl('http://localhost:3001'), 'http://localhost:3001');
+  assert.equal(serverUrl('http://[::1]:3001'), 'http://[::1]:3001');
+  for (const value of ['http://192.168.1.5:3001', 'http://127.example.com', 'http://localhost.example.com']) assert.throws(() => serverUrl(value), /HTTPS/);
   for (const value of ['http://pos.example', 'https://user:password@pos.example', 'https://pos.example/?token=private', 'file:///tmp/a']) assert.throws(() => serverUrl(value));
 });
 test('atomic journal and deterministic package keep credentials outside the download', () => {

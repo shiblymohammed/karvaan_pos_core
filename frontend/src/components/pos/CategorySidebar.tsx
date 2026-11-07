@@ -9,13 +9,13 @@ interface CategorySidebarProps {
   onSelectCategory: (category: string) => void;
 }
 
-export const CategorySidebar: React.FC<CategorySidebarProps> = ({ activeCategory, onSelectCategory }) => {
-  const { categories } = useMenuStore();
+export const CategorySidebar: React.FC<CategorySidebarProps> = React.memo(({ activeCategory, onSelectCategory }) => {
+  const categories = useMenuStore(state => state.categories);
 
-  const displayCategories = [
+  const displayCategories = React.useMemo(() => [
     { id: 'fav', name: 'Favourites', sortOrder: -1, emoji: '⭐', iconName: 'Star' },
     ...[...categories].sort((a, b) => a.sortOrder - b.sortOrder)
-  ];
+  ], [categories]);
 
   return (
     <LayoutGroup id="category-sidebar">
@@ -47,7 +47,7 @@ export const CategorySidebar: React.FC<CategorySidebarProps> = ({ activeCategory
                 {/* Category Image / Icon Container */}
                 <div className="w-4 h-4 md:w-6 md:h-6 flex items-center justify-center shrink-0 relative z-10">
                   {cat.imageUrl ? (
-                    <img src={resolveMediaUrl(cat.imageUrl)} alt={cat.name} className="w-full h-full object-cover rounded-[4px] md:rounded-md shadow-sm" />
+                    <img src={resolveMediaUrl(cat.imageUrl)} alt={cat.name} loading="lazy" decoding="async" className="w-full h-full object-cover rounded-[4px] md:rounded-md shadow-sm" />
                   ) : (
                     cat.iconName ? React.createElement((Icons as any)[cat.iconName] || Icons.Tag, { className: `w-3.5 h-3.5 md:w-5 md:h-5 transition-colors ${isActive ? 'text-white' : 'text-slate-500 group-hover/btn:text-slate-700'}` }) : <span className="text-[13px] md:text-xl leading-none">{cat.emoji || '🍽️'}</span>
                   )}
@@ -64,4 +64,4 @@ export const CategorySidebar: React.FC<CategorySidebarProps> = ({ activeCategory
       </div>
     </LayoutGroup>
   );
-};
+});

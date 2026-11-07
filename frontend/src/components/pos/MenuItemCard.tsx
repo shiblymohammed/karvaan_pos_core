@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { resolveMediaUrl } from '../../services/mediaUrl';
 import { Clock, MessageSquare, Plus } from 'lucide-react';
 import * as Icons from 'lucide-react';
-import { Product, useMenuStore } from '../../store/useMenuStore';
-import { motion } from 'framer-motion';
+import { Product } from '../../store/useMenuStore';
 import { toast } from '../../store/useToastStore';
 
 interface MenuItemCardProps {
@@ -12,18 +12,23 @@ interface MenuItemCardProps {
   isInCart?: boolean;
   onAdd: (product: any) => void;
   onCustomize: (product: any) => void;
+  layout?: 'grid' | 'list';
+  comboLabel?: string;
 }
 
-export const MenuItemCard: React.FC<MenuItemCardProps> = ({
+export const MenuItemCard: React.FC<MenuItemCardProps> = React.memo(({
   product,
   is86d,
   isInCart = false,
   onAdd,
-  onCustomize
+  onCustomize,
+  layout = 'grid',
+  comboLabel,
 }) => {
   const [isVibrating, setIsVibrating] = useState(false);
   const [showVariantModal, setShowVariantModal] = useState(false);
   const hasVariants = !!(product.variants && product.variants.length > 0);
+  const isList = layout === 'list';
 
   const handleClick = () => {
     if (is86d) toast.warning('Recorded stock is short. Manager approval will be required at checkout.');
@@ -41,7 +46,16 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   return (
     <div
       onClick={handleClick}
-      className={`group relative backdrop-blur-xl rounded-3xl transition-all duration-300 flex flex-col h-[220px] md:h-[300px] overflow-hidden ${isVibrating ? 'animate-shake' : ''} ${
+      role="button"
+      tabIndex={0}
+      aria-label={`Add ${product.name}`}
+      onKeyDown={event => {
+        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          handleClick();
+        }
+      }}
+      className={`group relative backdrop-blur-xl rounded-3xl transition-all duration-300 flex ${isList ? 'flex-row items-center min-h-[100px] shrink-0' : 'flex-col h-[220px] md:h-[300px]'} overflow-hidden ${isVibrating ? 'animate-shake' : ''} ${
         is86d 
           ? 'opacity-80 bg-red-50/30 border-2 border-dashed border-red-200 shadow-[0_16px_40px_rgb(0,0,0,0.12)] cursor-pointer'
           : isInCart
@@ -58,10 +72,10 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
       )}
 
       {/* Product Image Cover */}
-      <div className="relative h-[120px] md:h-[190px] w-full shrink-0 p-1.5 md:p-1 md:pb-0">
+      <div className={`relative shrink-0 ${isList ? 'h-20 w-20 md:h-24 md:w-24 p-1.5' : 'h-[120px] md:h-[190px] w-full p-1.5 md:p-1 md:pb-0'}`}>
         <div className={`w-full h-full bg-white/50 backdrop-blur-md rounded-[20px] overflow-hidden relative shadow-sm border border-white/40 ${is86d ? 'grayscale opacity-70' : ''}`}>
           {product.imageUrl ? (
-            <img src={resolveMediaUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover" />
+            <img src={resolveMediaUrl(product.imageUrl)} alt={product.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl text-slate-400">
               {product.iconName ? React.createElement((Icons as any)[product.iconName] || Icons.Utensils, { className: 'w-12 h-12' }) : (product.imageEmoji || '🍽️')}
@@ -79,25 +93,19 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
         )}
       </div>
 
-      <div className="p-2.5 md:p-3 md:px-3.5 flex flex-col justify-between flex-1 gap-1 min-w-0">
-        <div className="flex flex-col gap-0.5">
+      <div className={`p-2.5 md:p-3 md:px-3.5 flex flex-1 min-w-0 ${isList ? 'flex-row items-center gap-3' : 'flex-col justify-between gap-1'}`}>
+        <div className={`flex flex-col gap-0.5 ${isList ? 'flex-1 min-w-0' : ''}`}>
           <h3 className="font-bold text-slate-800 line-clamp-2 leading-tight text-[13px] md:text-[14px] tracking-tight">
             {product.name}
           </h3>
           {product.isCombo && product.comboItems && product.comboItems.length > 0 && (
             <p className="text-[10px] text-slate-500 font-semibold line-clamp-1 leading-tight tracking-tight">
-              {Object.entries(
-                product.comboItems.reduce((acc: any, id: string) => {
-                  const name = useMenuStore.getState().products.find(p => p.id === id)?.name;
-                  if (name) acc[name] = (acc[name] || 0) + 1;
-                  return acc;
-                }, {})
-              ).map(([name, qty]) => `${qty}x ${name}`).join(' • ')}
+              {comboLabel}
             </p>
           )}
         </div>
 
-        <div className="flex items-end justify-between mt-auto">
+        <div className={`flex ${isList ? 'items-center gap-3 shrink-0' : 'items-end justify-between mt-auto'}`}>
           <div className="flex flex-col gap-1">
             <div className="flex items-baseline gap-1.5 flex-wrap">
               <span className="text-[18px] md:text-[17px] font-black text-slate-900 leading-none tracking-tight">
@@ -137,7 +145,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
       </div>
 
       {/* Quick Variant Picker Dialog */}
-      {showVariantModal && (
+      {showVariantModal && createPortal(
         <div
           onClick={(e) => { e.stopPropagation(); setShowVariantModal(false); }}
           className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -216,8 +224,9 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
-};
+});

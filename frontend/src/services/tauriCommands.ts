@@ -197,6 +197,11 @@ export class EscPos {
     return this;
   }
 
+  raster(bytes?: Uint8Array) {
+    if (bytes?.length) { this.bytes.push(...bytes); this.newline(); }
+    return this;
+  }
+
   /** Get the final byte array */
   build(): Uint8Array {
     return new Uint8Array(this.bytes);
@@ -301,9 +306,11 @@ export function buildKotReceipt(params: {
  * Build a formatted bill receipt for the customer (Paid Bill or Pre-Bill)
  */
 export function buildBillReceipt(params: {
+  logoBytes?: Uint8Array;
   restaurantName: string;
   restaurantAddress?: string;
   gstin?: string;
+  restaurantPhone?: string;
   billNumber: string;
   orderType: string;
   tableName?: string;
@@ -330,13 +337,12 @@ export function buildBillReceipt(params: {
   const esc = new EscPos()
     .init()
     .align(1) // Center
+    .raster(params.logoBytes)
     .separator('=', width)
     .bold(true)
-    .doubleSize(true)
-    .text(params.restaurantName || 'Karvaan POS')
-    .newline()
-    .doubleSize(false)
-    .bold(false);
+    .doubleSize(true);
+  thermalLines(params.restaurantName || 'Karvaan POS', Math.floor(width / 2)).forEach(line => esc.text(line).newline());
+  esc.doubleSize(false).bold(false);
 
   if (params.restaurantAddress?.trim()) {
     thermalLines(params.restaurantAddress.trim(), width).forEach(line => esc.text(line).newline());
@@ -344,6 +350,7 @@ export function buildBillReceipt(params: {
   if (params.gstin?.trim()) {
     esc.text(`GSTIN: ${params.gstin.trim()}`).newline();
   }
+  if (params.restaurantPhone?.trim()) thermalLines(`Tel: ${params.restaurantPhone.trim()}`, width).forEach(line => esc.text(line).newline());
 
   esc.separator('-', width);
 
@@ -351,10 +358,11 @@ export function buildBillReceipt(params: {
   if (params.prebill) {
     esc.bold(true).text('*** PROVISIONAL PRE-BILL ***').newline();
     esc.text('(PAYMENT PENDING)').newline().bold(false);
-  } else if (params.reprint) {
-    esc.bold(true).text('*** DUPLICATE / REPRINT ***').newline().bold(false);
   } else {
-    esc.bold(true).text('TAX INVOICE').newline().bold(false);
+    esc.bold(true).text(params.pendingConfirmation ? 'UNCONFIRMED RECEIPT' : params.paymentPending ? 'DISPATCH - PAYMENT PENDING' : 'CUSTOMER RECEIPT').newline().bold(false);
+  }
+  if (params.reprint) {
+    esc.bold(true).text('*** DUPLICATE / REPRINT ***').newline().bold(false);
   }
 
   esc.separator('-', width).align(0); // Left align
@@ -445,16 +453,12 @@ export function buildBillReceipt(params: {
     }
     if (params.pendingConfirmation) esc.text('* Awaiting Server Confirmation *').newline();
     if (params.paymentPending) esc.text('* Payment Pending *').newline();
+    if (!params.pendingConfirmation && !params.paymentPending) esc.bold(true).text(Number(params.tenders?.CREDIT || 0) > 0 || params.paymentMethod === 'CREDIT' ? 'CREDIT - BALANCE DUE' : 'PAID').newline().bold(false);
   }
 
-  esc
-    .separator('-', width)
-    .align(1)
-    .text(params.footerNote || 'Thank you! Visit again.')
-    .newline()
-    .align(0)
-    .feed(3)
-    .cut();
+  esc.separator('-', width).align(1);
+  thermalLines(params.footerNote || 'Thank you! Visit again.', width).forEach(line => esc.text(line).newline());
+  esc.align(0).feed(3).cut();
 
   return esc.build();
 }

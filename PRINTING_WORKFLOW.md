@@ -1,6 +1,30 @@
 # Browser POS printing with a VPS
 
-Implemented locally on 15 October 2026. This does not deploy the VPS or install a background task on the restaurant computer.
+Updated locally on 7 November 2026. This does not deploy the VPS or install a background task on the restaurant computer.
+
+## Simple layouts and restaurant branding
+
+Open **Admin → Printing**. The block editor has been removed. There are three label types (cup/item, delivery bag and kitchen KOT) and six fixed layouts in total: customer bill, pre-bill, KOT, cup/item label, bag label and unpaid dispatch slip. Internal connection-test slips are separate from these six layouts.
+
+Upload the restaurant logo and enter restaurant name, phone, address, optional tax registration and footer text. **Save print settings** waits for server confirmation; a failed save keeps the form for review. Name/address/tax ID now survive frontend settings hydration and account resets. Saving a label no longer changes the business name.
+
+Logo upload trims blank margins, composites transparency on white, boosts faint colours to monochrome, rejects blank images and saves a bounded PNG. The preview shows the black-and-white asset used for printing. Server and direct ESC/POS builders rasterize PNG pixels before receipt text; browser printing waits for logo loading. Corrupt legacy logos fail visibly rather than silently printing a blank header. Destination test prints include saved branding so the operator can check the logo on paper. KOTs omit the logo to remain compact.
+
+Use **Packaging labels** in a confirmed bill preview to print actual item or bag labels through the browser/driver. Item labels include quantity, size, modifiers and cooking notes. Bag labels include customer/order information and a packing checklist. Select suitable label media in the print dialog. Automatic barcode/label-station routing is not added.
+
+## Café checkout: customer bill and KOT together
+
+Enable **Print customer bill + KOT together at checkout**, then save. Configure the receipt printer and enable its automatic printing if using the paired service. Standard mode remains the default.
+
+One confirmed checkout creates one immutable receipt job containing the customer copy followed by the newly required KOT. Rendering produces **receipt → feed/cut → KOT → feed/cut** in one payload to the receipt destination. The worker sends it over one connection; another job cannot interleave inside that payload. Bluetooth/RawBT/desktop fallbacks use the same order. Browser fallback includes both sections in one print dialog; physical cutting/page separation depends on its driver.
+
+Only quantities not already persisted as kitchen food are included. Product, variant, modifiers and notes distinguish kitchen lines. If everything was already sent, checkout prints only the customer bill. A separate checkout KOT is not also queued to the kitchen destination in paired mode. Explicit Send to Kitchen actions continue to work. Prepaid delivery uses the same rules; COD keeps its unpaid dispatch slip and does not claim payment.
+
+Checkout retries return the saved print plan without another payment or original job. Server jobs take precedence over terminal printing. Original direct/browser receipt claims are fenced per restaurant/bill across terminals. A terminal records its attempt before sending and retains uncertain results; it does not automatically retry physical output. Native Bluetooth writes are serialized. Deploy backend and frontend together because original direct printing now uses the server's direct-receipt claim endpoint.
+
+Customer receipt reprints omit the kitchen copy. For a failed/uncertain bundled service job, **Print jobs → Review / reprint** lets the operator select customer receipt, KOT or both after inspecting paper. Copies are marked REPRINT and never resubmit the sale. A printer can stop between the two tickets, so inspect both before recovery.
+
+This follows the separation of receipts and preparation tickets described by [Square's order-ticket documentation](https://squareup.com/help/us/en/article/5194-print-order-tickets). Square also documents [duplicate tickets from multiple devices or printer profiles](https://squareup.com/help/gb/en/article/8281-troubleshoot-printing-duplicate-online-orders); Karvaan therefore assigns one authoritative owner to original output. The single-payload bundle is Karvaan's implementation choice.
 
 ## Components and boundaries
 
@@ -23,7 +47,7 @@ There is one shared receipt destination and one shared kitchen destination per r
 - A recovery creates a new marked copy after the operator checks paper and the Windows queue and enters a reason. If no copy is needed, the operator can record the paper check and clear the alert without printing. It does not resubmit the order or payment. The parent review and requesting user are retained.
 - `SENT` confirms transport/spooler acceptance, **not physical paper output**. ESC/POS TCP and Windows spooling cannot guarantee exactly one physical page after every crash or paper fault. Uncertain outcomes require an operator's decision.
 
-Kitchen appends queue only their new batch. Checkout queues only quantities not already persisted as kitchen items, comparing product, add-ons, and cooking notes. COD dispatch prints an unpaid dispatch note; collection later creates a paid receipt. Settling food already sent to the kitchen does not print the whole meal again.
+Kitchen appends queue only their new batch. Checkout queues only quantities not already persisted as kitchen items, comparing product, variant, add-ons, and cooking notes. COD dispatch prints an unpaid dispatch note; collection later creates a paid receipt. Settling food already sent to the kitchen does not print the whole meal again.
 
 ## Deploy and connect
 
@@ -55,4 +79,4 @@ Internet is required to receive VPS jobs. Orders saved only in a browser create 
 
 Verification includes isolated database/HTTP/browser-storage tests, worker crash/acknowledgment/restore tests, backend compilation, frontend type checking and production PWA build, PowerShell syntax parsing, ZIP extraction/content verification, and a browser check of setup, F2 pre-bill and the single kitchen-send flow. Real paper output, Windows scheduled-task installation, Docker runtime and live VPS deployment still need restaurant acceptance.
 
-Automated verification: 110 POS regression tests and 12 local worker tests.
+Automated verification: 132 POS regression tests and 12 local worker tests pass; backend compilation and the frontend production build pass. The printing browser harness verifies saved branding, faint/blank logo uploads, all six previews, 58/80 mm layout selection, mobile fit, a browser receipt/KOT bundle, actual packaging labels and customer-only receipt reprints. Real thermal-paper output remains a restaurant acceptance check.

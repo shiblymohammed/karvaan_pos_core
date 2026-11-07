@@ -5,7 +5,7 @@ import { getServerUrl } from './serverConfig';
 
 export interface PrintAgent { id: string; name: string; lastSeenAt?: string; revokedAt?: string; pairingExpiresAt?: string; }
 export interface PrintDestination { id?: string; role: 'RECEIPT' | 'KITCHEN'; agentId: string; name: string; transport: 'TCP' | 'WINDOWS'; address: string; port: number; paperWidth: number; autoPrint: boolean; revision: number; }
-export interface PrintJob { id: string; kind: string; reference: string; state: string; error?: string; parentId?: string; createdAt?: string; reviewedAt?: string; }
+export interface PrintJob { id: string; kind: string; reference: string; state: string; error?: string; parentId?: string; createdAt?: string; reviewedAt?: string; paired?: boolean; }
 export interface PrintOverview { agents: PrintAgent[]; destinations: PrintDestination[]; jobs: PrintJob[]; }
 const scope = () => `${getServerUrl()}:${useAuthStore.getState().currentUser?.restaurantId}:${useAuthStore.getState().accessToken}`;
 export const usePrintQueue = create<{ data: PrintOverview | null; error: string; scope: string; refresh: () => Promise<PrintOverview>; clear: () => void }>((set, get) => ({

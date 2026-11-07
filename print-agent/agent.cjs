@@ -17,6 +17,8 @@ function atomicJson(file, data) {
 function serverUrl(value) {
   const url = new URL(value);
   if (url.username || url.password || url.search || url.hash || !['https:', 'http:'].includes(url.protocol)) throw new Error('Use a valid HTTP or HTTPS POS server URL');
+  const loopback = url.hostname === 'localhost' || url.hostname === '[::1]' || (net.isIP(url.hostname) === 4 && url.hostname.startsWith('127.'));
+  if (url.protocol === 'http:' && !loopback) throw new Error('Use HTTPS for a remote POS server. HTTP is allowed only on this computer.');
   return url.href.replace(/\/$/, '');
 }
 async function request(config, endpoint, body) {

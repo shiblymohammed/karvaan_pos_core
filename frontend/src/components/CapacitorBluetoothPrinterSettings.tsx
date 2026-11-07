@@ -1,3 +1,4 @@
+import { canEditConfig } from '../services/configSnapshot';
 import React, { useState, useEffect } from 'react';
 import {
   Bluetooth,
@@ -32,10 +33,12 @@ import { ReceiptLogoUploader } from './ReceiptLogoUploader';
 
 interface CapacitorBluetoothPrinterSettingsProps {
   restaurantName: string;
+  showBranding?: boolean;
 }
 
 export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrinterSettingsProps> = ({
   restaurantName,
+  showBranding = true,
 }) => {
   const { receiptName = '', receiptAddress = '', receiptGstin = '', receiptLogo = '', receiptFooterNote = '' } = useSettingsStore();
   const [name, setName] = useState(receiptName || restaurantName || '');
@@ -131,7 +134,7 @@ export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrint
     }
     setTestingMain(true);
     try {
-      await testBluetoothNativePrint(target, name.trim() || restaurantName || 'Karvaan POS', mainPaperWidth);
+      await testBluetoothNativePrint(target, name.trim() || restaurantName || 'Karvaan POS', mainPaperWidth, logo);
       toast.success('Test receipt printed successfully via Bluetooth!');
     } catch (err: any) {
       toast.error('Bluetooth test failed: ' + (err.message || String(err)));
@@ -193,11 +196,17 @@ export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrint
   };
 
   // Header Branding Save
+  useEffect(() => { setLogo(receiptLogo); }, [receiptLogo]);
+  useEffect(() => { setFooterNote(receiptFooterNote); }, [receiptFooterNote]);
+
   const saveBranding = () => {
+    if (!canEditConfig(useSettingsStore.getState().serverRevision)) return;
     useSettingsStore.setState({
       receiptName: name.trim(),
       receiptAddress: address.trim(),
       receiptGstin: gstin.trim(),
+      receiptLogo: logo || '',
+      receiptFooterNote: footerNote,
     });
     toast.success('Receipt header saved! Receipts will print with "' + (name.trim() || 'your restaurant name') + '"');
   };
@@ -505,7 +514,7 @@ export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrint
       </div>
 
       {/* ─── 3. Receipt Branding (Header Info) ─── */}
-      <div className="bg-white rounded-3xl border-2 border-slate-200/80 p-5 sm:p-6 shadow-sm space-y-4">
+      {showBranding && <div className="bg-white rounded-3xl border-2 border-slate-200/80 p-5 sm:p-6 shadow-sm space-y-4">
         <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
           <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center border border-slate-200">
             <Store className="h-5 w-5" />
@@ -583,7 +592,7 @@ export const CapacitorBluetoothPrinterSettings: React.FC<CapacitorBluetoothPrint
             </button>
           </div>
         </div>
-      </div>
+      </div>}
     </div>
   );
 };

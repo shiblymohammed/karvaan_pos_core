@@ -1,3 +1,5 @@
+import { receiptLogoBytes } from '../services/receiptLogo';
+import { canEditConfig } from '../services/configSnapshot';
 import React, { useState, useEffect } from 'react';
 import {
   Printer,
@@ -31,9 +33,10 @@ import { ReceiptLogoUploader } from './ReceiptLogoUploader';
 
 interface PrinterSettingsProps {
   restaurantName: string;
+  showBranding?: boolean;
 }
 
-export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName }) => {
+export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName, showBranding = true }) => {
   const { receiptName = '', receiptAddress = '', receiptGstin = '', receiptLogo = '', receiptFooterNote = '' } = useSettingsStore();
   const [name, setName] = useState(receiptName || restaurantName || '');
   const [address, setAddress] = useState(receiptAddress || '');
@@ -47,11 +50,17 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
     if (receiptGstin) setGstin(receiptGstin);
   }, [receiptName, receiptAddress, receiptGstin]);
 
+  useEffect(() => { setLogo(receiptLogo); }, [receiptLogo]);
+  useEffect(() => { setFooterNote(receiptFooterNote); }, [receiptFooterNote]);
+
   const saveBranding = () => {
+    if (!canEditConfig(useSettingsStore.getState().serverRevision)) return;
     useSettingsStore.setState({
       receiptName: name.trim(),
       receiptAddress: address.trim(),
       receiptGstin: gstin.trim(),
+      receiptLogo: logo || '',
+      receiptFooterNote: footerNote,
     });
     toast.success('Receipt header saved! Receipts will now print with "' + (name.trim() || 'your restaurant name') + '"');
   };
@@ -134,7 +143,7 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
     }
     setTestingBt(true);
     try {
-      await testBluetoothNativePrint(selectedBtAddress, name.trim() || restaurantName || 'Karvaan POS', paperWidth);
+      await testBluetoothNativePrint(selectedBtAddress, name.trim() || restaurantName || 'Karvaan POS', paperWidth, logo);
       toast.success('Test receipt printed successfully via Bluetooth!');
     } catch (err: any) {
       toast.error('Bluetooth test failed: ' + (err.message || String(err)));
@@ -171,9 +180,10 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
     toast.info(`Receipt width set to ${width}mm`);
   };
 
-  const testRawBTPrint = () => {
+  const testRawBTPrint = async () => {
     try {
       const bytes = buildBillReceipt({
+        logoBytes: await receiptLogoBytes(logo),
         restaurantName: name.trim() || restaurantName || 'Karvaan POS',
         restaurantAddress: address.trim(),
         gstin: gstin.trim(),
@@ -205,6 +215,7 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
     setTestStatus('idle');
     try {
       const bytes = buildBillReceipt({
+        logoBytes: await receiptLogoBytes(logo),
         restaurantName: name.trim() || restaurantName || 'Karvaan POS',
         billNumber: 'TEST-001',
         orderType: 'TEST PRINT',
@@ -242,7 +253,7 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
   return (
     <div className="space-y-4">
       {/* 1. Receipt Branding Card (Universal for all platforms) */}
-      <div className="bg-pos-card rounded-2xl border border-pos-border p-5 space-y-4 shadow-sm">
+      {showBranding && <div className="bg-pos-card rounded-2xl border border-pos-border p-5 space-y-4 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center border border-amber-500/20">
             <Store className="h-5 w-5" />
@@ -319,7 +330,7 @@ export const PrinterSettings: React.FC<PrinterSettingsProps> = ({ restaurantName
             </button>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* 2. CAPACITOR APK ONLY: Native Bluetooth Thermal Printer Setup */}
       {isCap && (

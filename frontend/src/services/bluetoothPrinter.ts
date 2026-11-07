@@ -1,3 +1,5 @@
+import { receiptLogoBytes } from './receiptLogo';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { registerPlugin } from '@capacitor/core';
 import { uint8ArrayToBase64, buildBillReceipt, buildKotReceipt } from './tauriCommands';
 
@@ -129,6 +131,7 @@ export async function checkBluetoothEnabled(): Promise<boolean> {
 }
 
 /** Send raw ESC/POS bytes directly to the paired Bluetooth thermal printer without any external apps */
+let nativePrintTail: Promise<unknown> = Promise.resolve();
 export async function printViaBluetoothNative(bytes: Uint8Array, targetAddress?: string): Promise<boolean> {
   if (!isCapacitor()) {
     throw new Error('Native Bluetooth printing is only available inside the Capacitor Android APK');
@@ -142,11 +145,14 @@ export async function printViaBluetoothNative(bytes: Uint8Array, targetAddress?:
   const base64Data = uint8ArrayToBase64(bytes);
 
   try {
-    const res = await BluetoothPrinter.print({
+    const sending = nativePrintTail.then(() => BluetoothPrinter.print({
       address,
       data: base64Data,
-    });
-    return !!res?.success;
+    }));
+    nativePrintTail = sending.catch(() => {});
+    const res = await sending;
+    if (!res?.success) throw new Error('Bluetooth printer did not accept this ticket. Check the paper before retrying.');
+    return true;
   } catch (err: any) {
     console.error('printViaBluetoothNative error:', err);
     throw new Error(err?.message || 'Bluetooth printing failed');
@@ -157,9 +163,11 @@ export async function printViaBluetoothNative(bytes: Uint8Array, targetAddress?:
 export async function testBluetoothNativePrint(
   address: string,
   restaurantName: string,
-  paperWidth: 58 | 80 = 58
+  paperWidth: 58 | 80 = 58,
+  logo = useSettingsStore.getState().receiptLogo
 ): Promise<boolean> {
   const bytes = buildBillReceipt({
+    logoBytes: await receiptLogoBytes(logo),
     restaurantName: restaurantName || 'Karvaan POS',
     restaurantAddress: 'Direct In-App Bluetooth Print',
     gstin: 'Zero Popups - 100% Native',

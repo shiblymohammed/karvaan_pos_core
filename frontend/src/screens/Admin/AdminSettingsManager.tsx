@@ -22,6 +22,7 @@ import {
   Database
 } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
+import { canEditConfig } from '../../services/configSnapshot';
 import { useAddonStore } from '../../store/useAddonStore';
 import { getServerUrl, setServerUrl, probeServer } from '../../services/serverConfig';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -108,6 +109,7 @@ export const AdminSettingsManager: React.FC = () => {
   const [syncMessage, setSyncMessage] = useState('');
 
   const [localOrderPrefix, setLocalOrderPrefix] = useState(store.orderPrefix);
+  const [localPosMenuLayout, setLocalPosMenuLayout] = useState(store.posMenuLayout);
   const [localParcelCharge, setLocalParcelCharge] = useState(store.parcelChargeAmount || 0);
   const [localTimeFormat, setLocalTimeFormat] = useState<'12h' | '24h'>(store.timeFormat || '12h');
   const [localDateFormat, setLocalDateFormat] = useState<'AUTO' | 'MANUAL'>(store.dateFormat || 'AUTO');
@@ -164,6 +166,7 @@ export const AdminSettingsManager: React.FC = () => {
 
   useEffect(() => {
     setLocalOrderPrefix(store.orderPrefix);
+    setLocalPosMenuLayout(store.posMenuLayout);
     setLocalParcelCharge(store.parcelChargeAmount || 0);
     setLocalTimeFormat(store.timeFormat || '12h');
     setLocalDateFormat(store.dateFormat || 'AUTO');
@@ -226,6 +229,8 @@ export const AdminSettingsManager: React.FC = () => {
   };
 
   const applyGeneralSettings = () => {
+    if (!canEditConfig(useSettingsStore.getState().serverRevision)) return;
+    store.setPosMenuLayout(localPosMenuLayout);
     store.setOrderPrefix(localOrderPrefix);
     store.setParcelChargeAmount(localParcelCharge);
     store.setTimeFormat(localTimeFormat as '12h' | '24h');
@@ -317,7 +322,7 @@ export const AdminSettingsManager: React.FC = () => {
   // --- RENDER SECTIONS ---
   const renderHardware = () => (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <SettingsHeader title="Printer & Hardware" description="Manage receipt printers, cash drawers, and label printing options. Please use the dedicated 'Label & Printers' tab in the sidebar." />
+      <SettingsHeader title="Printer & Hardware" description="Open Printing in the sidebar to upload your logo, edit restaurant details, choose checkout printing and configure printers." />
     </div>
   );
 
@@ -399,6 +404,17 @@ export const AdminSettingsManager: React.FC = () => {
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <SettingsHeader title="Workspace" description="General configuration for the point of sale." />
       <SettingsSection>
+        <SettingsRow
+          label="POS menu layout"
+          stackOnMobile
+          description="Show category tiles first, then list the items when a category is selected."
+          control={
+            <Select aria-label="POS menu layout" value={localPosMenuLayout} onChange={event => setLocalPosMenuLayout(event.target.value as 'GRID' | 'CATEGORY_LIST')} className="w-full sm:max-w-[260px]">
+              <option value="GRID">Item grid</option>
+              <option value="CATEGORY_LIST">Category tiles → Item list</option>
+            </Select>
+          }
+        />
         <SettingsRow 
           label="Operating Model (Pipeline)" 
           stackOnMobile
