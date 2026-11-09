@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useRef, useState } from 'react';
 import { resolveMediaUrl } from '../../services/mediaUrl';
 import { Clock, MessageSquare, Plus } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { Product } from '../../store/useMenuStore';
 import { toast } from '../../store/useToastStore';
+import { OptionDialog } from './OptionDialog';
+import { VariantOptions } from './VariantOptions';
 
 interface MenuItemCardProps {
   product: Product;
@@ -26,17 +27,18 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = React.memo(({
   comboLabel,
 }) => {
   const [isVibrating, setIsVibrating] = useState(false);
-  const [showVariantModal, setShowVariantModal] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [variantTrigger, setVariantTrigger] = useState<HTMLElement | null>(null);
   const hasVariants = !!(product.variants && product.variants.length > 0);
   const isList = layout === 'list';
 
-  const handleClick = () => {
+  const handleClick = (event: React.SyntheticEvent<HTMLElement>) => {
     if (is86d) toast.warning('Recorded stock is short. Manager approval will be required at checkout.');
     setIsVibrating(true);
     setTimeout(() => setIsVibrating(false), 200);
 
     if (hasVariants) {
-      setShowVariantModal(true);
+      setVariantTrigger(event.currentTarget);
       return;
     }
 
@@ -45,14 +47,17 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = React.memo(({
 
   return (
     <div
+      ref={cardRef}
       onClick={handleClick}
+      aria-haspopup={hasVariants ? 'dialog' : undefined}
+      aria-expanded={hasVariants ? !!variantTrigger : undefined}
       role="button"
       tabIndex={0}
       aria-label={`Add ${product.name}`}
       onKeyDown={event => {
         if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault();
-          handleClick();
+          handleClick(event);
         }
       }}
       className={`pos-product-card ${isList ? 'is-list' : 'is-grid'} ${isVibrating ? 'animate-shake' : ''} ${is86d ? 'is-short' : ''} ${isInCart ? 'is-in-cart' : ''}`}
@@ -83,7 +88,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = React.memo(({
         type="button"
         onClick={e => {
           e.stopPropagation();
-          if (hasVariants) setShowVariantModal(true);
+          if (hasVariants) setVariantTrigger(e.currentTarget);
           else onCustomize(product);
         }}
         className="pos-product-action"
@@ -93,89 +98,23 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = React.memo(({
         {isInCart ? <Icons.Check className="h-5 w-5 text-emerald-700" /> : <Plus className="h-5 w-5" />}
       </button>
 
-      {/* Quick Variant Picker Dialog */}
-      {showVariantModal && createPortal(
-        <div
-          onClick={(e) => { e.stopPropagation(); setShowVariantModal(false); }}
-          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white/95 backdrop-blur-xl w-full max-w-sm rounded-[28px] border border-white shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-200"
-          >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
-                  {product.iconName ? React.createElement((Icons as any)[product.iconName] || Icons.Utensils, { className: 'w-5 h-5' }) : (product.imageEmoji || '🍽️')}
-                </div>
-                <div>
-                  <h4 className="font-black text-slate-800 text-sm leading-tight">{product.name}</h4>
-                  <p className="text-[11px] font-bold text-slate-400">Choose portion / size</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowVariantModal(false)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <Icons.X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2.5 max-h-60 overflow-y-auto pr-0.5">
-              {product.variants!.map((variant) => (
-                <button
-                  key={variant.id}
-                  type="button"
-                  onClick={() => {
-                    onAdd({
-                      ...product,
-                      price: variant.price,
-                      variantId: variant.id,
-                      variantName: variant.name,
-                    });
-                    setShowVariantModal(false);
-                  }}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-[#b5ef85]/20 border border-slate-200 hover:border-[#b5ef85] rounded-2xl transition-all active:scale-[0.98] cursor-pointer group shadow-sm"
-                >
-                  <span className="font-black text-slate-800 text-sm group-hover:text-slate-950">
-                    {variant.name}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-emerald-600 text-base">
-                      ₹{variant.price}
-                    </span>
-                    <div className="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Plus className="w-4 h-4 stroke-[3]" />
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowVariantModal(false);
-                  onCustomize(product);
-                }}
-                className="text-xs font-bold text-slate-500 hover:text-emerald-600 flex items-center gap-1.5 py-1.5 px-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <MessageSquare className="w-3.5 h-3.5" /> Customize with Notes
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowVariantModal(false)}
-                className="px-3 py-1.5 text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      {variantTrigger && <OptionDialog
+        title={product.name}
+        subtitle="Choose an option · Tap to add to bill"
+        anchor={cardRef.current}
+        returnFocus={variantTrigger}
+        onClose={() => setVariantTrigger(null)}
+        footer={<button
+          type="button"
+          className="pos-option-secondary flex items-center justify-center gap-2 w-full"
+          onClick={() => { setVariantTrigger(null); onCustomize(product); }}
+        ><MessageSquare size={16} /> Notes &amp; add-ons</button>}
+      >
+        <VariantOptions variants={product.variants!} instantAdd onSelect={variant => {
+          onAdd({ ...product, price: variant.price, variantId: variant.id, variantName: variant.name });
+          setVariantTrigger(null);
+        }} />
+      </OptionDialog>}
     </div>
   );
 });
