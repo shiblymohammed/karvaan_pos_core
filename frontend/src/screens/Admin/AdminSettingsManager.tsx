@@ -1,4 +1,5 @@
 import { authorizedFetch } from '../../services/authFetch';
+import { AndroidAppDownload } from '../../components/AndroidAppDownload';
 import { resolveMediaUrl } from '../../services/mediaUrl';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
@@ -403,6 +404,7 @@ export const AdminSettingsManager: React.FC = () => {
   const renderWorkspace = () => (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <SettingsHeader title="Workspace" description="General configuration for the point of sale." />
+      <div className="mb-5 max-w-lg"><AndroidAppDownload /></div>
       <SettingsSection>
         <SettingsRow
           label="POS menu layout"

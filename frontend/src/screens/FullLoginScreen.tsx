@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Mail, Lock, EyeOff, ArrowRight, Check, Loader2, Server, Wifi, RefreshCw, Edit3, X } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { getServerUrl, setServerUrl, probeServer } from '../services/serverConfig';
+import { AndroidAppDownload } from '../components/AndroidAppDownload';
 
 export const FullLoginScreen: React.FC = () => {
   const { fullLogin } = useAuthStore();
@@ -259,6 +260,10 @@ export const FullLoginScreen: React.FC = () => {
           </button>
         </form>
 
+        <div className="mt-5 w-full max-w-xl mx-auto md:mx-0 shrink-0">
+          <AndroidAppDownload />
+        </div>
+
         {/* Server Connection Indicator */}
         <div className="mt-6 pt-4 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500 shrink-0">
           <div className="flex items-center gap-2 overflow-hidden">
@@ -299,7 +304,7 @@ export const FullLoginScreen: React.FC = () => {
             <Lock className="h-3 w-3" />
             <span className="font-bold uppercase tracking-wider">End-to-End Encrypted</span>
           </div>
-          <span className="font-mono text-[10px]">v1.0.1</span>
+          <span className="text-[10px]">Karvaan POS</span>
         </div>
 
         {/* Server Switch Modal */}

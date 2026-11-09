@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { navItems } from './Sidebar';
 import { SCREEN_PATHS, type ScreenType } from './screenPaths';
+import { AndroidAppDownload } from '../AndroidAppDownload';
 
 interface MobileMoreDrawerProps {
   isOpen: boolean;
@@ -41,7 +42,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({ isOpen, onCl
         className="fixed inset-0 bg-[#0f172a]/80 z-40 md:hidden transition-opacity"
         onClick={onClose}
       />
-      <div className="fixed inset-x-0 bottom-0 z-50 bg-[#151e32] rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden animate-in slide-in-from-bottom-full md:hidden border-t border-white/5 will-change-transform">
+      <div className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] bg-[#151e32] rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] flex flex-col overflow-y-auto animate-in slide-in-from-bottom-full md:hidden border-t border-white/5 will-change-transform">
         <div className="w-full flex justify-center pt-3 pb-2" onClick={onClose}>
           <div className="w-12 h-1.5 bg-white/20 rounded-full" />
         </div>
@@ -84,6 +85,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({ isOpen, onCl
             <span className="text-[10px] font-bold text-slate-300 text-center leading-tight">Logout</span>
           </button>
         </div>
+        <div className="px-4 pb-4"><AndroidAppDownload onDownload={onClose} /></div>
         <div className="h-safe-bottom bg-transparent" />
       </div>
     </>

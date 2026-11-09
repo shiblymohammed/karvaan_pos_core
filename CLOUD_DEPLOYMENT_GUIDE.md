@@ -11,6 +11,17 @@ same HTTPS domain as the POS. Docker Compose mounts `/opt/karvaan/downloads`
 read-only into Nginx, so installers survive frontend rebuilds. This directory is
 excluded from Git and the Docker build context.
 
+The web sign-in page, Settings → Workspace, and mobile More menu link to
+`/downloads/latest.apk`. Maintain this as a relative symlink to the newest
+verified versioned installer. Publish `/downloads/latest.json` alongside it with
+`version`, `versionCode`, `filename`, `sha256`, `sizeBytes`, and `buildType`
+(`debug` or `release`). Replace the symlink and JSON through temporary files and
+atomic renames inside the downloads directory. Nginx sends `no-store` for these
+two latest-release paths; versioned APK links remain available. The web button
+reads the current version from this JSON and still links to the APK if metadata
+is unavailable. Downloads use the central cloud domain, independent of a
+terminal's selected LAN backend. The link is hidden in native apps.
+
 After building and checking an APK, upload it to a temporary filename outside the
 public directory, verify its SHA-256, then move it into `downloads/` with file
 permissions `0644` (directory `0755`). Share its versioned HTTPS URL. Missing files
