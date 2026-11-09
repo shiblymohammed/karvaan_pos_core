@@ -32,6 +32,8 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT_HTTP:-80}:80"
+    volumes:
+      - ./downloads:/usr/share/nginx/html/downloads:ro
     depends_on:
       backend:
         condition: service_healthy

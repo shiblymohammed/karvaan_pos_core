@@ -52,6 +52,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, setIsSidebarOpe
     <aside className={`${isMobileCartOpen ? 'w-0 md:w-0 -translate-x-full opacity-0 overflow-hidden' : isSidebarOpen ? 'w-20 md:w-[220px] translate-x-0 opacity-100' : 'w-16 md:w-[64px] translate-x-0 opacity-100'} hidden md:flex bg-transparent flex-col shrink-0 transition-all duration-300 z-30 relative`}>
       {/* Edge Collapse Trigger */}
       <button
+        aria-label={isSidebarOpen ? "Collapse navigation" : "Expand navigation"}
+        aria-expanded={isSidebarOpen}
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
         className="hidden md:flex items-center justify-center h-32 w-5 rounded-r-xl bg-[#0d212b] bg-carbon-lines text-slate-400 hover:bg-[#8cc63f] hover:text-[#0f172a] active:scale-95 transition-all absolute -right-5 top-1/2 -translate-y-1/2 z-50 cursor-pointer drop-shadow-2xl group/notch select-none touch-manipulation"
       >

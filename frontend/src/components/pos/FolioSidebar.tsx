@@ -154,6 +154,8 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
       
       {/* Collapse Button (Desktop/Tablet) */}
       <button 
+        aria-label={isFolioExpanded ? "Collapse bill folio" : "Expand bill folio"}
+        aria-expanded={isFolioExpanded}
         onClick={() => setIsFolioExpanded(!isFolioExpanded)}
         className={`hidden lg:flex flex-col items-center justify-center rounded-l-2xl border-y border-l transition-all duration-300 fixed top-1/2 -translate-y-1/2 z-[60] cursor-pointer shadow-[-12px_0_30px_rgba(0,0,0,0.25)] select-none touch-manipulation group/foliobtn overflow-visible
           ${isFolioExpanded ? 'h-20 w-5 hover:w-6' : 'h-36 w-8 hover:w-9'}
@@ -195,7 +197,7 @@ export const FolioSidebar: React.FC<FolioSidebarProps> = ({
       </button>
 
       {/* Sidebar / Bottom Sheet */}
-      <div className={`fixed inset-x-0 bottom-0 top-12 z-50 bg-white/90 backdrop-blur-3xl rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col justify-between overflow-hidden transition-all duration-300 ease-out lg:static lg:flex lg:col-span-4 ${isFolioExpanded ? 'lg:w-[400px] xl:w-[430px] border-l border-white/40 shadow-[-12px_0_40px_rgba(0,0,0,0.06)]' : 'lg:w-0 border-l-0 shadow-none'} lg:rounded-none lg:rounded-l-[32px] ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+      <div className={`fixed inset-x-0 bottom-0 top-12 z-50 bg-white/90 backdrop-blur-3xl rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col justify-between overflow-hidden transition-all duration-300 ease-out lg:static lg:flex lg:shrink-0 lg:col-span-4 ${isFolioExpanded ? 'lg:w-[400px] xl:w-[430px] border-l border-white/40 shadow-[-12px_0_40px_rgba(0,0,0,0.06)]' : 'lg:w-0 border-l-0 shadow-none'} lg:rounded-none lg:rounded-l-[32px] ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
         
         {/* Inner Fixed-Width Wrapper to prevent layout jump during width animation */}
         <div className="w-full lg:w-[400px] xl:w-[430px] h-full flex flex-col flex-1 shrink-0">

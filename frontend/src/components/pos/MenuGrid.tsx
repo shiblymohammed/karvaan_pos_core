@@ -39,7 +39,7 @@ export const MenuGrid: React.FC<MenuGridProps> = React.memo(({ activeCategory, s
   }, [products]);
 
   return (
-    <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-4 overflow-hidden">
       {/* Product Grid */}
       {filteredProducts.length === 0 && (
         <div className="p-8 flex flex-col items-center justify-center text-center space-y-3">
@@ -61,7 +61,8 @@ export const MenuGrid: React.FC<MenuGridProps> = React.memo(({ activeCategory, s
           )}
         </div>
       )}
-      <div className={`${layout === 'list' ? 'flex flex-col gap-3' : 'grid grid-cols-2 md:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 md:gap-5'} overflow-y-auto pb-[240px] lg:pb-24 pr-2 pt-2`}>
+      <div className="pos-menu-scroll">
+      <div className={`pos-menu-workspace ${layout === 'list' ? 'pos-product-list' : 'pos-product-grid'}`}>
         {filteredProducts.map((product) => {
           const is86d = checkIs86d(product.name);
           const isInCart = cartProductIds.has(product.id);
@@ -78,6 +79,7 @@ export const MenuGrid: React.FC<MenuGridProps> = React.memo(({ activeCategory, s
             />
           );
         })}
+      </div>
       </div>
     </div>
   );

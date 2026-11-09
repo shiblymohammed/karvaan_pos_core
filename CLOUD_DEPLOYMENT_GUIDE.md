@@ -4,6 +4,26 @@ This guide covers deploying the full **Karvaan POS** stack (NestJS backend + Rea
 
 ---
 
+## Android APK downloads
+
+The frontend serves versioned installers at `/downloads/<filename>.apk` over the
+same HTTPS domain as the POS. Docker Compose mounts `/opt/karvaan/downloads`
+read-only into Nginx, so installers survive frontend rebuilds. This directory is
+excluded from Git and the Docker build context.
+
+After building and checking an APK, upload it to a temporary filename outside the
+public directory, verify its SHA-256, then move it into `downloads/` with file
+permissions `0644` (directory `0755`). Share its versioned HTTPS URL. Missing files
+return HTTP 404 rather than the POS app. Keep signing keys private and use the
+same key for upgrades. Debug-signed APKs are testing builds; public production
+releases should use a private release signing key.
+
+On Android, open the link, download the APK, and open the downloaded file. If
+Android asks, allow installation from that browser, then select **Update** or
+**Install**. Install updates over the existing app to retain local app data.
+
+---
+
 ## 1. VPS Sizing & Recommended Providers
 
 Because Karvaan POS is built with an ultra-efficient compiled architecture, you do **not** need expensive Kubernetes or managed cloud databases. A single budget VPS handles 3 active restaurants with under 15% resource utilization.

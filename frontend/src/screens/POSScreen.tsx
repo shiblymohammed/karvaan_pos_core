@@ -332,18 +332,18 @@ export const POSScreen: React.FC = () => {
   shortcutActions.current = { kitchen: () => { void handleSendKitchen(); }, prebill: handlePrintPreBill };
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 text-slate-800 pb-[72px] md:pb-0">
+    <div className="flex min-w-0 min-h-0 flex-col lg:flex-row h-full overflow-hidden bg-[linear-gradient(135deg,#ecfccb,#ede9fe_35%,#e0f2fe_65%,#ecfccb)] transition-colors duration-300 text-slate-800 pb-[72px] md:pb-0">
       {cartOperation && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40" role="status" aria-live="polite"><div className="rounded-2xl bg-white p-5 shadow-xl font-bold">{cartOperation}</div></div>}
 
       {/* LEFT: Product Catalog or Parked Orders */}
-      <div className="flex-1 flex flex-col overflow-hidden relative">
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden relative">
 
         {/* Notch Tabs (Desktop + Mobile) */}
-        <div className="absolute top-1 left-1/2 -translate-x-1/2 z-40 w-auto max-w-[94vw]">
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 z-40 w-max max-w-[94%]">
           <div className="flex items-center bg-white/80 backdrop-blur-xl p-1 rounded-full shadow-md border border-white/80 gap-1">
             <button
               onClick={() => setShowParkedOrders(false)}
-              className={`relative px-3.5 py-1 text-xs rounded-full font-bold transition-all z-10 ${!showParkedOrders ? 'text-white' : 'text-slate-600 hover:text-slate-800'}`}
+              className={`relative whitespace-nowrap px-3.5 py-1 text-xs rounded-full font-bold transition-all z-10 ${!showParkedOrders ? 'text-white' : 'text-slate-600 hover:text-slate-800'}`}
             >
               {!showParkedOrders && (
                 <motion.div layoutId="notchTab" className="absolute inset-0 bg-slate-800 rounded-full shadow-md -z-10" transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
@@ -352,7 +352,7 @@ export const POSScreen: React.FC = () => {
             </button>
             <button
               onClick={() => setShowParkedOrders(true)}
-              className={`relative flex items-center gap-1.5 px-3.5 py-1 text-xs rounded-full font-bold transition-all z-10 ${showParkedOrders ? 'text-white' : 'text-slate-600 hover:text-slate-800'}`}
+              className={`relative whitespace-nowrap flex items-center gap-1.5 px-3.5 py-1 text-xs rounded-full font-bold transition-all z-10 ${showParkedOrders ? 'text-white' : 'text-slate-600 hover:text-slate-800'}`}
             >
               {showParkedOrders && (
                 <motion.div layoutId="notchTab" className="absolute inset-0 bg-slate-800 rounded-full shadow-md -z-10" transition={{ type: 'spring', stiffness: 500, damping: 30 }} />

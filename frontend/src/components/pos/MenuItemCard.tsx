@@ -55,94 +55,43 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = React.memo(({
           handleClick();
         }
       }}
-      className={`group relative backdrop-blur-xl rounded-3xl transition-all duration-300 flex ${isList ? 'flex-row items-center min-h-[100px] shrink-0' : 'flex-col h-[220px] md:h-[300px]'} overflow-hidden ${isVibrating ? 'animate-shake' : ''} ${
-        is86d 
-          ? 'opacity-80 bg-red-50/30 border-2 border-dashed border-red-200 shadow-[0_16px_40px_rgb(0,0,0,0.12)] cursor-pointer'
-          : isInCart
-            ? 'bg-[#b5ef85] border-2 border-transparent shadow-[0_16px_40px_rgba(181,239,133,0.5)] cursor-pointer'
-            : 'bg-white/50 border-2 border-dashed border-slate-300/80 shadow-[0_16px_40px_rgb(0,0,0,0.12)] cursor-pointer hover:bg-[#b5ef85] hover:border-transparent hover:border-solid hover:shadow-[0_16px_40px_rgba(181,239,133,0.5)]'
-      }`}
+      className={`pos-product-card ${isList ? 'is-list' : 'is-grid'} ${isVibrating ? 'animate-shake' : ''} ${is86d ? 'is-short' : ''} ${isInCart ? 'is-in-cart' : ''}`}
     >
-      {/* Full-card Striped Overlay for 86d */}
-      {is86d && (
-        <div 
-          className="absolute inset-0 z-40 pointer-events-none rounded-3xl opacity-60"
-          style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.08) 10px, rgba(0,0,0,0.08) 20px)' }}
-        />
-      )}
-
-      {/* Product Image Cover */}
-      <div className={`relative shrink-0 ${isList ? 'h-20 w-20 md:h-24 md:w-24 p-1.5' : 'h-[120px] md:h-[190px] w-full p-1.5 md:p-1 md:pb-0'}`}>
-        <div className={`w-full h-full bg-white/50 backdrop-blur-md rounded-[20px] overflow-hidden relative shadow-sm border border-white/40 ${is86d ? 'grayscale opacity-70' : ''}`}>
-          {product.imageUrl ? (
-            <img src={resolveMediaUrl(product.imageUrl)} alt={product.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-4xl text-slate-400">
-              {product.iconName ? React.createElement((Icons as any)[product.iconName] || Icons.Utensils, { className: 'w-12 h-12' }) : (product.imageEmoji || '🍽️')}
-            </div>
-          )}
-        </div>
-        
-        {/* Status Overlay */}
-        {is86d && (
-          <div className="absolute inset-0 bg-white/50 backdrop-blur-[3px] flex items-center justify-center rounded-[20px] m-1 mb-0 z-50">
-            <span className="text-xs text-white font-black bg-red-600 px-4 py-1.5 rounded-full uppercase shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-red-400 tracking-wider">
-              Stock shortage
-            </span>
+      <div className="pos-product-image">
+        {product.imageUrl ? (
+          <img src={resolveMediaUrl(product.imageUrl)} alt="" loading="lazy" decoding="async" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-3xl text-slate-400">
+            {product.iconName ? React.createElement((Icons as any)[product.iconName] || Icons.Utensils, { className: 'h-9 w-9' }) : (product.imageEmoji || '🍽️')}
           </div>
         )}
       </div>
-
-      <div className={`p-2.5 md:p-3 md:px-3.5 flex flex-1 min-w-0 ${isList ? 'flex-row items-center gap-3' : 'flex-col justify-between gap-1'}`}>
-        <div className={`flex flex-col gap-0.5 ${isList ? 'flex-1 min-w-0' : ''}`}>
-          <h3 className="font-bold text-slate-800 line-clamp-2 leading-tight text-[13px] md:text-[14px] tracking-tight">
-            {product.name}
-          </h3>
-          {product.isCombo && product.comboItems && product.comboItems.length > 0 && (
-            <p className="text-[10px] text-slate-500 font-semibold line-clamp-1 leading-tight tracking-tight">
-              {comboLabel}
-            </p>
-          )}
-        </div>
-
-        <div className={`flex ${isList ? 'items-center gap-3 shrink-0' : 'items-end justify-between mt-auto'}`}>
-          <div className="flex flex-col gap-1">
-            <div className="flex items-baseline gap-1.5 flex-wrap">
-              <span className="text-[18px] md:text-[17px] font-black text-slate-900 leading-none tracking-tight">
-                {hasVariants
-                  ? `₹${Math.min(...product.variants!.map(v => v.price))}`
-                  : `₹${product.price}`}
-              </span>
-              {hasVariants && (
-                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded-md">
-                  {product.variants!.length} sizes
-                </span>
-              )}
-            </div>
-            {!is86d && (
-              <span className="text-[11px] text-slate-500 font-bold inline-flex items-center gap-1 opacity-80">
-                <Clock className="h-3.5 w-3.5" />
-                <span>{product.prepTime} min</span>
-              </span>
-            )}
-          </div>
-          
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (hasVariants) {
-                setShowVariantModal(true);
-              } else {
-                onCustomize(product);
-              }
-            }}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center text-[#0d212b] transition-all duration-300 active:scale-90 shadow-md shrink-0 ${isInCart ? 'bg-white shadow-emerald-500/20 rotate-0' : 'bg-[#b5ef85] hover:bg-[#a2db74] hover:rotate-90'}`}
-            title={hasVariants ? "Select Size / Variant" : "Customize / Add"}
-          >
-            {isInCart ? <Icons.Check className="h-5 w-5 stroke-[3] text-emerald-600" /> : <Plus className="h-5 w-5 stroke-[2.5]" />}
-          </button>
-        </div>
+      <div className="pos-product-description">
+        <h3 className="line-clamp-2 break-words text-sm font-bold leading-snug text-slate-800">{product.name}</h3>
+        {product.isCombo && comboLabel && <p className="mt-1 line-clamp-1 text-xs text-slate-500">{comboLabel}</p>}
+        <span className={`mt-1 inline-flex items-center gap-1 text-xs font-medium ${is86d ? 'text-red-700' : 'text-slate-500'}`}>
+          {is86d ? 'Stock shortage' : <><Clock className="h-3 w-3" /> {product.prepTime} min</>}
+        </span>
       </div>
+      <div className="pos-product-price">
+        <span className="font-extrabold text-slate-900 tracking-tight">
+          {hasVariants ? `₹${Math.min(...product.variants!.map(v => v.price))}` : `₹${product.price}`}
+        </span>
+        {hasVariants && <span className="text-[10px] font-semibold text-slate-500">From · {product.variants!.length} sizes</span>}
+      </div>
+      <button
+        type="button"
+        onClick={e => {
+          e.stopPropagation();
+          if (hasVariants) setShowVariantModal(true);
+          else onCustomize(product);
+        }}
+        className="pos-product-action"
+        aria-label={hasVariants ? `Choose size for ${product.name}` : `Customize ${product.name}`}
+        title={hasVariants ? 'Select Size / Variant' : 'Customize / Add'}
+      >
+        {isInCart ? <Icons.Check className="h-5 w-5 text-emerald-700" /> : <Plus className="h-5 w-5" />}
+      </button>
 
       {/* Quick Variant Picker Dialog */}
       {showVariantModal && createPortal(
